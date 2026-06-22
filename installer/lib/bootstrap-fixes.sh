@@ -129,56 +129,47 @@ EOF
 }
 
 cb_fix_platform_env_permissions() {
-    # Asegurar que el grupo controlbox en el host tenga GID 1000 (igual que el contenedor Docker)
-    # y que platform.env sea legible por el grupo (640) para que la API pueda leerlo.
+    # El contenedor Docker usa UID/GID 1000 (hardcoded en Dockerfile).
+    # El host puede tener el grupo controlbox con un GID distinto.
+    # IMPORTANTE: groupmod solo cambia /etc/group; los inodos en disco conservan
+    # el GID antiguo. Hay que rechownear los archivos DESPUÉS del groupmod.
     local config_dir="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}"
-    local env_file="${config_dir}/platform.env"
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
     local target_gid=1000
 
-    # Ajustar GID del grupo controlbox si no coincide con el contenedor
+    # 1. Ajustar GID del grupo controlbox al del contenedor (1000)
     if getent group controlbox >/dev/null 2>&1; then
         local current_gid
         current_gid="$(getent group controlbox | cut -d: -f3)"
         if [[ "${current_gid}" != "${target_gid}" ]]; then
-            cb_warn "Grupo controlbox tiene GID ${current_gid}; ajustando a ${target_gid} para que el contenedor pueda leer los archivos de config..."
-            groupmod -g "${target_gid}" controlbox 2>/dev/null \
-                && cb_info "GID de controlbox actualizado a ${target_gid}" \
-                || cb_warn "No se pudo ajustar GID (puede requerir reiniciar el contenedor)"
-        fi
-        if id controlbox >/dev/null 2>&1; then
-            usermod -g controlbox controlbox 2>/dev/null || true
+            cb_warn "Ajustando GID grupo controlbox: ${current_gid} → ${target_gid}..."
+            if ! groupmod -g "${target_gid}" controlbox 2>/dev/null; then
+                cb_warn "No se pudo ajustar GID del grupo controlbox a ${target_gid}"
+            fi
         fi
     fi
 
-    # Corregir permisos de archivos de configuración sensibles a 640
-    # (propietario rw, grupo r) para que el contenedor con GID 1000 pueda leerlos
+    # 2. Rechownear config dir y archivos clave con el GID actualizado
+    #    (groupmod NO actualiza los inodos en disco; este paso es CRÍTICO)
+    chown controlbox:controlbox "${config_dir}" 2>/dev/null || true
+    chmod 755 "${config_dir}" 2>/dev/null || true
+
     for f in \
-        "${env_file}" \
-        "${install_dir}/.env" \
+        "${config_dir}/platform.env" \
         "${config_dir}/credentials.env" \
-        "${config_dir}/domains.json"; do
+        "${config_dir}/domains.json" \
+        "${install_dir}/.env"; do
         if [[ -f "${f}" ]]; then
-            local current_mode
-            current_mode="$(stat -c '%a' "${f}" 2>/dev/null || echo 0)"
-            if [[ "${current_mode}" == "600" ]]; then
-                chmod 640 "${f}" 2>/dev/null \
-                    && chown controlbox:controlbox "${f}" 2>/dev/null || true
-                cb_info "Permisos de ${f} actualizados: 600 → 640"
-            fi
+            chown controlbox:controlbox "${f}" 2>/dev/null || true
+            chmod 640 "${f}" 2>/dev/null || true
         fi
     done
 
-    # Asegurar que el directorio de config sea ejecutable/accesible por el grupo
-    if [[ -d "${config_dir}" ]]; then
-        local dir_mode
-        dir_mode="$(stat -c '%a' "${config_dir}" 2>/dev/null || echo 0)"
-        if [[ "${dir_mode}" == "700" ]] || [[ "${dir_mode}" == "600" ]]; then
-            chmod 750 "${config_dir}" 2>/dev/null || true
-            chown controlbox:controlbox "${config_dir}" 2>/dev/null || true
-            cb_info "Permisos de ${config_dir} actualizados a 750"
-        fi
-    fi
+    # 3. Otros subdirectorios del config (traefik, ssl, etc.) — al menos accesibles
+    find "${config_dir}" -maxdepth 1 -mindepth 1 -type d \
+        -exec chown -R controlbox:controlbox {} \; 2>/dev/null || true
+
+    cb_info "Permisos de configuración ajustados (GID=${target_gid}, archivos env=640)"
 }
 
 cb_compose_ensure_docker_proxy() {
@@ -310,7 +301,7 @@ cb_docker_registry_image_ok() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-4.11.4}"
+    local version="${CONTROLBOX_VERSION:-4.11.5}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     cb_app_source_available || return 1
@@ -514,7 +505,7 @@ cb_compose_validate_env_file() {
 cb_docker_pull_images() {
     cb_step "Descargando imágenes Docker"
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
-    local version="${CONTROLBOX_VERSION:-4.11.4}"
+    local version="${CONTROLBOX_VERSION:-4.11.5}"
     local api_image="ghcr.io/grodtech/controlbox-api:${version}"
 
     if ! cb_compose_validate_env_file "${env_file}"; then

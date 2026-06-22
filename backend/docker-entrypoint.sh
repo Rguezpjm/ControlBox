@@ -52,6 +52,20 @@ if [ "$(id -u)" = "0" ]; then
   if [ -d /var/log/pure-ftpd ]; then
     chown -R controlbox:controlbox /var/log/pure-ftpd 2>/dev/null || true
   fi
+
+  # Asegurar que platform.env sea legible por el usuario controlbox del contenedor.
+  # El archivo está montado desde el host con permisos del host; si hay mismatch
+  # de UID/GID, lo copiamos en el mismo directorio con un nombre accesible.
+  _platform_env="${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}/platform.env"
+  if [ -f "${_platform_env}" ]; then
+    # Corregir permisos en el volumen montado directamente (somos root aquí)
+    chmod 640 "${_platform_env}" 2>/dev/null || true
+    chown "$(id -u controlbox):$(id -g controlbox)" "${_platform_env}" 2>/dev/null || true
+    # Asegurar que el directorio sea traversable
+    chmod o+x "${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}" 2>/dev/null || true
+    chmod g+rx "${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}" 2>/dev/null || true
+  fi
+
   cb_wait_for_docker
   exec gosu controlbox "$@"
 fi
