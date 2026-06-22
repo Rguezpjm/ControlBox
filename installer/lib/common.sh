@@ -456,6 +456,7 @@ cb_wait_for_service() {
     local name="$1"
     local check_cmd="$2"
     local timeout="${3:-120}"
+    local diagnose_cmd="${4:-}"
     local elapsed=0
     cb_info "Esperando servicio: ${name}..."
     while [[ ${elapsed} -lt ${timeout} ]]; do
@@ -470,5 +471,8 @@ cb_wait_for_service() {
     done
     echo ""
     cb_error "Timeout esperando servicio: ${name}"
+    if [[ -n "${diagnose_cmd}" ]]; then
+        eval "${diagnose_cmd}" || true
+    fi
     return 1
 }

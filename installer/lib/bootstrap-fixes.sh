@@ -242,7 +242,7 @@ cb_docker_registry_image_ok() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-4.11.1}"
+    local version="${CONTROLBOX_VERSION:-4.11.2}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     cb_app_source_available || return 1
@@ -287,6 +287,69 @@ cb_docker_compose_files() {
         files+=(-f "${CONTROLBOX_INSTALL_DIR}/docker-compose.panel-build.yml")
     fi
     echo "${files[@]}"
+}
+
+cb_compose_service_container_id() {
+    local env_file="$1"
+    local service="$2"
+    cb_docker_compose_run "${env_file}" ps --status running -q "${service}" 2>/dev/null | head -1
+}
+
+cb_compose_service_is_running() {
+    local env_file="$1"
+    local service="$2"
+    local cid
+    cid="$(cb_compose_service_container_id "${env_file}" "${service}")"
+    [[ -n "${cid}" ]]
+}
+
+cb_compose_service_is_healthy() {
+    local env_file="$1"
+    local service="$2"
+    local cid health
+
+    cid="$(cb_compose_service_container_id "${env_file}" "${service}")"
+    [[ -n "${cid}" ]] || return 1
+
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}healthy{{end}}' "${cid}" 2>/dev/null || echo unknown)"
+    [[ "${health}" == "healthy" ]]
+}
+
+cb_docker_proxy_ready() {
+    local env_file="$1"
+    local cid="${2:-controlbox-docker-proxy}"
+
+    if ! docker inspect "${cid}" >/dev/null 2>&1; then
+        cid="$(cb_compose_service_container_id "${env_file}" "docker-socket-proxy")"
+        [[ -n "${cid}" ]] || return 1
+    fi
+
+    if [[ "$(docker inspect --format '{{.State.Running}}' "${cid}" 2>/dev/null || echo false)" != "true" ]]; then
+        return 1
+    fi
+
+    if cb_docker_compose_run "${env_file}" exec -T docker-socket-proxy \
+        sh -c 'wget -qO- http://127.0.0.1:2375/_ping 2>/dev/null | grep -q OK || wget -q --spider http://127.0.0.1:2375/_ping >/dev/null 2>&1' \
+        2>/dev/null; then
+        return 0
+    fi
+
+    local health
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${cid}" 2>/dev/null || echo unknown)"
+    [[ "${health}" == "healthy" || "${health}" == "none" ]]
+}
+
+cb_docker_diagnose_proxy() {
+    local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
+    cb_error "Diagnóstico docker-socket-proxy (últimas 40 líneas):"
+    docker logs controlbox-docker-proxy --tail 40 2>&1 || true
+    echo ""
+    cb_error "Estado del contenedor:"
+    docker inspect controlbox-docker-proxy \
+        --format 'Status={{.State.Status}} Running={{.State.Running}} Health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}} ExitCode={{.State.ExitCode}} Error={{.State.Error}}' \
+        2>/dev/null || true
+    echo ""
+    cb_docker_compose_run "${env_file}" ps -a docker-socket-proxy 2>&1 || true
 }
 
 cb_docker_compose_run() {
@@ -383,7 +446,7 @@ cb_compose_validate_env_file() {
 cb_docker_pull_images() {
     cb_step "Descargando imágenes Docker"
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
-    local version="${CONTROLBOX_VERSION:-4.11.1}"
+    local version="${CONTROLBOX_VERSION:-4.11.2}"
     local api_image="ghcr.io/grodtech/controlbox-api:${version}"
 
     if ! cb_compose_validate_env_file "${env_file}"; then
@@ -556,7 +619,8 @@ cb_docker_deploy_stack() {
     fi
 
     cb_wait_for_service "docker-socket-proxy" \
-        "cb_docker_compose_run '${env_file}' ps docker-socket-proxy 2>/dev/null | grep -qE 'Up|running'" 90
+        "cb_docker_proxy_ready '${env_file}'" 120 \
+        "cb_docker_diagnose_proxy '${env_file}'"
 
     if ! cb_run_stream "Iniciando controlbox-api" \
         cb_docker_compose_run "${env_file}" up -d api; then
@@ -579,10 +643,10 @@ cb_docker_deploy_stack() {
     fi
 
     cb_wait_for_service "traefik" \
-        "cb_docker_compose_run '${env_file}' ps traefik 2>/dev/null | grep -qE 'healthy|Up'" 90
+        "cb_compose_service_is_healthy '${env_file}' traefik || cb_compose_service_is_running '${env_file}' traefik" 90
 
     cb_wait_for_service "panel" \
-        "cb_docker_compose_run '${env_file}' ps panel 2>/dev/null | grep -q Up" 120
+        "cb_compose_service_is_running '${env_file}' panel" 120
 
     cb_step_done "deploy_stack"
     cb_success "Stack desplegado correctamente"

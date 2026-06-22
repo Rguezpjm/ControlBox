@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-4.11.1}"
+CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-4.11.2}"
 CONTROLBOX_INSTALL_URL="${CONTROLBOX_INSTALL_URL:-https://install.grodtech.com}"
 
 echo "ControlBox Installer Packager v${CONTROLBOX_VERSION}"
