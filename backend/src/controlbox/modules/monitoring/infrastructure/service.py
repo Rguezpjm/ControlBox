@@ -14,6 +14,7 @@ from controlbox.modules.platform.application.alert_evaluator import ResourceAler
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
 from controlbox.shared.infrastructure.redis.client import RedisClient
 from controlbox.shared.infrastructure.redis.leader_lock import LeaderLock
+from controlbox.shared.infrastructure.site_monitor import SiteCheckTarget, SiteMonitorService
 
 logger = logging.getLogger("controlbox.monitoring")
 
@@ -33,11 +34,13 @@ class MonitoringCollectorTask:
         self._redis = redis_client
         self._settings = settings
         self._broadcaster = broadcaster
-        self._host = HostMetricsCollector()
+        self._host = HostMetricsCollector(settings)
         self._tenant = TenantMetricsCollector(settings)
         self._running = False
         self._lock = LeaderLock(redis_client, "monitoring_collector", ttl_seconds=30)
-        self._alert_evaluator = ResourceAlertEvaluator(broadcaster)
+        self._alert_evaluator = ResourceAlertEvaluator(broadcaster, settings)
+        self._last_site_traffic: dict[str, tuple[float, float]] = {}
+        self._site_monitor = SiteMonitorService(settings, redis_client)
 
     def stop(self) -> None:
         self._running = False
@@ -65,18 +68,50 @@ class MonitoringCollectorTask:
             wp_entities = await uow.wordpress_sites.list_by_tenant(tenant_id, 500, 0)
 
         docker_by_name = {c.name: c for c in docker}
+        now = time.time()
+        monitor_targets: list[SiteCheckTarget] = []
+
         for site in site_entities:
             container = site.container_name or ""
             if container in docker_by_name:
                 stat = docker_by_name[container]
-                traffic = round(stat.network_in_mb + stat.network_out_mb, 2)
-                await self._store.append_point(tenant_id, f"site:{site.id}:traffic", traffic)
+                await self._record_site_traffic(
+                    tenant_id, "website", site.id, stat.network_in_mb + stat.network_out_mb, now
+                )
+            monitor_targets.append(
+                SiteCheckTarget(
+                    site_type="website",
+                    site_id=site.id,
+                    tenant_id=tenant_id,
+                    domain=site.domain,
+                    ssl_enabled=site.ssl_enabled,
+                    container_name=site.container_name,
+                    monitoring_enabled=site.monitoring_enabled,
+                    status=site.status.value,
+                )
+            )
+
         for wp in wp_entities:
             container = wp.nginx_container_name or wp.php_container_name or ""
             if container in docker_by_name:
                 stat = docker_by_name[container]
-                traffic = round(stat.network_in_mb + stat.network_out_mb, 2)
-                await self._store.append_point(tenant_id, f"site:{wp.id}:traffic", traffic)
+                await self._record_site_traffic(
+                    tenant_id, "wordpress", wp.id, stat.network_in_mb + stat.network_out_mb, now
+                )
+            monitor_targets.append(
+                SiteCheckTarget(
+                    site_type="wordpress",
+                    site_id=wp.id,
+                    tenant_id=tenant_id,
+                    domain=wp.domain,
+                    ssl_enabled=wp.ssl_enabled,
+                    container_name=wp.nginx_container_name or wp.php_container_name,
+                    monitoring_enabled=True,
+                    status=wp.status.value,
+                )
+            )
+
+        await self._site_monitor.run_checks(monitor_targets)
 
         snapshot = MonitoringSnapshot(
             host=host,
@@ -89,6 +124,30 @@ class MonitoringCollectorTask:
         )
         await self._store.append_snapshot(tenant_id, snapshot)
         return snapshot
+
+    async def _record_site_traffic(
+        self,
+        tenant_id: UUID,
+        site_type: str,
+        site_id: UUID,
+        total_mb: float,
+        now: float,
+    ) -> None:
+        key = f"{tenant_id}:{site_type}:{site_id}"
+        rate_mbps = 0.0
+        previous = self._last_site_traffic.get(key)
+        if previous is not None:
+            prev_total, prev_ts = previous
+            dt = max(now - prev_ts, 0.001)
+            delta_mb = total_mb - prev_total
+            if delta_mb >= 0:
+                rate_mbps = (delta_mb * 8) / dt
+        self._last_site_traffic[key] = (total_mb, now)
+        await self._store.append_point(
+            tenant_id,
+            f"site:{site_type}:{site_id}:traffic_mbps",
+            round(rate_mbps, 3),
+        )
 
     async def _collect_cycle(self) -> None:
         tenant_ids = await self._list_active_tenant_ids()

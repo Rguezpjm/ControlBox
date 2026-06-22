@@ -89,6 +89,8 @@ class Settings(BaseSettings):
 
     monitoring_interval_seconds: int = Field(default=5, alias="MONITORING_INTERVAL_SECONDS")
     monitoring_use_docker: bool = Field(default=True, alias="MONITORING_USE_DOCKER")
+    host_proc_path: str = Field(default="", alias="HOST_PROC")
+    host_root_path: str = Field(default="", alias="HOST_ROOT")
 
     security_enabled: bool = Field(default=True, alias="SECURITY_ENABLED")
     security_waf_enabled: bool = Field(default=True, alias="SECURITY_WAF_ENABLED")
@@ -136,6 +138,8 @@ class Settings(BaseSettings):
     controlbox_os_label: str = Field(default="Linux", alias="CONTROLBOX_OS_LABEL")
     controlbox_install_url: str = Field(default="https://install.grodtech.com", alias="CONTROLBOX_INSTALL_URL")
     controlbox_github_repo: str = Field(default="grodtech/ControlBox", alias="CONTROLBOX_GITHUB_REPO")
+    controlbox_server_ip: str = Field(default="", alias="CONTROLBOX_SERVER_IP")
+    controlbox_enabled_profiles: str = Field(default="databases,backups", alias="CONTROLBOX_ENABLED_PROFILES")
 
     celery_broker_url: str = Field(default="redis://localhost:6379/1", alias="CELERY_BROKER_URL")
     celery_result_backend: str = Field(default="redis://localhost:6379/2", alias="CELERY_RESULT_BACKEND")

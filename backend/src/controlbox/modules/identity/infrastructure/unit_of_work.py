@@ -28,6 +28,7 @@ from controlbox.modules.dns.infrastructure.repositories import (
     SqlAlchemyDnsZoneRepository,
 )
 from controlbox.modules.ftp.infrastructure.repositories import SqlAlchemyFtpAccountRepository
+from controlbox.modules.mail.infrastructure.repositories import MailAccountRepository, TenantMailServiceRepository
 from controlbox.modules.backups.infrastructure.repositories import (
     SqlAlchemyBackupDestinationRepository,
     SqlAlchemyBackupJobRepository,
@@ -81,6 +82,8 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
         self.dns_zones = SqlAlchemyDnsZoneRepository(self._session)
         self.dns_api_keys = SqlAlchemyDnsApiKeyRepository(self._session)
         self.ftp_accounts = SqlAlchemyFtpAccountRepository(self._session)
+        self.tenant_mail_services = TenantMailServiceRepository(self._session)
+        self.mail_accounts = MailAccountRepository(self._session)
         self.backup_destinations = SqlAlchemyBackupDestinationRepository(self._session)
         self.backup_schedules = SqlAlchemyBackupScheduleRepository(self._session)
         self.backup_jobs = SqlAlchemyBackupJobRepository(self._session)

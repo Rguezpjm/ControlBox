@@ -64,6 +64,34 @@ class UpdateSetupChecklistRequest(BaseModel):
     completed: bool
 
 
+class ServiceProfileSchema(BaseModel):
+    id: str
+    profile: str
+    name: str
+    category: str
+    description: str
+    enabled: bool
+    running: bool
+    requires: list[str] = Field(default_factory=list)
+
+
+class ServicesOverviewSchema(BaseModel):
+    can_manage: bool
+    enabled_profiles: list[str]
+    services: list[ServiceProfileSchema]
+    message: str = ""
+
+
+class ApplyServicesRequest(BaseModel):
+    profiles: list[str] = Field(min_length=1)
+
+
+class ApplyServicesResponse(BaseModel):
+    success: bool
+    message: str
+    enabled_profiles: list[str] = Field(default_factory=list)
+
+
 class ResourceAlertSchema(BaseModel):
     id: str
     metric: str
@@ -136,6 +164,9 @@ class PanelSettingsSchema(BaseModel):
     memory_threshold_percent: float = 90.0
     disk_threshold_percent: float = 90.0
     alert_cooldown_minutes: int = 15
+    telegram_alerts_enabled: bool = False
+    telegram_chat_id: str = ""
+    telegram_bot_configured: bool = False
     controlbox_version: str = ""
     controlbox_profile: str = ""
     os_label: str = ""
@@ -160,6 +191,19 @@ class UpdatePanelSettingsRequest(BaseModel):
     memory_threshold_percent: float | None = Field(default=None, ge=50, le=100)
     disk_threshold_percent: float | None = Field(default=None, ge=50, le=100)
     alert_cooldown_minutes: int | None = Field(default=None, ge=5, le=1440)
+    telegram_alerts_enabled: bool | None = None
+    telegram_bot_token: str | None = Field(default=None, min_length=10, max_length=128)
+    telegram_chat_id: str | None = Field(default=None, max_length=64)
+
+
+class TestTelegramRequest(BaseModel):
+    telegram_bot_token: str | None = Field(default=None, min_length=10, max_length=128)
+    telegram_chat_id: str | None = Field(default=None, max_length=64)
+
+
+class TestTelegramResponse(BaseModel):
+    success: bool
+    message: str
 
 
 class PanelActionResponse(BaseModel):

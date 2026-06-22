@@ -104,6 +104,7 @@ cb_repair_fix() {
     cb_firewall_configure
 
     if [[ -f "${CONTROLBOX_INSTALL_DIR}/docker-compose.yml" ]]; then
+        cb_compose_ensure_docker_proxy
         cb_services_load_from_platform_env
         local -a profile_args=()
         # shellcheck disable=SC2206

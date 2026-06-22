@@ -61,6 +61,8 @@ DEFAULT_PERMISSIONS = [
     ("files.manage", "Manage Files", "files"),
     ("ftp.read", "Read FTP", "ftp"),
     ("ftp.manage", "Manage FTP", "ftp"),
+    ("mail.read", "Read Mail", "mail"),
+    ("mail.manage", "Manage Mail", "mail"),
     ("backups.read", "Read Backups", "backups"),
     ("backups.manage", "Manage Backups", "backups"),
     ("monitoring.read", "Read Monitoring", "monitoring"),

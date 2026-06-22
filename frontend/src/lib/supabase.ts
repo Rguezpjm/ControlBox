@@ -90,7 +90,16 @@ function authRequest<T>(endpoint: string, init: RequestInit = {}): Promise<T> {
   return request<T>(endpoint, init);
 }
 
+export interface SupabaseServiceStatus {
+  enabled: boolean;
+  status: string;
+  host: string;
+  port: number;
+  message: string;
+}
+
 export const supabaseApi = {
+  status: () => authRequest<SupabaseServiceStatus>("/api/v1/supabase/status"),
   listProjects: () => authRequest<SupabaseProject[]>("/api/v1/supabase/projects"),
   getProject: (id: string) => authRequest<SupabaseProject>(`/api/v1/supabase/projects/${id}`),
   createProject: (name: string) =>

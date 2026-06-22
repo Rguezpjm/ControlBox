@@ -26,6 +26,10 @@ class DatabaseDomainService:
         return normalized
 
     def validate_engine(self, engine: str) -> DatabaseEngineType:
+        if engine == DatabaseEngineType.POSTGRESQL.value:
+            raise ValidationError(
+                "PostgreSQL is provided via Supabase. Open Databases → Supabase tab to create a project."
+            )
         try:
             return DatabaseEngineType(engine)
         except ValueError as exc:

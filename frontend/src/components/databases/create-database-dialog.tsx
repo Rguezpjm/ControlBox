@@ -74,7 +74,7 @@ export function CreateDatabaseDialog({ open, onOpenChange, onCreated }: CreateDa
         <DialogHeader>
           <DialogTitle>Create Database</DialogTitle>
           <DialogDescription>
-            Provision a new database on MySQL, MariaDB, PostgreSQL or SQL Server.
+            Provision a new database on MySQL, MariaDB or SQL Server. For PostgreSQL use the Supabase tab.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -99,7 +99,6 @@ export function CreateDatabaseDialog({ open, onOpenChange, onCreated }: CreateDa
                 {(options?.engines || [
                   { engine: "mysql", label: "MySQL" },
                   { engine: "mariadb", label: "MariaDB" },
-                  { engine: "postgresql", label: "PostgreSQL" },
                   { engine: "mssql", label: "Microsoft SQL Server" },
                 ]).map((opt) => (
                   <SelectItem key={opt.engine} value={opt.engine}>

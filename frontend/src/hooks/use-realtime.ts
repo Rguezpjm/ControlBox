@@ -32,8 +32,35 @@ export function useLiveMetrics(initialMetrics: Record<string, number>) {
   const [metrics, setMetrics] = useState(initialMetrics);
 
   useEffect(() => {
+    setMetrics(initialMetrics);
+  }, [initialMetrics.cpu, initialMetrics.memory, initialMetrics.disk, initialMetrics.uptime_seconds]);
+
+  useEffect(() => {
     return subscribe((event) => {
-      if (event.type === "metric" && typeof event.payload.value === "number") {
+      if (event.type !== "metric") return;
+
+      if (event.resource === "monitoring") {
+        const payload = event.payload as {
+          host?: {
+            cpu_percent?: number;
+            memory_percent?: number;
+            disk_percent?: number;
+            uptime_seconds?: number;
+          };
+        };
+        const host = payload?.host;
+        if (!host) return;
+        setMetrics((prev) => ({
+          ...prev,
+          cpu: host.cpu_percent ?? prev.cpu,
+          memory: host.memory_percent ?? prev.memory,
+          disk: host.disk_percent ?? prev.disk,
+          uptime: host.uptime_seconds ?? prev.uptime,
+        }));
+        return;
+      }
+
+      if (typeof event.payload?.value === "number") {
         setMetrics((prev) => ({
           ...prev,
           [event.resource]: event.payload.value as number,

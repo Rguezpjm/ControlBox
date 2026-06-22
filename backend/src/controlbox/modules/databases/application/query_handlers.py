@@ -61,7 +61,6 @@ class GetDatabaseOptionsHandler:
         engines = [
             EngineOption("mysql", "MySQL", ENGINE_DEFAULT_PORTS[DatabaseEngineType.MYSQL], True),
             EngineOption("mariadb", "MariaDB", ENGINE_DEFAULT_PORTS[DatabaseEngineType.MARIADB], True),
-            EngineOption("postgresql", "PostgreSQL", ENGINE_DEFAULT_PORTS[DatabaseEngineType.POSTGRESQL], True),
             EngineOption("mssql", "Microsoft SQL Server", ENGINE_DEFAULT_PORTS[DatabaseEngineType.MSSQL], False),
         ]
         return DatabaseOptions(engines=engines)

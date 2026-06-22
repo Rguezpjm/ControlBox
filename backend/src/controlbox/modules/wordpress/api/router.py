@@ -63,21 +63,22 @@ from controlbox.modules.wordpress.application.queries import (
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import DomainException, ForbiddenError
-from controlbox.shared.infrastructure.site_stats import get_site_traffic_stats, get_ssl_days_remaining
+from controlbox.shared.infrastructure.site_stats import enrich_site_monitoring_fields, get_ssl_days_remaining
 
 
 router = APIRouter(prefix="/wordpress", tags=["wordpress"])
 
 
 async def _wordpress_schema(container: AppState, tenant_id: UUID, site) -> WordPressSiteResponseSchema:
-    requests, sparkline = await get_site_traffic_stats(container.redis_client, tenant_id, site.id)
+    monitoring = await enrich_site_monitoring_fields(
+        container.redis_client, tenant_id, site.id, "wordpress"
+    )
     return WordPressSiteResponseSchema(
         **site.__dict__,
         ssl_days_remaining=get_ssl_days_remaining(
             container.settings, site.domain, site.ssl_enabled, site.ssl_status
         ),
-        requests_count=requests,
-        requests_sparkline=sparkline,
+        **monitoring,
     )
 
 

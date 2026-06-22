@@ -69,6 +69,40 @@ services:
       timeout: 5s
       retries: 5
 
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: controlbox-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      EXEC: 1
+      POST: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      IMAGES: 1
+      BUILD: 1
+      INFO: 1
+      PING: 1
+      VERSION: 1
+      DISTRIBUTION: 1
+      AUTH: 0
+      SECRETS: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+      NODES: 0
+      PLUGINS: 0
+      SESSION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - controlbox
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
   mysql:
     image: mysql:8.4
     container_name: controlbox-mysql
@@ -119,6 +153,9 @@ services:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
       MYSQL_HOST: mysql
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      HOST_PROC: /host/proc
+      HOST_ROOT: /host/root
       PLATFORM_CONFIG_DIR: /host/etc/controlbox
       CONTROLBOX_INSTALL_DIR: /host/opt/controlbox
       SITES_BASE_PATH: /var/lib/controlbox/sites
@@ -132,8 +169,12 @@ services:
       - ${CONTROLBOX_DATA_DIR}/sites:/var/lib/controlbox/sites
       - ${CONTROLBOX_DATA_DIR}/backups:/var/lib/controlbox/backups
       - ${CONTROLBOX_DATA_DIR}/letsencrypt:/var/lib/controlbox/letsencrypt:ro
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
     depends_on:
+      docker-socket-proxy:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:
@@ -157,6 +198,7 @@ services:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
       MYSQL_HOST: mysql
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
       SITES_BASE_PATH: /var/lib/controlbox/sites
       BACKUPS_BASE_PATH: /var/lib/controlbox/backups
       DATABASE_BACKUPS_PATH: /var/lib/controlbox/backups/databases
@@ -166,8 +208,9 @@ services:
     volumes:
       - ${CONTROLBOX_DATA_DIR}/sites:/var/lib/controlbox/sites
       - ${CONTROLBOX_DATA_DIR}/backups:/var/lib/controlbox/backups
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
+      docker-socket-proxy:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:

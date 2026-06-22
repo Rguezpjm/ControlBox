@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { Globe, Database, HardDrive, Network } from "lucide-react";
+import { Globe, Database, HardDrive, Network, Radio } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { MetricsChart } from "@/components/dashboard/metrics-chart";
@@ -9,17 +9,18 @@ import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { ResourceMeters } from "@/components/dashboard/resource-meters";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/skeletons";
-import { useDashboardData } from "@/hooks/use-dashboard-data";
+import { useMonitoring } from "@/hooks/use-monitoring";
 import { useI18n } from "@/providers/i18n-provider";
 import { formatBytes } from "@/lib/utils";
 
 function DashboardContent() {
   const { t } = useI18n();
-  const { data, error, loading } = useDashboardData();
+  const { overview, history, loading, connected } = useMonitoring();
 
-  if (loading && !data) return <PageSkeleton />;
-  if (error || !data) {
+  if (loading && !overview) return <PageSkeleton />;
+  if (!overview || !history) {
     return (
       <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-sm text-destructive">
         {t("dashboard.loadError")}
@@ -27,11 +28,10 @@ function DashboardContent() {
     );
   }
 
-  const { overview, history } = data;
   const { host, websites, databases, services } = overview;
 
-  const runningSites = websites.filter((w) => w.status === "running" || w.status === "active").length;
-  const pendingSites = websites.length - runningSites;
+  const runningSites = websites.filter((w) => w.status === "running").length;
+  const pendingSites = websites.filter((w) => w.status !== "running").length;
   const healthyDbs = databases.filter((d) => d.status === "running" || d.status === "healthy").length;
   const servicesUp = services.filter((s) => s.status === "healthy" || s.status === "up").length;
 
@@ -46,7 +46,18 @@ function DashboardContent() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("dashboard.title")} description={t("dashboard.subtitle")} />
+      <PageHeader
+        title={t("dashboard.title")}
+        description={t("dashboard.subtitle")}
+        action={
+          connected ? (
+            <Badge variant="outline" className="gap-1.5 border-success/40 text-success">
+              <Radio className="h-3 w-3 animate-pulse" />
+              {t("dashboard.live")}
+            </Badge>
+          ) : undefined
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -75,10 +86,14 @@ function DashboardContent() {
         />
         <StatCard
           title={t("dashboard.network")}
-          value={`${host.network_in_mbps.toFixed(1)} Mbps`}
+          value={
+            host.network_in_mbps + host.network_out_mbps > 0
+              ? `${(host.network_in_mbps + host.network_out_mbps).toFixed(2)} Mbps`
+              : "0 Mbps"
+          }
           description={t("dashboard.inOutMbps", {
-            in: host.network_in_mbps.toFixed(1),
-            out: host.network_out_mbps.toFixed(1),
+            in: host.network_in_mbps.toFixed(2),
+            out: host.network_out_mbps.toFixed(2),
           })}
           icon={Network}
         />
@@ -101,7 +116,12 @@ function DashboardContent() {
               memory_percent: host.memory_percent,
               disk_percent: host.disk_percent,
               uptime_seconds: host.uptime_seconds,
+              memory_used_mb: host.memory_used_mb,
+              memory_total_mb: host.memory_total_mb,
+              disk_used_gb: host.disk_used_gb,
+              disk_total_gb: host.disk_total_gb,
             }}
+            connected={connected}
           />
           <ActivityFeed />
         </div>

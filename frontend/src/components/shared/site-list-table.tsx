@@ -25,8 +25,8 @@ export interface SiteTableRow {
   ssl_enabled?: boolean;
   ssl_status?: string;
   ssl_days_remaining?: number | null;
-  requests_count?: number;
-  requests_sparkline?: number[];
+  traffic_mbps?: number;
+  traffic_sparkline?: number[];
   href?: string;
   subtitle?: string;
 }
@@ -96,7 +96,7 @@ export function SiteListTable({
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Site</th>
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">SSL</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Requests</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Tráfico</th>
                     <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
@@ -147,10 +147,10 @@ export function SiteListTable({
                       <td className="px-4 py-3">
                         <div className="flex min-w-[100px] flex-col gap-1">
                           <span className="text-xs font-medium tabular-nums">
-                            {row.requests_count ?? 0}
+                            {(row.traffic_mbps ?? 0).toFixed(2)} Mbps
                           </span>
                           <MiniSparkline
-                            data={row.requests_sparkline ?? []}
+                            data={row.traffic_sparkline ?? []}
                             className="text-emerald-500"
                           />
                         </div>

@@ -1,6 +1,7 @@
 import { ApiError, request } from "@/lib/api-client";
+import type { SiteMonitoringFields } from "@/lib/site-monitoring";
 
-export interface Website {
+export interface Website extends SiteMonitoringFields {
   id: string;
   tenant_id: string;
   name: string;
@@ -23,8 +24,6 @@ export interface Website {
   disk_limit_mb: number;
   error_message: string | null;
   ssl_days_remaining?: number | null;
-  requests_count?: number;
-  requests_sparkline?: number[];
   created_at: string;
   updated_at: string;
 }

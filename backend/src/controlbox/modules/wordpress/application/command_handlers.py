@@ -33,7 +33,7 @@ from controlbox.modules.wordpress.workers.tasks import (
 )
 from controlbox.shared.application.cqrs import CommandHandler
 from controlbox.shared.application.unit_of_work import UnitOfWork
-from controlbox.shared.domain.base import ForbiddenError, NotFoundError
+from controlbox.shared.domain.base import ForbiddenError, NotFoundError, ConflictError, ValidationError
 
 
 def _to_response(site: WordPressSite) -> WordPressSiteResponse:
@@ -78,6 +78,10 @@ class CreateWordPressSiteHandler(CommandHandler[CreateWordPressSiteCommand, Word
         admin_user = domain_service.validate_admin_user(command.admin_user)
         await domain_service.ensure_domain_available(domain, command.tenant_id)
 
+        existing_website = await self._uow.websites.get_by_domain(domain, command.tenant_id)
+        if existing_website:
+            raise ConflictError(f"Domain '{domain}' is already used by a website")
+
         site = WordPressSite(
             tenant_id=command.tenant_id,
             name=command.name.strip(),
@@ -98,7 +102,14 @@ class CreateWordPressSiteHandler(CommandHandler[CreateWordPressSiteCommand, Word
 
         await self._uow.wordpress_sites.add(site)
 
-        task = provision_wordpress_site.delay(str(site.id), command.admin_password)
+        try:
+            task = provision_wordpress_site.delay(str(site.id), command.admin_password)
+        except Exception as exc:
+            raise ValidationError(
+                "Could not queue WordPress deployment. Verify Redis and the worker "
+                f"(controlbox-worker) are running, then run: controlbox repair. ({exc})"
+            ) from exc
+
         site.mark_provisioning(task.id)
 
         await self._uow.wordpress_sites.save(site)

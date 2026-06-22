@@ -10,6 +10,8 @@ from typing import Any
 from controlbox.config.settings import Settings
 from controlbox.modules.platform.domain.entities import TenantPlatformSettings
 from controlbox.modules.platform.infrastructure.panel_config import PanelConfigService
+from controlbox.modules.supabase.infrastructure.crypto import SecretEncryptor
+from controlbox.modules.platform.infrastructure.telegram_notifier import TelegramNotifier
 
 
 DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
@@ -89,13 +91,19 @@ class PanelSettingsService:
             "memory_threshold_percent": platform.memory_threshold_percent,
             "disk_threshold_percent": platform.disk_threshold_percent,
             "alert_cooldown_minutes": platform.alert_cooldown_minutes,
+            "telegram_alerts_enabled": platform.telegram_alerts_enabled,
+            "telegram_chat_id": platform.telegram_chat_id or "",
+            "telegram_bot_configured": bool(platform.telegram_bot_token_enc),
             "controlbox_version": self._settings.controlbox_version,
             "controlbox_profile": self._settings.controlbox_profile,
             "os_label": self._settings.controlbox_os_label,
         }
 
     def _detect_server_ip(self) -> str:
-        override = merge_panel_settings({}).get("server_ip_override", "")
+        if self._settings.controlbox_server_ip.strip():
+            return self._settings.controlbox_server_ip.strip()
+        prefs = merge_panel_settings({})
+        override = prefs.get("server_ip_override", "")
         return override or "127.0.0.1"
 
     def apply_preferences(
@@ -116,6 +124,9 @@ class PanelSettingsService:
         memory_threshold_percent: float | None = None,
         disk_threshold_percent: float | None = None,
         alert_cooldown_minutes: int | None = None,
+        telegram_alerts_enabled: bool | None = None,
+        telegram_bot_token: str | None = None,
+        telegram_chat_id: str | None = None,
     ) -> None:
         prefs = merge_panel_settings(platform.panel_settings)
         if panel_alias is not None:
@@ -148,6 +159,47 @@ class PanelSettingsService:
             platform.disk_threshold_percent = disk_threshold_percent
         if alert_cooldown_minutes is not None:
             platform.alert_cooldown_minutes = alert_cooldown_minutes
+
+        if telegram_alerts_enabled is not None:
+            platform.telegram_alerts_enabled = telegram_alerts_enabled
+        if telegram_chat_id is not None:
+            platform.telegram_chat_id = telegram_chat_id.strip()[:64] or None
+        if telegram_bot_token:
+            encryptor = SecretEncryptor(self._settings)
+            platform.telegram_bot_token_enc = encryptor.encrypt(telegram_bot_token.strip())
+
+    async def test_telegram(
+        self,
+        platform: TenantPlatformSettings,
+        *,
+        bot_token: str | None = None,
+        chat_id: str | None = None,
+    ) -> tuple[bool, str]:
+        notifier = TelegramNotifier(SecretEncryptor(self._settings))
+        token = bot_token
+        cid = chat_id or platform.telegram_chat_id
+        if not token and platform.telegram_bot_token_enc:
+            token = SecretEncryptor(self._settings).decrypt(platform.telegram_bot_token_enc)
+        if not token or not cid:
+            return False, "Bot token and chat ID are required"
+        return await notifier.test_connection(bot_token=token, chat_id=cid)
+
+    async def notify_telegram_alert(
+        self,
+        platform: TenantPlatformSettings,
+        *,
+        message: str,
+        severity: str,
+    ) -> None:
+        if not platform.telegram_alerts_enabled:
+            return
+        notifier = TelegramNotifier(SecretEncryptor(self._settings))
+        await notifier.send_alert(
+            bot_token_enc=platform.telegram_bot_token_enc,
+            chat_id=platform.telegram_chat_id,
+            message=message,
+            severity=severity,
+        )
 
     async def update_host_paths(
         self,

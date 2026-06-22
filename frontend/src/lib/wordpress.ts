@@ -1,6 +1,7 @@
 import { ApiError, request } from "@/lib/api-client";
+import type { SiteMonitoringFields } from "@/lib/site-monitoring";
 
-export interface WordPressSite {
+export interface WordPressSite extends SiteMonitoringFields {
   id: string;
   tenant_id: string;
   name: string;
@@ -20,8 +21,6 @@ export interface WordPressSite {
   parent_site_id: string | null;
   error_message: string | null;
   ssl_days_remaining?: number | null;
-  requests_count?: number;
-  requests_sparkline?: number[];
   task_id: string | null;
   created_at: string;
   updated_at: string;

@@ -55,6 +55,9 @@ function parseErrorPayload(text: string, status: number): { message: string; cod
     // non-JSON body (HTML 404/502 from proxy)
   }
 
+  if (status === 401) {
+    return { message: "Session expired. Please sign in again.", code: "unauthorized" };
+  }
   if (status === 404) {
     return { message: "API route not found. Rebuild panel and check PANEL_BASE_PATH.", code: "not_found" };
   }
@@ -64,7 +67,16 @@ function parseErrorPayload(text: string, status: number): { message: string; cod
   if (status === 403) {
     return { message: text.includes("CSRF") ? "CSRF validation failed" : "Request blocked.", code: "forbidden" };
   }
-  return { message: "Request failed", code: undefined };
+  if (status === 409) {
+    return { message: "This domain or resource is already in use.", code: "conflict" };
+  }
+  if (status === 422) {
+    return { message: "Invalid form data. Check all fields and try again.", code: "validation_error" };
+  }
+  if (status === 500) {
+    return { message: "Server error. Run controlbox repair on the VPS and check API logs.", code: "internal_error" };
+  }
+  return { message: `Request failed (HTTP ${status})`, code: undefined };
 }
 
 let refreshPromise: Promise<boolean> | null = null;

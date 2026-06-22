@@ -2,7 +2,6 @@ import asyncio
 import json
 import re
 import time
-from datetime import datetime, timezone
 from uuid import UUID
 
 import psutil
@@ -12,26 +11,65 @@ from controlbox.modules.monitoring.domain.entities import (
     DatabaseMetrics,
     DockerContainerMetrics,
     HostMetrics,
-    MonitoringSnapshot,
-    ServiceHealth,
     SupabaseMetrics,
     WebsiteMetrics,
+)
+from controlbox.modules.monitoring.infrastructure.host_system_metrics import (
+    network_rates_mbps,
+    read_cpu_percent,
+    read_disk_usage,
+    read_memory_percent,
+    read_uptime_seconds,
+    resolve_disk_path,
+    resolve_proc_path,
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
 
 
 class HostMetricsCollector:
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
+        self._settings = settings
+        self._proc_path = resolve_proc_path(settings.host_proc_path if settings else "")
+        self._disk_path = resolve_disk_path(
+            settings.host_root_path if settings else "",
+            settings.controlbox_data_dir if settings else "/var/lib/controlbox",
+        )
+        self._last_cpu: tuple[int, int, float] | None = None
         self._last_net: tuple[int, int, float] | None = None
 
     async def collect(self) -> HostMetrics:
         return await asyncio.to_thread(self._collect_sync)
 
     def _collect_sync(self) -> HostMetrics:
+        if str(self._proc_path) != "/proc":
+            return self._collect_from_proc()
+        return self._collect_from_psutil()
+
+    def _collect_from_proc(self) -> HostMetrics:
+        cpu, self._last_cpu = read_cpu_percent(self._proc_path, self._last_cpu)
+        mem_pct, mem_used_mb, mem_total_mb = read_memory_percent(self._proc_path)
+        disk_pct, disk_used_gb, disk_total_gb = read_disk_usage(self._disk_path)
+        in_mbps, out_mbps, self._last_net = network_rates_mbps(self._proc_path, self._last_net)
+        uptime = read_uptime_seconds(self._proc_path)
+
+        return HostMetrics(
+            cpu_percent=round(cpu, 2),
+            memory_percent=round(mem_pct, 2),
+            memory_used_mb=round(mem_used_mb, 1),
+            memory_total_mb=round(mem_total_mb, 1),
+            disk_percent=round(disk_pct, 2),
+            disk_used_gb=round(disk_used_gb, 2),
+            disk_total_gb=round(disk_total_gb, 2),
+            network_in_mbps=round(in_mbps, 2),
+            network_out_mbps=round(out_mbps, 2),
+            uptime_seconds=uptime,
+        )
+
+    def _collect_from_psutil(self) -> HostMetrics:
         cpu = psutil.cpu_percent(interval=0.1)
         mem = psutil.virtual_memory()
-        disk = psutil.disk_usage("/")
+        disk = psutil.disk_usage(self._disk_path)
         net = psutil.net_io_counters()
 
         in_mbps = 0.0
@@ -39,8 +77,8 @@ class HostMetricsCollector:
         now = time.time()
         if net and self._last_net:
             dt = max(now - self._last_net[2], 0.001)
-            in_mbps = ((net.bytes_recv - self._last_net[0]) * 8) / (dt * 1_000_000)
-            out_mbps = ((net.bytes_sent - self._last_net[1]) * 8) / (dt * 1_000_000)
+            in_mbps = max(0.0, ((net.bytes_recv - self._last_net[0]) * 8) / (dt * 1_000_000))
+            out_mbps = max(0.0, ((net.bytes_sent - self._last_net[1]) * 8) / (dt * 1_000_000))
         if net:
             self._last_net = (net.bytes_recv, net.bytes_sent, now)
 
@@ -55,8 +93,8 @@ class HostMetricsCollector:
             disk_percent=round(disk.percent, 2),
             disk_used_gb=round(disk.used / (1024 ** 3), 2),
             disk_total_gb=round(disk.total / (1024 ** 3), 2),
-            network_in_mbps=round(max(in_mbps, 0), 2),
-            network_out_mbps=round(max(out_mbps, 0), 2),
+            network_in_mbps=round(in_mbps, 2),
+            network_out_mbps=round(out_mbps, 2),
             uptime_seconds=uptime,
         )
 
@@ -207,12 +245,16 @@ class TenantMetricsCollector:
         website_metrics: list[WebsiteMetrics] = []
         for site in websites:
             docker_stat = docker_by_name.get(site.container_name or "")
+            if site.container_name:
+                status = "running" if docker_stat else "stopped"
+            else:
+                status = site.status.value
             website_metrics.append(
                 WebsiteMetrics(
                     id=str(site.id),
                     name=site.name,
                     domain=site.domain,
-                    status=site.status.value,
+                    status=status,
                     cpu_percent=docker_stat.cpu_percent if docker_stat else 0.0,
                     memory_percent=docker_stat.memory_percent if docker_stat else 0.0,
                     disk_used_mb=site.disk_used_mb,

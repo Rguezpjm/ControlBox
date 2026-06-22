@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     )
     from controlbox.modules.dns.infrastructure.repositories import DnsApiKeyRepository, DnsZoneRepository
     from controlbox.modules.ftp.infrastructure.repositories import FtpAccountRepository
+    from controlbox.modules.mail.infrastructure.repositories import MailAccountRepository, TenantMailServiceRepository
     from controlbox.modules.backups.infrastructure.repositories import (
         BackupDestinationRepository,
         BackupJobRepository,
@@ -62,6 +63,8 @@ class UnitOfWork(ABC):
     dns_zones: "DnsZoneRepository"
     dns_api_keys: "DnsApiKeyRepository"
     ftp_accounts: "FtpAccountRepository"
+    tenant_mail_services: "TenantMailServiceRepository"
+    mail_accounts: "MailAccountRepository"
     backup_destinations: "BackupDestinationRepository"
     backup_schedules: "BackupScheduleRepository"
     backup_jobs: "BackupJobRepository"

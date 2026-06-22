@@ -48,7 +48,7 @@ from controlbox.modules.websites.application.queries import (
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import DomainException, ForbiddenError
-from controlbox.shared.infrastructure.site_stats import get_site_traffic_stats, get_ssl_days_remaining
+from controlbox.shared.infrastructure.site_stats import enrich_site_monitoring_fields, get_ssl_days_remaining
 
 
 router = APIRouter(prefix="/websites", tags=["websites"])
@@ -59,14 +59,15 @@ async def _website_schema(
     tenant_id: UUID,
     website,
 ) -> WebsiteResponseSchema:
-    requests, sparkline = await get_site_traffic_stats(container.redis_client, tenant_id, website.id)
+    monitoring = await enrich_site_monitoring_fields(
+        container.redis_client, tenant_id, website.id, "website"
+    )
     return WebsiteResponseSchema(
         **website.__dict__,
         ssl_days_remaining=get_ssl_days_remaining(
             container.settings, website.domain, website.ssl_enabled, website.ssl_status
         ),
-        requests_count=requests,
-        requests_sparkline=sparkline,
+        **monitoring,
     )
 
 
@@ -89,13 +90,17 @@ def _modification_schema(view) -> SiteModificationSchema:
         nginx_config=view.nginx_config,
         access_log=view.access_log,
         error_log=view.error_log,
+    )
+
+
 def _require_tenant(context: RequestContext) -> UUID:
     if not context.tenant_id:
         raise map_domain_exception(ForbiddenError("Tenant context required"))
     return context.tenant_id
 
 
-@router.get("/options", response_model=WebsiteOptionsSchema)async def get_website_options(
+@router.get("/options", response_model=WebsiteOptionsSchema)
+async def get_website_options(
     context: Annotated[RequestContext, Depends(require_permission("websites.read"))],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> WebsiteOptionsSchema:
@@ -161,13 +166,14 @@ async def create_website(
 async def get_website(
     website_id: UUID,
     context: Annotated[RequestContext, Depends(require_permission("websites.read"))],
+    container: Annotated[AppState, Depends(get_app_state)],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> WebsiteResponseSchema:
     tenant_id = _require_tenant(context)
     try:
         handler = GetWebsiteHandler(uow=uow)
         website = await handler.handle(GetWebsiteQuery(website_id=website_id, tenant_id=tenant_id))
-        return WebsiteResponseSchema(**website.__dict__)
+        return await _website_schema(container, tenant_id, website)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 

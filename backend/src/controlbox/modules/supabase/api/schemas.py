@@ -12,6 +12,14 @@ class CreateSchemaRequest(BaseModel):
     name: str = Field(min_length=2, max_length=63)
 
 
+class SupabaseServiceStatusSchema(BaseModel):
+    enabled: bool
+    status: str
+    host: str
+    port: int
+    message: str
+
+
 class CreateBucketRequest(BaseModel):
     name: str = Field(min_length=2, max_length=48)
     public: bool = False

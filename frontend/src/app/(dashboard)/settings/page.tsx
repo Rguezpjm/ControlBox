@@ -1,11 +1,25 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
-import { FolderOpen, Globe, Loader2 } from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  Bell,
+  ExternalLink,
+  FolderOpen,
+  Globe,
+  Loader2,
+  Palette,
+  Power,
+  Send,
+  Server,
+  Settings2,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { PageHeader } from "@/components/shared/page-header";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -18,11 +32,13 @@ import { PageSkeleton } from "@/components/skeletons";
 import {
   PanelSettingRow,
   PanelSettingsCard,
+  SettingsSection,
 } from "@/components/settings/panel-setting-row";
 import {
   getPanelSettings,
   shutdownPanelService,
   syncPanelServerTime,
+  testTelegramAlerts,
   updatePanelSettings,
   type PanelSettings,
 } from "@/lib/platform";
@@ -32,7 +48,7 @@ import { toast } from "sonner";
 function SaveButton({
   onClick,
   saving,
-  label = "Save",
+  label = "Guardar",
 }: {
   onClick: () => void;
   saving: boolean;
@@ -44,6 +60,12 @@ function SaveButton({
       {label}
     </Button>
   );
+}
+
+function normalizePanelPath(path: string) {
+  const trimmed = path.trim();
+  if (!trimmed || trimmed === "/") return "/";
+  return trimmed.startsWith("/") ? trimmed.replace(/\/+$/, "") || "/" : `/${trimmed.replace(/\/+$/, "")}`;
 }
 
 function SettingsContent() {
@@ -67,6 +89,9 @@ function SettingsContent() {
   const [diskThreshold, setDiskThreshold] = useState("90");
   const [alertCooldown, setAlertCooldown] = useState("15");
   const [backupRetention, setBackupRetention] = useState("30");
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramBotToken, setTelegramBotToken] = useState("");
+  const [telegramChatId, setTelegramChatId] = useState("");
 
   const syncForm = useCallback((settings: PanelSettings) => {
     setData(settings);
@@ -83,6 +108,9 @@ function SettingsContent() {
     setDiskThreshold(String(settings.disk_threshold_percent));
     setAlertCooldown(String(settings.alert_cooldown_minutes));
     setBackupRetention(String(settings.auto_backup_retention));
+    setTelegramEnabled(settings.telegram_alerts_enabled);
+    setTelegramChatId(settings.telegram_chat_id);
+    setTelegramBotToken("");
   }, []);
 
   const load = useCallback(async () => {
@@ -102,6 +130,14 @@ function SettingsContent() {
     load();
   }, [load]);
 
+  const panelPreviewUrl = useMemo(() => {
+    const ip = serverIp || "IP";
+    const port = panelPort || "8443";
+    const path = normalizePanelPath(panelPath);
+    const suffix = path === "/" ? "" : path;
+    return `http://${ip}:${port}${suffix}`;
+  }, [serverIp, panelPort, panelPath]);
+
   async function patch(
     key: string,
     payload: Parameters<typeof updatePanelSettings>[0],
@@ -119,7 +155,11 @@ function SettingsContent() {
     }
   }
 
-  async function toggle(key: keyof PanelSettings, value: boolean, field: Parameters<typeof updatePanelSettings>[0]) {
+  async function toggle(
+    key: keyof PanelSettings,
+    value: boolean,
+    field: Parameters<typeof updatePanelSettings>[0]
+  ) {
     setSavingKey(String(key));
     try {
       const updated = await updatePanelSettings(field);
@@ -137,12 +177,9 @@ function SettingsContent() {
   if (forbidden) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Panel Setting" description="Configuración del panel ControlBox" />
-        <PanelSettingsCard>
-          <PanelSettingRow
-            label="Theme"
-            hint="Tema claro u oscuro del panel"
-          >
+        <PageHeader title="Ajustes" description="Configuración del panel ControlBox" />
+        <PanelSettingsCard title="Apariencia">
+          <PanelSettingRow label="Tema" hint="Tema claro u oscuro del panel">
             <Select value={theme || "system"} onValueChange={setTheme}>
               <SelectTrigger className="max-w-xs">
                 <SelectValue />
@@ -154,7 +191,7 @@ function SettingsContent() {
               </SelectContent>
             </Select>
           </PanelSettingRow>
-          <PanelSettingRow label="Language" hint="Idioma de la interfaz del panel">
+          <PanelSettingRow label="Idioma" hint="Idioma de la interfaz del panel">
             <Select value={locale} onValueChange={(v) => setLocale(v as "en" | "es")}>
               <SelectTrigger className="max-w-xs">
                 <SelectValue />
@@ -176,363 +213,487 @@ function SettingsContent() {
   if (!data) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8">
       <PageHeader
-        title="Panel Setting"
+        title="Ajustes"
         description={`ControlBox ${data.controlbox_version} · ${data.os_label} · ${data.controlbox_profile}`}
       />
 
-      <PanelSettingsCard>
-        <PanelSettingRow
-          label="Close panel"
-          hint="Solo detiene el panel; no afecta webs, bases de datos ni otros servicios"
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SettingsSection
+          icon={<Settings2 className="h-4 w-4" />}
+          title="Acceso al panel"
+          description="Puerto y ruta de URL donde se publica el panel (ej. /ControlBox_Panel)"
         >
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={savingKey === "close"}
-            onClick={async () => {
-              setSavingKey("close");
-              try {
-                const result = await shutdownPanelService();
-                toast[result.success ? "success" : "error"](result.message);
-              } finally {
-                setSavingKey(null);
-              }
-            }}
-          >
-            {savingKey === "close" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Stop panel service
-          </Button>
-        </PanelSettingRow>
-
-        <PanelSettingRow label="Alias" hint="Nombre visible del servidor en el panel">
-          <div className="flex max-w-lg flex-wrap items-center gap-2">
-            <Input value={alias} onChange={(e) => setAlias(e.target.value)} className="flex-1" />
-            <SaveButton
-              saving={savingKey === "alias"}
-              onClick={() => patch("alias", { panel_alias: alias }, "Alias guardado")}
-            />
-          </div>
-        </PanelSettingRow>
-
-        <PanelSettingRow
-          label="Timeout"
-          hint="Si no hay actividad en este tiempo, la sesión del panel se cierra automáticamente"
-        >
-          <div className="flex max-w-lg flex-wrap items-center gap-2">
-            <Input
-              type="number"
-              min={1}
-              max={168}
-              value={timeoutHours}
-              onChange={(e) => setTimeoutHours(e.target.value)}
-              className="w-28"
-            />
-            <span className="text-sm text-muted-foreground">Hour(s)</span>
-            <SaveButton
-              label="Modify"
-              saving={savingKey === "timeout"}
-              onClick={() =>
-                patch(
-                  "timeout",
-                  { session_timeout_hours: Number(timeoutHours) },
-                  "Timeout actualizado"
-                )
-              }
-            />
-          </div>
-        </PanelSettingRow>
-
-        <PanelSettingRow
-          label="Default site folder"
-          hint="Los sitios nuevos se crearán por defecto en esta ruta"
-        >
-          <div className="flex max-w-xl flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[200px]">
-              <FolderOpen className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={siteFolder}
-                onChange={(e) => setSiteFolder(e.target.value)}
-                className="pl-9 font-mono text-xs"
-              />
-            </div>
-            <SaveButton
-              saving={savingKey === "siteFolder"}
-              onClick={() =>
-                patch("siteFolder", { default_site_folder: siteFolder }, "Carpeta de sitios guardada")
-              }
-            />
-          </div>
-        </PanelSettingRow>
-
-        <PanelSettingRow
-          label="Default backup folder"
-          hint="Directorio de respaldos de sitios y bases de datos"
-        >
-          <div className="flex max-w-xl flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[200px]">
-              <FolderOpen className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={backupFolder}
-                onChange={(e) => setBackupFolder(e.target.value)}
-                className="pl-9 font-mono text-xs"
-              />
-            </div>
-            <SaveButton
-              saving={savingKey === "backupFolder"}
-              onClick={() =>
-                patch(
-                  "backupFolder",
-                  { default_backup_folder: backupFolder },
-                  "Carpeta de backups guardada"
-                )
-              }
-            />
-          </div>
-        </PanelSettingRow>
-
-        <PanelSettingRow label="Server IP" hint="IP por defecto del servidor. Use IP interna para pruebas en VM">
-          <div className="flex max-w-lg flex-wrap items-center gap-2">
-            <Input value={serverIp} onChange={(e) => setServerIp(e.target.value)} className="flex-1" />
-            <SaveButton
-              saving={savingKey === "serverIp"}
-              onClick={() => patch("serverIp", { server_ip: serverIp }, "IP guardada")}
-            />
-          </div>
-        </PanelSettingRow>
-
-        <PanelSettingRow label="Server time" hint="Hora actual del servidor">
-          <div className="flex max-w-xl flex-wrap items-center gap-2">
-            <Input value={serverTime} readOnly className="flex-1 font-mono text-xs" />
-            <SaveButton
-              label="Sync"
-              saving={savingKey === "syncTime"}
-              onClick={async () => {
-                setSavingKey("syncTime");
-                try {
-                  const result = await syncPanelServerTime();
-                  if (result.server_time) {
-                    setServerTime(result.server_time.display);
+          <PanelSettingRow label="URL de acceso" hint="Vista previa con la IP y ruta configuradas">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2.5 font-mono text-xs">
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="break-all text-foreground">{panelPreviewUrl}</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[120px_1fr]">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Puerto</Label>
+                  <Input
+                    type="number"
+                    min={1024}
+                    max={65535}
+                    value={panelPort}
+                    onChange={(e) => setPanelPort(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Ruta base</Label>
+                  <Input
+                    value={panelPath}
+                    onChange={(e) => setPanelPath(e.target.value)}
+                    placeholder="/ControlBox_Panel"
+                    className="font-mono"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <SaveButton
+                  saving={savingKey === "panelAccess"}
+                  onClick={() =>
+                    patch(
+                      "panelAccess",
+                      {
+                        panel_port: Number(panelPort),
+                        panel_base_path: normalizePanelPath(panelPath),
+                      },
+                      "Acceso al panel guardado"
+                    )
                   }
-                  toast.success(result.message);
-                  await load();
-                } catch {
-                  toast.error("No se pudo sincronizar la hora");
-                } finally {
-                  setSavingKey(null);
+                />
+                {!data.can_apply_host_changes && (
+                  <Badge variant="outline" className="text-[10px] text-amber-700">
+                    Requiere repair en el host
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </PanelSettingRow>
+
+          <PanelSettingRow label="Alias" hint="Nombre visible del servidor en el panel">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input value={alias} onChange={(e) => setAlias(e.target.value)} className="max-w-md flex-1" />
+              <SaveButton
+                saving={savingKey === "alias"}
+                onClick={() => patch("alias", { panel_alias: alias }, "Alias guardado")}
+              />
+            </div>
+          </PanelSettingRow>
+
+          <PanelSettingRow
+            label="Timeout de sesión"
+            hint="Cierra la sesión tras este tiempo sin actividad"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                max={168}
+                value={timeoutHours}
+                onChange={(e) => setTimeoutHours(e.target.value)}
+                className="w-24"
+              />
+              <span className="text-sm text-muted-foreground">horas</span>
+              <SaveButton
+                label="Aplicar"
+                saving={savingKey === "timeout"}
+                onClick={() =>
+                  patch("timeout", { session_timeout_hours: Number(timeoutHours) }, "Timeout actualizado")
                 }
-              }}
-            />
-          </div>
-        </PanelSettingRow>
+              />
+            </div>
+          </PanelSettingRow>
+        </SettingsSection>
 
-        <PanelSettingRow label="Panel port" hint={`URL: IP${data.panel_url_hint}`}>
-          <div className="flex max-w-lg flex-wrap items-center gap-2">
-            <Input
-              type="number"
-              min={1024}
-              max={65535}
-              value={panelPort}
-              onChange={(e) => setPanelPort(e.target.value)}
-              className="w-32"
-            />
-            <Input
-              value={panelPath}
-              onChange={(e) => setPanelPath(e.target.value)}
-              placeholder="/"
-              className="flex-1 font-mono text-xs"
-            />
-            <SaveButton
-              saving={savingKey === "panelAccess"}
-              onClick={() =>
-                patch(
-                  "panelAccess",
-                  {
-                    panel_port: Number(panelPort),
-                    panel_base_path: panelPath,
-                  },
-                  "Acceso al panel guardado"
-                )
-              }
-            />
-          </div>
-        </PanelSettingRow>
-
-        <PanelSettingRow label="IPv6" hint="Permitir acceso al panel mediante dirección IPv6">
-          <Switch
-            checked={data.ipv6_enabled}
-            disabled={savingKey === "ipv6_enabled"}
-            onCheckedChange={(v) => toggle("ipv6_enabled", v, { ipv6_enabled: v })}
-          />
-        </PanelSettingRow>
-
-        <PanelSettingRow
-          label="Offline mode"
-          hint="Los servicios que requieren internet no estarán disponibles"
+        <SettingsSection
+          icon={<Server className="h-4 w-4" />}
+          title="Servidor"
+          description="IP, hora y rutas por defecto del host"
         >
-          <Switch
-            checked={data.offline_mode}
-            disabled={savingKey === "offline_mode"}
-            onCheckedChange={(v) => toggle("offline_mode", v, { offline_mode: v })}
-          />
-        </PanelSettingRow>
+          <PanelSettingRow label="IP del servidor" hint="IP mostrada y usada en enlaces del panel">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input value={serverIp} onChange={(e) => setServerIp(e.target.value)} className="max-w-xs flex-1" />
+              <SaveButton
+                saving={savingKey === "serverIp"}
+                onClick={() => patch("serverIp", { server_ip: serverIp }, "IP guardada")}
+              />
+            </div>
+          </PanelSettingRow>
 
-        <PanelSettingRow label="Theme" hint="Apariencia visual del panel">
-          <Select value={theme || "system"} onValueChange={setTheme}>
-            <SelectTrigger className="max-w-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="light">Fresh (Light)</SelectItem>
-              <SelectItem value="dark">Dark</SelectItem>
-              <SelectItem value="system">System</SelectItem>
-            </SelectContent>
-          </Select>
-        </PanelSettingRow>
+          <PanelSettingRow label="Hora del servidor">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input value={serverTime} readOnly className="flex-1 font-mono text-xs" />
+              <SaveButton
+                label="Sincronizar"
+                saving={savingKey === "syncTime"}
+                onClick={async () => {
+                  setSavingKey("syncTime");
+                  try {
+                    const result = await syncPanelServerTime();
+                    if (result.server_time) setServerTime(result.server_time.display);
+                    toast.success(result.message);
+                    await load();
+                  } catch {
+                    toast.error("No se pudo sincronizar la hora");
+                  } finally {
+                    setSavingKey(null);
+                  }
+                }}
+              />
+            </div>
+          </PanelSettingRow>
 
-        <PanelSettingRow label="Language" hint="Idioma de la interfaz">
-          <div className="flex items-center gap-2">
-            <Globe className="h-4 w-4 text-muted-foreground" />
-            <Select value={locale} onValueChange={(v) => setLocale(v as "en" | "es")}>
-              <SelectTrigger className="max-w-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="es">Español</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </PanelSettingRow>
+          <PanelSettingRow label="Carpeta de sitios" hint="Ruta por defecto para sitios nuevos">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[200px] flex-1">
+                <FolderOpen className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={siteFolder}
+                  onChange={(e) => setSiteFolder(e.target.value)}
+                  className="pl-9 font-mono text-xs"
+                />
+              </div>
+              <SaveButton
+                saving={savingKey === "siteFolder"}
+                onClick={() =>
+                  patch("siteFolder", { default_site_folder: siteFolder }, "Carpeta de sitios guardada")
+                }
+              />
+            </div>
+          </PanelSettingRow>
 
-        <PanelSettingRow
-          label="CDN Proxy"
-          hint="Obtener la IP real de la petición desde el proxy CDN (solo panel)"
+          <PanelSettingRow label="Carpeta de backups">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[200px] flex-1">
+                <FolderOpen className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={backupFolder}
+                  onChange={(e) => setBackupFolder(e.target.value)}
+                  className="pl-9 font-mono text-xs"
+                />
+              </div>
+              <SaveButton
+                saving={savingKey === "backupFolder"}
+                onClick={() =>
+                  patch("backupFolder", { default_backup_folder: backupFolder }, "Carpeta de backups guardada")
+                }
+              />
+            </div>
+          </PanelSettingRow>
+        </SettingsSection>
+
+        <SettingsSection
+          icon={<Activity className="h-4 w-4" />}
+          title="Monitor y alertas"
+          description="Umbrales de CPU, RAM y disco. Notificaciones en panel y Telegram"
         >
-          <Switch
-            checked={data.cdn_proxy}
-            disabled={savingKey === "cdn_proxy"}
-            onCheckedChange={(v) => toggle("cdn_proxy", v, { cdn_proxy: v })}
-          />
-        </PanelSettingRow>
-
-        <PanelSettingRow label="Site Monitor" hint="Monitor gratuito de sitios y alertas de recursos">
-          <div className="space-y-3">
+          <PanelSettingRow label="Monitor de recursos">
             <Switch
               checked={data.site_monitor_enabled}
               disabled={savingKey === "site_monitor_enabled"}
               onCheckedChange={(v) => toggle("site_monitor_enabled", v, { site_monitor_enabled: v })}
             />
-            {data.site_monitor_enabled && (
-              <div className="grid max-w-md gap-2 sm:grid-cols-2">
-                <Input
-                  type="number"
-                  min={50}
-                  max={100}
-                  value={cpuThreshold}
-                  onChange={(e) => setCpuThreshold(e.target.value)}
-                  placeholder="CPU %"
-                />
-                <Input
-                  type="number"
-                  min={50}
-                  max={100}
-                  value={ramThreshold}
-                  onChange={(e) => setRamThreshold(e.target.value)}
-                  placeholder="RAM %"
-                />
-                <Input
-                  type="number"
-                  min={50}
-                  max={100}
-                  value={diskThreshold}
-                  onChange={(e) => setDiskThreshold(e.target.value)}
-                  placeholder="Disk %"
-                />
-                <Input
-                  type="number"
-                  min={5}
-                  max={1440}
-                  value={alertCooldown}
-                  onChange={(e) => setAlertCooldown(e.target.value)}
-                  placeholder="Cooldown min"
-                />
-                <SaveButton
-                  label="Modify"
-                  saving={savingKey === "monitor"}
-                  onClick={() =>
-                    patch(
-                      "monitor",
-                      {
-                        cpu_threshold_percent: Number(cpuThreshold),
-                        memory_threshold_percent: Number(ramThreshold),
-                        disk_threshold_percent: Number(diskThreshold),
-                        alert_cooldown_minutes: Number(alertCooldown),
-                      },
-                      "Umbrales de monitor actualizados"
-                    )
-                  }
-                />
-              </div>
-            )}
-          </div>
-        </PanelSettingRow>
+          </PanelSettingRow>
 
-        <PanelSettingRow
-          label="Auto-fetch favicon"
-          hint="Intenta obtener el favicon cada 12 horas cuando está activo"
-        >
-          <Switch
-            checked={data.auto_fetch_favicon}
-            disabled={savingKey === "auto_fetch_favicon"}
-            onCheckedChange={(v) => toggle("auto_fetch_favicon", v, { auto_fetch_favicon: v })}
-          />
-        </PanelSettingRow>
+          {data.site_monitor_enabled && (
+            <>
+              <PanelSettingRow label="Umbrales (%)" hint="Se dispara alerta al superar estos valores">
+                <div className="grid max-w-md gap-2 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">CPU</Label>
+                    <Input
+                      type="number"
+                      min={50}
+                      max={100}
+                      value={cpuThreshold}
+                      onChange={(e) => setCpuThreshold(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">RAM</Label>
+                    <Input
+                      type="number"
+                      min={50}
+                      max={100}
+                      value={ramThreshold}
+                      onChange={(e) => setRamThreshold(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Disco</Label>
+                    <Input
+                      type="number"
+                      min={50}
+                      max={100}
+                      value={diskThreshold}
+                      onChange={(e) => setDiskThreshold(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Cooldown (min)</Label>
+                    <Input
+                      type="number"
+                      min={5}
+                      max={1440}
+                      value={alertCooldown}
+                      onChange={(e) => setAlertCooldown(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <SaveButton
+                    label="Guardar umbrales"
+                    saving={savingKey === "monitor"}
+                    onClick={() =>
+                      patch(
+                        "monitor",
+                        {
+                          cpu_threshold_percent: Number(cpuThreshold),
+                          memory_threshold_percent: Number(ramThreshold),
+                          disk_threshold_percent: Number(diskThreshold),
+                          alert_cooldown_minutes: Number(alertCooldown),
+                        },
+                        "Umbrales actualizados"
+                      )
+                    }
+                  />
+                </div>
+              </PanelSettingRow>
 
-        <PanelSettingRow
-          label="Auto Backup Panel"
-          hint="El backup automático no incluye datos de sitios web ni MySQL"
+              <PanelSettingRow
+                label="Telegram"
+                hint="Cree un bot con @BotFather y obtenga el Chat ID con @userinfobot o su grupo"
+              >
+                <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Bell className="h-4 w-4 text-sky-500" />
+                      <span className="text-sm font-medium">Enviar alertas por Telegram</span>
+                    </div>
+                    <Switch
+                      checked={telegramEnabled}
+                      onCheckedChange={setTelegramEnabled}
+                    />
+                  </div>
+                  <div className="grid gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Bot Token</Label>
+                      <Input
+                        type="password"
+                        value={telegramBotToken}
+                        onChange={(e) => setTelegramBotToken(e.target.value)}
+                        placeholder={
+                          data.telegram_bot_configured
+                            ? "••••••••  (dejar vacío para mantener)"
+                            : "123456789:ABCdefGHI..."
+                        }
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Chat ID</Label>
+                      <Input
+                        value={telegramChatId}
+                        onChange={(e) => setTelegramChatId(e.target.value)}
+                        placeholder="-1001234567890"
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <SaveButton
+                      label="Guardar Telegram"
+                      saving={savingKey === "telegram"}
+                      onClick={() =>
+                        patch(
+                          "telegram",
+                          {
+                            telegram_alerts_enabled: telegramEnabled,
+                            telegram_chat_id: telegramChatId,
+                            ...(telegramBotToken.trim()
+                              ? { telegram_bot_token: telegramBotToken.trim() }
+                              : {}),
+                          },
+                          "Configuración de Telegram guardada"
+                        )
+                      }
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={savingKey === "telegramTest"}
+                      onClick={async () => {
+                        setSavingKey("telegramTest");
+                        try {
+                          const result = await testTelegramAlerts({
+                            telegram_bot_token: telegramBotToken.trim() || undefined,
+                            telegram_chat_id: telegramChatId.trim() || undefined,
+                          });
+                          toast[result.success ? "success" : "error"](result.message);
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Error al probar Telegram");
+                        } finally {
+                          setSavingKey(null);
+                        }
+                      }}
+                    >
+                      {savingKey === "telegramTest" ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="mr-2 h-4 w-4" />
+                      )}
+                      Probar envío
+                    </Button>
+                  </div>
+                </div>
+              </PanelSettingRow>
+            </>
+          )}
+        </SettingsSection>
+
+        <SettingsSection
+          icon={<Palette className="h-4 w-4" />}
+          title="Apariencia e idioma"
         >
-          <div className="space-y-3">
-            <Switch
-              checked={data.auto_backup_panel}
-              disabled={savingKey === "auto_backup_panel"}
-              onCheckedChange={(v) => toggle("auto_backup_panel", v, { auto_backup_panel: v })}
-            />
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>
-                Backups: {data.auto_backup_count} · Usado: {data.auto_backup_used_mb} MB
-              </span>
-              <Input
-                type="number"
-                min={1}
-                max={365}
-                value={backupRetention}
-                onChange={(e) => setBackupRetention(e.target.value)}
-                className="h-8 w-20"
-              />
-              <span>retención</span>
-              <SaveButton
-                label="Modify"
-                saving={savingKey === "backupRetention"}
-                onClick={() =>
-                  patch(
-                    "backupRetention",
-                    { auto_backup_retention: Number(backupRetention) },
-                    "Retención de backup actualizada"
-                  )
-                }
-              />
+          <PanelSettingRow label="Tema">
+            <Select value={theme || "system"} onValueChange={setTheme}>
+              <SelectTrigger className="max-w-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Fresh (Light)</SelectItem>
+                <SelectItem value="dark">Dark</SelectItem>
+                <SelectItem value="system">System</SelectItem>
+              </SelectContent>
+            </Select>
+          </PanelSettingRow>
+
+          <PanelSettingRow label="Idioma">
+            <div className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-muted-foreground" />
+              <Select value={locale} onValueChange={(v) => setLocale(v as "en" | "es")}>
+                <SelectTrigger className="max-w-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="es">Español</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+          </PanelSettingRow>
+        </SettingsSection>
+
+        <SettingsSection
+          icon={<Power className="h-4 w-4" />}
+          title="Avanzado"
+          description="Red, CDN, backups y control del servicio panel"
+          className="lg:col-span-2"
+        >
+          <div className="grid gap-0 lg:grid-cols-2 lg:gap-x-8">
+            <PanelSettingRow label="IPv6" hint="Permitir acceso al panel por IPv6">
+              <Switch
+                checked={data.ipv6_enabled}
+                disabled={savingKey === "ipv6_enabled"}
+                onCheckedChange={(v) => toggle("ipv6_enabled", v, { ipv6_enabled: v })}
+              />
+            </PanelSettingRow>
+
+            <PanelSettingRow label="Modo offline" hint="Servicios que requieren internet quedarán deshabilitados">
+              <Switch
+                checked={data.offline_mode}
+                disabled={savingKey === "offline_mode"}
+                onCheckedChange={(v) => toggle("offline_mode", v, { offline_mode: v })}
+              />
+            </PanelSettingRow>
+
+            <PanelSettingRow label="CDN Proxy" hint="IP real desde proxy CDN (solo panel)">
+              <Switch
+                checked={data.cdn_proxy}
+                disabled={savingKey === "cdn_proxy"}
+                onCheckedChange={(v) => toggle("cdn_proxy", v, { cdn_proxy: v })}
+              />
+            </PanelSettingRow>
+
+            <PanelSettingRow label="Favicon automático" hint="Intenta obtener favicons cada 12 h">
+              <Switch
+                checked={data.auto_fetch_favicon}
+                disabled={savingKey === "auto_fetch_favicon"}
+                onCheckedChange={(v) => toggle("auto_fetch_favicon", v, { auto_fetch_favicon: v })}
+              />
+            </PanelSettingRow>
+
+            <PanelSettingRow label="Backup automático del panel">
+              <div className="space-y-2">
+                <Switch
+                  checked={data.auto_backup_panel}
+                  disabled={savingKey === "auto_backup_panel"}
+                  onCheckedChange={(v) => toggle("auto_backup_panel", v, { auto_backup_panel: v })}
+                />
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>
+                    {data.auto_backup_count} backups · {data.auto_backup_used_mb} MB
+                  </span>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={backupRetention}
+                    onChange={(e) => setBackupRetention(e.target.value)}
+                    className="h-8 w-20"
+                  />
+                  <span>días retención</span>
+                  <SaveButton
+                    label="Aplicar"
+                    saving={savingKey === "backupRetention"}
+                    onClick={() =>
+                      patch(
+                        "backupRetention",
+                        { auto_backup_retention: Number(backupRetention) },
+                        "Retención actualizada"
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            </PanelSettingRow>
+
+            <PanelSettingRow
+              label="Detener panel"
+              hint="Solo detiene el panel; webs y bases de datos siguen activos"
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                disabled={savingKey === "close"}
+                onClick={async () => {
+                  setSavingKey("close");
+                  try {
+                    const result = await shutdownPanelService();
+                    toast[result.success ? "success" : "error"](result.message);
+                  } finally {
+                    setSavingKey(null);
+                  }
+                }}
+              >
+                {savingKey === "close" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Detener servicio panel
+              </Button>
+            </PanelSettingRow>
           </div>
-        </PanelSettingRow>
-      </PanelSettingsCard>
+        </SettingsSection>
+      </div>
 
       {!data.can_apply_host_changes && (
-        <p className="text-xs text-amber-600">
-          Algunos cambios de host requieren ejecutar en el servidor:{" "}
-          <code className="rounded bg-muted px-1">sudo controlbox repair --apply-panel</code>
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-800 dark:text-amber-200">
+          Tras cambiar puerto o ruta del panel, aplique en el servidor:{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono">sudo controlbox repair --apply-panel</code>
         </p>
       )}
     </div>

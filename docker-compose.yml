@@ -62,7 +62,7 @@ services:
       SECRETS: 0
       SWARM: 0
       SYSTEM: 0
-      DISTRIBUTION: 0
+      DISTRIBUTION: 1
       TASKS: 0
       NODES: 0
       PLUGINS: 0
@@ -111,6 +111,8 @@ services:
       DB_MAX_OVERFLOW: 5
       SECURITY_CSRF_ENABLED: "true"
       DOCKER_HOST: tcp://docker-socket-proxy:2375
+      HOST_PROC: /host/proc
+      HOST_ROOT: /host/root
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
     volumes:
@@ -118,6 +120,9 @@ services:
       - database_backups:/var/lib/controlbox/backups/databases
       - backups_data:/var/lib/controlbox/backups
       - pureftpd_logs:/var/log/pure-ftpd
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

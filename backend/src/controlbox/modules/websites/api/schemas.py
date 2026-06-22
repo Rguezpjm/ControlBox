@@ -5,6 +5,14 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class UptimeTimelinePointSchema(BaseModel):
+    timestamp: str
+    status: str
+    reason: str | None = None
+    latency_ms: float | None = None
+    http_status: int | None = None
+
+
 class CreateWebsiteRequest(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     domain: str = Field(min_length=4, max_length=255)
@@ -38,8 +46,15 @@ class WebsiteResponseSchema(BaseModel):
     disk_limit_mb: int
     error_message: str | None
     ssl_days_remaining: int | None = None
-    requests_count: int = 0
-    requests_sparkline: list[float] = Field(default_factory=list)
+    traffic_mbps: float = 0.0
+    traffic_sparkline: list[float] = Field(default_factory=list)
+    visit_count: int = 0
+    visits_sparkline: list[float] = Field(default_factory=list)
+    uptime_timeline: list[UptimeTimelinePointSchema] = Field(default_factory=list)
+    uptime_percent: float = 100.0
+    last_down_reason: str | None = None
+    last_down_reason_label: str | None = None
+    is_up: bool = True
     created_at: datetime
     updated_at: datetime
 

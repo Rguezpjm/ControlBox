@@ -146,10 +146,9 @@ function MonitoringContent() {
                     <span className="font-medium text-sm">{p.name}</span>
                     <StatusBadge status={mapStatus(p.status)} />
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                     <span>DB {p.database_size_mb} MB</span>
                     <span>Storage {p.storage_used_mb} MB</span>
-                    <span>{p.requests_count} req</span>
                   </div>
                 </div>
               ))

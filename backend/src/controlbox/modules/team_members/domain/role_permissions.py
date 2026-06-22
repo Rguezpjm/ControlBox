@@ -15,6 +15,7 @@ TEAM_ROLE_DEFINITIONS: dict[str, dict] = {
             "websites.read", "websites.manage", "wordpress.read", "wordpress.manage",
             "databases.read", "databases.manage", "supabase.read", "supabase.manage",
             "dns.read", "dns.manage", "files.read", "files.manage", "ftp.read", "ftp.manage",
+            "mail.read", "mail.manage",
             "backups.read", "backups.manage", "monitoring.read", "security.read", "security.manage",
             "platform.read", "platform.manage",
         ],
@@ -59,7 +60,7 @@ TEAM_ROLE_DEFINITIONS: dict[str, dict] = {
         "permissions": [
             "tenants.read", "users.read", "roles.read", "sessions.read", "audit.read",
             "team_members.read", "websites.read", "wordpress.read", "databases.read",
-            "supabase.read", "dns.read", "files.read", "ftp.read", "backups.read",
+            "supabase.read", "dns.read", "files.read", "ftp.read", "mail.read", "backups.read",
             "monitoring.read", "security.read", "billing.read",
         ],
     },

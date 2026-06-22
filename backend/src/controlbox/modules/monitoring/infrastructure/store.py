@@ -7,6 +7,8 @@ from controlbox.shared.infrastructure.redis.client import RedisClient
 
 HISTORY_LIMIT = 120
 HISTORY_TTL = 3600
+UPTIME_TTL = 86400 * 7
+UPTIME_LIMIT = 288
 
 
 class MetricsStore:
@@ -56,6 +58,36 @@ class MetricsStore:
                 )
             )
         return points
+
+    async def append_uptime_check(
+        self,
+        tenant_id: UUID | None,
+        site_key: str,
+        payload: dict,
+    ) -> None:
+        point = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **payload,
+        }
+        key = self._key(tenant_id, f"site:{site_key}:uptime")
+        pipe = self._redis.pipeline()
+        pipe.lpush(key, json.dumps(point))
+        pipe.ltrim(key, 0, UPTIME_LIMIT - 1)
+        pipe.expire(key, UPTIME_TTL)
+        await pipe.execute()
+
+    async def get_uptime_timeline(
+        self,
+        tenant_id: UUID | None,
+        site_key: str,
+        limit: int = UPTIME_LIMIT,
+    ) -> list[dict]:
+        key = self._key(tenant_id, f"site:{site_key}:uptime")
+        raw_items = await self._redis.lrange(key, 0, limit - 1)
+        items: list[dict] = []
+        for item in reversed(raw_items):
+            items.append(json.loads(item))
+        return items
 
     async def get_snapshot(self, tenant_id: UUID | None) -> dict | None:
         key = self._key(tenant_id, "snapshot")

@@ -76,6 +76,88 @@ cb_compose_repair_compose_ports() {
     cb_compose_write_port_override "${panel_port}"
 }
 
+cb_compose_ensure_docker_proxy() {
+    local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
+    local compose_file="${install_dir}/docker-compose.yml"
+    local template_file="${install_dir}/templates/docker-compose.platform.yml"
+    local env_file="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}/platform.env"
+
+    if [[ ! -f "${template_file}" ]] && [[ -n "${CONTROLBOX_INSTALLER_ROOT:-}" ]]; then
+        template_file="${CONTROLBOX_INSTALLER_ROOT}/templates/docker-compose.platform.yml"
+    fi
+
+    if [[ -f "${compose_file}" ]] && [[ -f "${template_file}" ]]; then
+        if ! grep -q 'docker-socket-proxy' "${compose_file}" 2>/dev/null; then
+            cb_warn "Actualizando docker-compose.yml para acceso Docker seguro (docker-socket-proxy)"
+            cp -f "${template_file}" "${compose_file}"
+            cb_compose_repair_compose_ports
+        fi
+    fi
+
+    if [[ -f "${env_file}" ]] && ! grep -q '^DOCKER_HOST=' "${env_file}" 2>/dev/null; then
+        echo "DOCKER_HOST=tcp://docker-socket-proxy:2375" >> "${env_file}"
+        cb_info "DOCKER_HOST configurado en platform.env"
+    fi
+
+    if [[ -f "${env_file}" ]] && grep -q '^REDIS_PASSWORD=' "${env_file}" 2>/dev/null; then
+        local redis_pass
+        redis_pass="$(grep '^REDIS_PASSWORD=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+        if [[ -n "${redis_pass}" ]] && ! grep -q "^CELERY_BROKER_URL=redis://:${redis_pass}@" "${env_file}" 2>/dev/null; then
+            cb_warn "Actualizando CELERY_BROKER_URL con contraseña de Redis"
+            sed -i '/^CELERY_BROKER_URL=/d' "${env_file}" 2>/dev/null || true
+            sed -i '/^CELERY_RESULT_BACKEND=/d' "${env_file}" 2>/dev/null || true
+            echo "CELERY_BROKER_URL=redis://:${redis_pass}@redis:6379/1" >> "${env_file}"
+            echo "CELERY_RESULT_BACKEND=redis://:${redis_pass}@redis:6379/2" >> "${env_file}"
+        fi
+    fi
+
+    cb_compose_ensure_host_metrics
+}
+
+cb_compose_ensure_host_metrics() {
+    local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
+    local compose_file="${install_dir}/docker-compose.yml"
+    local template_file="${install_dir}/templates/docker-compose.platform.yml"
+    local env_file="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}/platform.env"
+
+    if [[ ! -f "${template_file}" ]] && [[ -n "${CONTROLBOX_INSTALLER_ROOT:-}" ]]; then
+        template_file="${CONTROLBOX_INSTALLER_ROOT}/templates/docker-compose.platform.yml"
+    fi
+
+    if [[ -f "${compose_file}" ]] && [[ -f "${template_file}" ]]; then
+        if ! grep -q '/host/proc' "${compose_file}" 2>/dev/null; then
+            cb_warn "Actualizando docker-compose.yml para métricas del host (HOST_PROC)"
+            cp -f "${template_file}" "${compose_file}"
+            cb_compose_repair_compose_ports
+        fi
+    fi
+
+    if [[ ! -f "${env_file}" ]]; then
+        return 0
+    fi
+
+    if ! grep -q '^HOST_PROC=' "${env_file}" 2>/dev/null; then
+        echo "HOST_PROC=/host/proc" >> "${env_file}"
+        cb_info "HOST_PROC configurado en platform.env"
+    fi
+    if ! grep -q '^HOST_ROOT=' "${env_file}" 2>/dev/null; then
+        echo "HOST_ROOT=/host/root" >> "${env_file}"
+        cb_info "HOST_ROOT configurado en platform.env"
+    fi
+
+    if ! grep -q '^SUPABASE_DB_ADMIN_PASSWORD=' "${env_file}" 2>/dev/null; then
+        local db_pass
+        db_pass="$(grep '^SUPABASE_DB_PASSWORD=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+        if [[ -z "${db_pass}" ]]; then
+            db_pass="$(grep '^POSTGRES_PASSWORD=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+        fi
+        if [[ -n "${db_pass}" ]]; then
+            echo "SUPABASE_DB_ADMIN_PASSWORD=${db_pass}" >> "${env_file}"
+            cb_info "SUPABASE_DB_ADMIN_PASSWORD sincronizado en platform.env"
+        fi
+    fi
+}
+
 cb_app_source_available() {
     [[ -f "${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}/src/backend/Dockerfile" ]] \
         && [[ -f "${CONTROLBOX_INSTALL_DIR}/src/frontend/Dockerfile" ]]
@@ -354,6 +436,7 @@ cb_docker_deploy_stack() {
     fi
 
     cb_compose_repair_compose_ports
+    cb_compose_ensure_docker_proxy
     cb_progress_note "Validando docker-compose.yml..."
     cb_docker_compose_run "${env_file}" config >/dev/null
 

@@ -34,14 +34,17 @@ local_version="$(cb_get_install_state "VERSION" || echo "unknown")"
 cb_info "Versión actual: ${local_version}"
 cb_info "Versión objetivo: ${CONTROLBOX_VERSION}"
 
+if [[ -d "${CONTROLBOX_INSTALLER_ROOT}/templates" ]]; then
+    cb_config_deploy_templates
+fi
+
+source "${CONTROLBOX_INSTALLER_ROOT}/lib/bootstrap-fixes.sh"
+cb_compose_ensure_docker_proxy
+
 if [[ -f "${CONTROLBOX_INSTALL_DIR}/docker-compose.yml" ]]; then
     cd "${CONTROLBOX_INSTALL_DIR}"
     docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" pull
     docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" up -d --remove-orphans
-fi
-
-if [[ -d "${CONTROLBOX_INSTALLER_ROOT}/templates" ]]; then
-    cb_config_deploy_templates
 fi
 
 cb_save_install_state "VERSION" "${CONTROLBOX_VERSION}"

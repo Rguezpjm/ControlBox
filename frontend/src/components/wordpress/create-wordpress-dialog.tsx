@@ -74,7 +74,15 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
       setAdminPassword("");
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to deploy WordPress");
+      if (err instanceof ApiError) {
+        const hint =
+          err.status === 500
+            ? " Check: docker ps | grep -E 'worker|docker-proxy|mysql' and run controlbox repair."
+            : "";
+        setError(`${err.message}${hint}`);
+      } else {
+        setError("Failed to deploy WordPress. Check your connection and try again.");
+      }
     } finally {
       setLoading(false);
     }

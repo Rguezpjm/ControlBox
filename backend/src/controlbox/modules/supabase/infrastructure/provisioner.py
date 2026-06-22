@@ -186,6 +186,16 @@ class SupabaseProvisioner:
                 return max(1, int(line.strip()) // (1024 * 1024))
         return 0
 
+    async def check_connection(self) -> tuple[bool, str]:
+        try:
+            await self._query("SELECT 1")
+            return True, "Supabase PostgreSQL is reachable"
+        except Exception as exc:
+            return False, (
+                f"Cannot reach Supabase database at {self._conn.host}:{self._conn.port}. "
+                f"Enable the supabase profile and run controlbox repair. ({exc})"
+            )
+
     async def _execute(self, sql: str) -> None:
         env = {"PGPASSWORD": self._conn.admin_password}
         cmd = [

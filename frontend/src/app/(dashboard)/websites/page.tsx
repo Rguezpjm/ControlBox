@@ -1,14 +1,15 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
-import { Plus, Globe, Play, Square, Trash2 } from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Plus, Globe, Play, Square, Trash2, Search, MoreHorizontal } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { CardGridSkeleton } from "@/components/skeletons";
 import { CreateWebsiteDialog } from "@/components/websites/create-website-dialog";
 import { SiteModificationModal } from "@/components/sites/site-modification-modal";
-import { SiteListTable, type SiteTableRow } from "@/components/shared/site-list-table";
+import { SiteMonitoringCard } from "@/components/shared/site-monitoring-card";
 import { websitesApi, type Website } from "@/lib/websites";
 import {
   DropdownMenu,
@@ -28,6 +29,7 @@ const RUNTIME_LABELS: Record<string, string> = {
 function WebsitesContent() {
   const [websites, setWebsites] = useState<Website[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [modifySiteId, setModifySiteId] = useState<string | null>(null);
   const [modifyOpen, setModifyOpen] = useState(false);
@@ -45,9 +47,20 @@ function WebsitesContent() {
 
   useEffect(() => {
     loadWebsites();
-    const interval = setInterval(loadWebsites, 15000);
+    const interval = setInterval(loadWebsites, 30000);
     return () => clearInterval(interval);
   }, [loadWebsites]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return websites;
+    return websites.filter(
+      (site) =>
+        site.name.toLowerCase().includes(q) ||
+        site.domain.toLowerCase().includes(q) ||
+        site.runtime.toLowerCase().includes(q)
+    );
+  }, [websites, query]);
 
   async function handleDelete(id: string) {
     await websitesApi.delete(id);
@@ -64,19 +77,6 @@ function WebsitesContent() {
     loadWebsites();
   }
 
-  const rows: SiteTableRow[] = websites.map((site) => ({
-    id: site.id,
-    name: site.name,
-    domain: site.domain,
-    status: site.status,
-    ssl_enabled: site.ssl_enabled,
-    ssl_status: site.ssl_status,
-    ssl_days_remaining: site.ssl_days_remaining,
-    requests_count: site.requests_count,
-    requests_sparkline: site.requests_sparkline,
-    subtitle: `${RUNTIME_LABELS[site.runtime] || site.runtime}${site.runtime_version ? ` ${site.runtime_version}` : ""}`,
-  }));
-
   if (loading) return <CardGridSkeleton count={3} />;
 
   return (
@@ -92,6 +92,18 @@ function WebsitesContent() {
         }
       />
 
+      {websites.length > 0 && (
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name or domain..."
+            className="pl-9"
+          />
+        </div>
+      )}
+
       {websites.length === 0 ? (
         <Card className="flex flex-col items-center justify-center py-16">
           <Globe className="h-12 w-12 text-muted-foreground mb-4" />
@@ -102,46 +114,67 @@ function WebsitesContent() {
             Create Website
           </Button>
         </Card>
+      ) : filtered.length === 0 ? (
+        <p className="py-12 text-center text-sm text-muted-foreground">No websites match your search</p>
       ) : (
-        <SiteListTable
-          rows={rows}
-          searchPlaceholder="Search by name or domain..."
-          onSiteClick={(row) => {
-            setModifySiteId(row.id);
-            setModifyOpen(true);
-          }}
-          renderActions={(row) => {
-            const site = websites.find((s) => s.id === row.id);
-            if (!site) return null;
-            return (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    Manage
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {site.status !== "running" && (
-                    <DropdownMenuItem onClick={() => handleStart(site.id)}>
-                      <Play className="h-4 w-4 mr-2" />
-                      Start
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((site) => (
+            <SiteMonitoringCard
+              key={site.id}
+              site={{
+                id: site.id,
+                name: site.name,
+                domain: site.domain,
+                status: site.status,
+                badge: RUNTIME_LABELS[site.runtime] || site.runtime,
+                error_message: site.error_message,
+                disk_used_mb: site.disk_used_mb,
+                disk_limit_mb: site.disk_limit_mb,
+                monitoring_enabled: site.monitoring_enabled,
+                logs_enabled: site.logs_enabled,
+                visit_count: site.visit_count,
+                visits_sparkline: site.visits_sparkline,
+                uptime_timeline: site.uptime_timeline,
+                uptime_percent: site.uptime_percent,
+                last_down_reason: site.last_down_reason,
+                last_down_reason_label: site.last_down_reason_label,
+                is_up: site.is_up,
+              }}
+              onClick={() => {
+                setModifySiteId(site.id);
+                setModifyOpen(true);
+              }}
+              actions={
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <span className="sr-only">Manage</span>
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {site.status !== "running" && (
+                      <DropdownMenuItem onClick={() => handleStart(site.id)}>
+                        <Play className="h-4 w-4 mr-2" />
+                        Start
+                      </DropdownMenuItem>
+                    )}
+                    {site.status === "running" && (
+                      <DropdownMenuItem onClick={() => handleStop(site.id)}>
+                        <Square className="h-4 w-4 mr-2" />
+                        Stop
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(site.id)}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
                     </DropdownMenuItem>
-                  )}
-                  {site.status === "running" && (
-                    <DropdownMenuItem onClick={() => handleStop(site.id)}>
-                      <Square className="h-4 w-4 mr-2" />
-                      Stop
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(site.id)}>
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            );
-          }}
-        />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              }
+            />
+          ))}
+        </div>
       )}
 
       <CreateWebsiteDialog open={dialogOpen} onOpenChange={setDialogOpen} onCreated={loadWebsites} />

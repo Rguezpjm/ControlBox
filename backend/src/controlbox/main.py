@@ -2,7 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request, WebSocket, status
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -21,6 +21,7 @@ from controlbox.modules.backups.infrastructure.scheduler import BackupScheduler
 from controlbox.modules.monitoring.api.router import monitoring_websocket, router as monitoring_router
 from controlbox.modules.monitoring.infrastructure.broadcaster import MonitoringBroadcaster
 from controlbox.modules.monitoring.infrastructure.service import MonitoringCollectorTask
+from controlbox.modules.mail.api.router import router as mail_router
 from controlbox.modules.wordpress.api.router import router as wordpress_router
 from controlbox.modules.team_members.api.router import router as team_router
 from controlbox.modules.staging_sites.api.router import router as staging_router
@@ -133,6 +134,37 @@ def create_app() -> FastAPI:
             content=ErrorResponseSchema(error=exc.message, code=exc.code).model_dump(),
         )
 
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(_request: Request, exc: HTTPException):
+        detail = exc.detail
+        if isinstance(detail, list):
+            parts: list[str] = []
+            for item in detail:
+                if isinstance(item, dict):
+                    msg = item.get("msg")
+                    if msg:
+                        parts.append(str(msg))
+                elif item:
+                    parts.append(str(item))
+            message = "; ".join(parts) if parts else "Request failed"
+        elif isinstance(detail, str):
+            message = detail
+        else:
+            message = str(detail)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=ErrorResponseSchema(error=message, code="http_error").model_dump(),
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(_request: Request, exc: Exception):
+        logger.exception("Unhandled API error")
+        message = str(exc) if not settings.is_production else "Internal server error"
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=ErrorResponseSchema(error=message, code="internal_error").model_dump(),
+        )
+
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         return JSONResponse(
@@ -181,6 +213,7 @@ def create_app() -> FastAPI:
     app.include_router(dns_public_router, prefix=settings.app_api_prefix)
     app.include_router(files_router, prefix=settings.app_api_prefix)
     app.include_router(ftp_router, prefix=settings.app_api_prefix)
+    app.include_router(mail_router, prefix=settings.app_api_prefix)
     app.include_router(backups_router, prefix=settings.app_api_prefix)
     app.include_router(monitoring_router, prefix=settings.app_api_prefix)
     app.include_router(security_router, prefix=settings.app_api_prefix)

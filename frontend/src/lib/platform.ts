@@ -110,6 +110,41 @@ export function updateSetupChecklist(key: string, completed: boolean) {
   });
 }
 
+export interface ServiceProfile {
+  id: string;
+  profile: string;
+  name: string;
+  category: string;
+  description: string;
+  enabled: boolean;
+  running: boolean;
+  requires: string[];
+}
+
+export interface ServicesOverview {
+  can_manage: boolean;
+  enabled_profiles: string[];
+  services: ServiceProfile[];
+  message: string;
+}
+
+export function getServiceProfiles() {
+  return request<ServicesOverview>("/api/v1/platform/services");
+}
+
+export function applyServiceProfiles(profiles: string[]) {
+  return request<{ success: boolean; message: string; enabled_profiles: string[] }>(
+    "/api/v1/platform/services/apply",
+    { method: "POST", body: JSON.stringify({ profiles }) }
+  );
+}
+
+export function confirmSecretsReviewed() {
+  return request<PlatformOverview["secrets_rotation"]>("/api/v1/platform/secrets/confirm-reviewed", {
+    method: "POST",
+  });
+}
+
 export interface ServerTime {
   iso: string;
   display: string;
@@ -140,6 +175,9 @@ export interface PanelSettings {
   memory_threshold_percent: number;
   disk_threshold_percent: number;
   alert_cooldown_minutes: number;
+  telegram_alerts_enabled: boolean;
+  telegram_chat_id: string;
+  telegram_bot_configured: boolean;
   controlbox_version: string;
   controlbox_profile: string;
   os_label: string;
@@ -166,7 +204,11 @@ export type UpdatePanelSettingsPayload = Partial<
     | "memory_threshold_percent"
     | "disk_threshold_percent"
     | "alert_cooldown_minutes"
-  >
+    | "telegram_alerts_enabled"
+    | "telegram_chat_id"
+  > & {
+    telegram_bot_token?: string;
+  }
 >;
 
 export function getPanelSettings() {
@@ -191,6 +233,16 @@ export function shutdownPanelService() {
   return request<{ success: boolean; message: string }>(
     "/api/v1/platform/panel-settings/shutdown-panel",
     { method: "POST" }
+  );
+}
+
+export function testTelegramAlerts(data: {
+  telegram_bot_token?: string;
+  telegram_chat_id?: string;
+}) {
+  return request<{ success: boolean; message: string }>(
+    "/api/v1/platform/panel-settings/test-telegram",
+    { method: "POST", body: JSON.stringify(data) }
   );
 }
 

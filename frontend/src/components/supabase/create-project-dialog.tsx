@@ -41,7 +41,11 @@ export function CreateSupabaseProjectDialog({
       setName("");
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create project");
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Failed to create project. Ensure Supabase is enabled on the server (controlbox repair)."
+      );
     } finally {
       setLoading(false);
     }

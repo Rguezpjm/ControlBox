@@ -17,7 +17,17 @@ export class WebSocketClient {
   private shouldReconnect = true;
 
   constructor(url?: string) {
-    this.url = url || process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";
+    if (url) {
+      this.url = url;
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const base = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "");
+      this.url = `${proto}//${window.location.host}${base}/ws`;
+      return;
+    }
+    this.url = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";
   }
 
   connect(token?: string) {

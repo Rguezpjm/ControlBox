@@ -4,8 +4,6 @@ from uuid import UUID
 
 
 DEFAULT_SECRETS_CHECKLIST = [
-    "APP_SECRET_KEY",
-    "POSTGRES_PASSWORD",
     "REDIS_PASSWORD",
     "REGISTRATION_INVITE_TOKEN",
     "MYSQL_ADMIN_PASSWORD",
@@ -25,6 +23,9 @@ class TenantPlatformSettings:
     disk_threshold_percent: float = 90.0
     alerts_enabled: bool = True
     alert_cooldown_minutes: int = 15
+    telegram_alerts_enabled: bool = False
+    telegram_bot_token_enc: str | None = None
+    telegram_chat_id: str | None = None
     secrets_rotation_status: dict[str, bool] = field(default_factory=dict)
     setup_checklist: dict[str, bool] = field(default_factory=dict)
     panel_settings: dict[str, object] = field(default_factory=dict)

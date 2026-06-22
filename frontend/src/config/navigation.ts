@@ -11,7 +11,6 @@ import {
   Activity,
   Shield,
   Settings,
-  Layers,
   Blocks,
   Users,
   GitBranch,
@@ -35,7 +34,6 @@ export const mainNav: NavItem[] = [
   { titleKey: "nav.dns", href: "/dns", icon: Server },
   { titleKey: "nav.email", href: "/email", icon: Mail },
   { titleKey: "nav.databases", href: "/databases", icon: Database },
-  { titleKey: "nav.supabase", href: "/supabase", icon: Layers },
   { titleKey: "nav.files", href: "/files", icon: Files },
   { titleKey: "nav.ftp", href: "/ftp", icon: FolderOpen },
   { titleKey: "nav.backups", href: "/backups", icon: Archive },
@@ -48,6 +46,6 @@ export const mainNav: NavItem[] = [
 export const databaseEngines = [
   { id: "mysql", name: "MySQL", color: "bg-blue-500" },
   { id: "mariadb", name: "MariaDB", color: "bg-cyan-500" },
-  { id: "postgresql", name: "PostgreSQL", color: "bg-indigo-500" },
+  { id: "supabase", name: "Supabase", color: "bg-emerald-500" },
   { id: "mssql", name: "Microsoft SQL", color: "bg-red-500" },
 ] as const;

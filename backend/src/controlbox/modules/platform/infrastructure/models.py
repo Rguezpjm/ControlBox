@@ -24,6 +24,9 @@ class TenantPlatformSettingsModel(Base, TimestampMixin):
     disk_threshold_percent: Mapped[float] = mapped_column(Float, nullable=False, default=90.0)
     alerts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     alert_cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=15)
+    telegram_alerts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    telegram_bot_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     secrets_rotation_status: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     setup_checklist: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     panel_settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -64,6 +67,9 @@ def settings_to_entity(model: TenantPlatformSettingsModel) -> TenantPlatformSett
         disk_threshold_percent=model.disk_threshold_percent,
         alerts_enabled=model.alerts_enabled,
         alert_cooldown_minutes=model.alert_cooldown_minutes,
+        telegram_alerts_enabled=model.telegram_alerts_enabled,
+        telegram_bot_token_enc=model.telegram_bot_token_enc,
+        telegram_chat_id=model.telegram_chat_id,
         secrets_rotation_status=merged,
         setup_checklist=model.setup_checklist or {},
         panel_settings=model.panel_settings or {},
@@ -78,6 +84,9 @@ def settings_to_model(entity: TenantPlatformSettings) -> TenantPlatformSettingsM
         disk_threshold_percent=entity.disk_threshold_percent,
         alerts_enabled=entity.alerts_enabled,
         alert_cooldown_minutes=entity.alert_cooldown_minutes,
+        telegram_alerts_enabled=entity.telegram_alerts_enabled,
+        telegram_bot_token_enc=entity.telegram_bot_token_enc,
+        telegram_chat_id=entity.telegram_chat_id,
         secrets_rotation_status=entity.secrets_rotation_status,
         setup_checklist=entity.setup_checklist,
         panel_settings=entity.panel_settings,

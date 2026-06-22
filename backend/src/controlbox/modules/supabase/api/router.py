@@ -22,6 +22,7 @@ from controlbox.modules.supabase.api.schemas import (
     SupabaseRealtimeChannelSchema,
     SupabaseRlsPolicySchema,
     SupabaseSchemaSchema,
+    SupabaseServiceStatusSchema,
     SupabaseUsageSchema,
 )
 from controlbox.modules.supabase.application.command_handlers import (
@@ -74,13 +75,8 @@ from controlbox.modules.supabase.application.queries import (
     ListSupabaseRlsPoliciesQuery,
     ListSupabaseSchemasQuery,
 )
-from controlbox.modules.supabase.domain.entities import (
-    SupabaseBucket,
-    SupabaseProject,
-    SupabaseRealtimeChannel,
-    SupabaseRlsPolicy,
-    SupabaseSchema,
-)
+from controlbox.modules.supabase.infrastructure.provisioner import SupabaseProvisioner
+from controlbox.modules.supabase.domain.entities import SupabaseProject
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import DomainException, ForbiddenError
 
@@ -113,6 +109,23 @@ def _to_project_schema(p: SupabaseProject) -> SupabaseProjectSchema:
         suspended_at=p.suspended_at,
         created_at=p.created_at,
         updated_at=p.updated_at,
+    )
+
+
+@router.get("/status", response_model=SupabaseServiceStatusSchema)
+async def get_supabase_status(
+    context: Annotated[RequestContext, Depends(require_permission("supabase.read"))],
+) -> SupabaseServiceStatusSchema:
+    _require_tenant(context)
+    settings = get_settings()
+    provisioner = SupabaseProvisioner(settings)
+    ok, message = await provisioner.check_connection()
+    return SupabaseServiceStatusSchema(
+        enabled=ok,
+        status="healthy" if ok else "unavailable",
+        host=settings.supabase_db_host,
+        port=settings.supabase_db_port,
+        message=message,
     )
 
 

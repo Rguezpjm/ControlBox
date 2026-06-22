@@ -31,7 +31,7 @@ from controlbox.modules.supabase.domain.services import SupabaseDomainService
 from controlbox.modules.supabase.infrastructure.crypto import SecretEncryptor
 from controlbox.modules.supabase.infrastructure.provisioner import SupabaseProvisioner, SupabaseStorageClient
 from controlbox.shared.application.unit_of_work import UnitOfWork
-from controlbox.shared.domain.base import NotFoundError
+from controlbox.shared.domain.base import NotFoundError, ValidationError
 
 
 async def _get_project(uow: UnitOfWork, project_id: UUID, tenant_id: UUID) -> SupabaseProject:
@@ -74,25 +74,29 @@ class CreateSupabaseProjectHandler:
             studio_url=self._settings.supabase_studio_url,
         )
 
-        async with self._uow:
-            await self._uow.supabase_projects.add(project)
-            try:
-                await self._provisioner.provision_project(project, db_password)
-                project.mark_active()
-                default_schema = SupabaseSchema(
-                    project_id=project.id,
-                    tenant_id=command.tenant_id,
-                    name="public",
-                    is_default=True,
-                )
-                await self._uow.supabase_schemas.add(default_schema)
-                project.database_size_mb = await self._provisioner.get_database_size_mb(project.database_name)
-                await self._uow.supabase_projects.save(project)
-            except Exception as exc:
-                project.mark_error(str(exc))
-                await self._uow.supabase_projects.save(project)
+        await self._uow.supabase_projects.add(project)
+        try:
+            await self._provisioner.provision_project(project, db_password)
+            project.mark_active()
+            default_schema = SupabaseSchema(
+                project_id=project.id,
+                tenant_id=command.tenant_id,
+                name="public",
+                is_default=True,
+            )
+            await self._uow.supabase_schemas.add(default_schema)
+            project.database_size_mb = await self._provisioner.get_database_size_mb(project.database_name)
+            await self._uow.supabase_projects.save(project)
+        except Exception as exc:
+            project.mark_error(str(exc))
+            await self._uow.supabase_projects.save(project)
             await self._uow.commit()
+            raise ValidationError(
+                f"Supabase project could not be provisioned. "
+                f"Ensure Supabase is running (controlbox repair). Details: {exc}"
+            ) from exc
 
+        await self._uow.commit()
         return project
 
 

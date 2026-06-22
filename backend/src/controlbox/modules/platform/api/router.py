@@ -30,11 +30,18 @@ from controlbox.modules.platform.api.schemas import (
     UpdatePanelConfigResponse,
     UpdatePanelSettingsRequest,
     UpdateSetupChecklistRequest,
+    TestTelegramRequest,
+    TestTelegramResponse,
+    ServiceProfileSchema,
+    ServicesOverviewSchema,
+    ApplyServicesRequest,
+    ApplyServicesResponse,
 )
 from controlbox.modules.platform.domain.entities import DEFAULT_SECRETS_CHECKLIST
 from controlbox.modules.platform.infrastructure.panel_config import PanelConfigService
 from controlbox.modules.platform.infrastructure.panel_operations import PanelOperationsService
 from controlbox.modules.platform.infrastructure.panel_settings import PanelSettingsService
+from controlbox.modules.platform.infrastructure.service_profiles import ServiceProfilesManager
 from controlbox.shared.application.unit_of_work import UnitOfWork
 
 router = APIRouter(prefix="/platform", tags=["platform"])
@@ -42,8 +49,6 @@ router = APIRouter(prefix="/platform", tags=["platform"])
 PLATFORM_ADMIN_ROLES = {"admin", "owner", "administrator"}
 
 SECRET_LABELS = {
-    "APP_SECRET_KEY": "Clave secreta de la aplicación",
-    "POSTGRES_PASSWORD": "Contraseña PostgreSQL",
     "REDIS_PASSWORD": "Contraseña Redis",
     "REGISTRATION_INVITE_TOKEN": "Token de invitación de registro",
     "MYSQL_ADMIN_PASSWORD": "Contraseña admin MySQL",
@@ -55,7 +60,7 @@ SECRET_LABELS = {
 }
 
 SETUP_ITEMS = [
-    ("rotate_secrets", "Rotar secretos de instalación"),
+    ("configure_services", "Instalar paquetes de software"),
     ("configure_panel_access", "Configurar puerto y ruta del panel"),
     ("enable_totp", "Activar TOTP / MFA para administradores"),
     ("configure_domains", "Configurar dominios y SSL"),
@@ -87,8 +92,6 @@ def _secrets_schema(status_map: dict[str, bool]) -> SecretsRotationSchema:
             label=SECRET_LABELS.get(key, key),
             rotated=bool(status_map.get(key, False)),
             required=key in {
-                "APP_SECRET_KEY",
-                "POSTGRES_PASSWORD",
                 "REDIS_PASSWORD",
                 "REGISTRATION_INVITE_TOKEN",
                 "GRAFANA_ADMIN_PASSWORD",
@@ -186,6 +189,9 @@ async def update_panel_settings(
         memory_threshold_percent=payload.memory_threshold_percent,
         disk_threshold_percent=payload.disk_threshold_percent,
         alert_cooldown_minutes=payload.alert_cooldown_minutes,
+        telegram_alerts_enabled=payload.telegram_alerts_enabled,
+        telegram_bot_token=payload.telegram_bot_token,
+        telegram_chat_id=payload.telegram_chat_id,
     )
 
     if payload.panel_port is not None or payload.panel_base_path is not None:
@@ -204,6 +210,25 @@ async def update_panel_settings(
     await uow.commit()
     view = service.build_view(platform_settings)
     return PanelSettingsSchema(**view)
+
+
+@router.post("/panel-settings/test-telegram", response_model=TestTelegramResponse)
+async def test_telegram_alerts(
+    payload: TestTelegramRequest,
+    context: Annotated[RequestContext, Depends(require_platform_admin())],
+    _: Annotated[None, Depends(require_permission("platform.manage"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> TestTelegramResponse:
+    tenant_id = _require_tenant(context)
+    service = PanelSettingsService(settings)
+    platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
+    ok, message = await service.test_telegram(
+        platform_settings,
+        bot_token=payload.telegram_bot_token,
+        chat_id=payload.telegram_chat_id,
+    )
+    return TestTelegramResponse(success=ok, message=message)
 
 
 @router.post("/panel-settings/sync-time", response_model=PanelActionResponse)
@@ -241,8 +266,13 @@ async def get_platform_overview(
     panel = panel_service.get_config()
     platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
     active_count = await uow.resource_alerts.count_active(tenant_id)
+
+    checklist_data = dict(platform_settings.setup_checklist)
+    if (settings.controlbox_enabled_profiles or "").strip():
+        checklist_data["configure_services"] = True
+
     secrets = _secrets_schema(platform_settings.secrets_rotation_status)
-    checklist = _checklist_schema(platform_settings.setup_checklist)
+    checklist = _checklist_schema(checklist_data)
     return PlatformOverviewSchema(
         panel=PanelConfigSchema(**panel),
         alert_thresholds=AlertThresholdsSchema(
@@ -255,7 +285,7 @@ async def get_platform_overview(
         secrets_rotation=secrets,
         setup_checklist=checklist,
         active_alerts_count=active_count,
-        is_production_ready=secrets.production_ready and checklist.production_ready,
+        is_production_ready=checklist.production_ready,
     )
 
 
@@ -368,14 +398,80 @@ async def acknowledge_secret_rotation(
         payload.secret_key: True,
     }
     required = [k for k in DEFAULT_SECRETS_CHECKLIST if k in {
-        "APP_SECRET_KEY", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "REGISTRATION_INVITE_TOKEN",
+        "REDIS_PASSWORD", "REGISTRATION_INVITE_TOKEN",
         "GRAFANA_ADMIN_PASSWORD", "SUPABASE_JWT_SECRET", "POWERDNS_API_KEY",
     }]
     if all(settings.secrets_rotation_status.get(k) for k in required):
-        settings.setup_checklist = {**settings.setup_checklist, "rotate_secrets": True}
+        pass  # secrets review is optional; no longer blocks production checklist
     await uow.tenant_platform_settings.save(settings)
     await uow.commit()
     return _secrets_schema(settings.secrets_rotation_status)
+
+
+@router.post("/secrets/confirm-reviewed", response_model=SecretsRotationSchema)
+async def confirm_secrets_reviewed(
+    context: Annotated[RequestContext, Depends(require_platform_admin())],
+    _: Annotated[None, Depends(require_permission("platform.manage"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> SecretsRotationSchema:
+    tenant_id = _require_tenant(context)
+    settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
+    merged = {**settings.secrets_rotation_status}
+    for key in DEFAULT_SECRETS_CHECKLIST:
+        merged[key] = True
+    settings.secrets_rotation_status = merged
+    await uow.tenant_platform_settings.save(settings)
+    await uow.commit()
+    return _secrets_schema(settings.secrets_rotation_status)
+
+
+@router.get("/services", response_model=ServicesOverviewSchema)
+async def get_service_profiles(
+    _: Annotated[RequestContext, Depends(require_platform_admin())],
+    __: Annotated[None, Depends(require_permission("platform.read"))],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ServicesOverviewSchema:
+    overview = await ServiceProfilesManager(settings).get_overview()
+    return ServicesOverviewSchema(
+        can_manage=overview.can_manage,
+        enabled_profiles=overview.enabled_profiles,
+        message=overview.message,
+        services=[
+            ServiceProfileSchema(
+                id=s.id,
+                profile=s.profile,
+                name=s.name,
+                category=s.category,
+                description=s.description,
+                enabled=s.enabled,
+                running=s.running,
+                requires=list(s.requires),
+            )
+            for s in overview.services
+        ],
+    )
+
+
+@router.post("/services/apply", response_model=ApplyServicesResponse)
+async def apply_service_profiles(
+    payload: ApplyServicesRequest,
+    context: Annotated[RequestContext, Depends(require_platform_admin())],
+    _: Annotated[None, Depends(require_permission("platform.manage"))],
+    settings: Annotated[Settings, Depends(get_settings)],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> ApplyServicesResponse:
+    manager = ServiceProfilesManager(settings)
+    ok, message, profiles = await manager.apply_profiles(payload.profiles)
+    if ok:
+        tenant_id = _require_tenant(context)
+        platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
+        platform_settings.setup_checklist = {
+            **platform_settings.setup_checklist,
+            "configure_services": True,
+        }
+        await uow.tenant_platform_settings.save(platform_settings)
+        await uow.commit()
+    return ApplyServicesResponse(success=ok, message=message, enabled_profiles=profiles)
 
 
 @router.patch("/setup-checklist", response_model=SetupChecklistSchema)
