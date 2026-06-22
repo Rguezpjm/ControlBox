@@ -1,0 +1,15 @@
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[sshd]
+enabled = false
+
+[controlbox-api]
+enabled = true
+port = 8000
+filter = controlbox-api
+logpath = /var/log/controlbox/api.log
+maxretry = 5
+bantime = 3600

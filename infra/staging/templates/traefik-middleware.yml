@@ -1,0 +1,21 @@
+http:
+  middlewares:
+    {{MIDDLEWARE_NAME}}:
+      chain:
+        middlewares:
+          {{CHAIN_MIDDLEWARES}}
+
+    {{MIDDLEWARE_NAME}}-auth:
+      basicAuth:
+        users:
+          - "{{BASIC_AUTH_USER}}"
+
+    {{MIDDLEWARE_NAME}}-ipwhitelist:
+      ipWhiteList:
+        sourceRange:
+          {{IP_RANGES}}
+
+    {{MIDDLEWARE_NAME}}-block:
+      basicAuth:
+        users:
+          - "blocked:$apr1$blocked$blockedblockedblocked"

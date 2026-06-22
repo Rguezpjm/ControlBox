@@ -1,0 +1,35 @@
+services:
+  web:
+    image: {{IMAGE}}
+    container_name: {{CONTAINER_NAME}}
+    restart: unless-stopped
+    {{BUILD_SECTION}}
+    {{COMMAND_SECTION}}
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-}
+      - NODE_ENV=production
+    volumes:
+      {{VOLUME_SECTION}}
+    networks:
+      - controlbox
+      - stg_internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{{ROUTER_NAME}}.rule=Host(`{{DOMAIN}}`)"
+      - "traefik.http.routers.{{ROUTER_NAME}}.entrypoints=websecure"
+      - "traefik.http.services.{{ROUTER_NAME}}.loadbalancer.server.port={{PORT}}"
+      - "traefik.http.routers.{{ROUTER_NAME}}.tls=true"
+      - "traefik.http.routers.{{ROUTER_NAME}}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.{{ROUTER_NAME}}.middlewares={{MIDDLEWARE_NAME}}"
+      - "controlbox.staging=true"
+      - "controlbox.staging.id={{STAGING_ID}}"
+      - "controlbox.tenant.id={{TENANT_ID}}"
+      - "controlbox.monitoring.scrape=true"
+      - "controlbox.monitoring.port={{PORT}}"
+      - "controlbox.logs.enabled=true"
+
+networks:
+  controlbox:
+    external: true
+  stg_internal:
+    driver: bridge

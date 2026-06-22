@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ControlBox — Documentación para Administradores</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --code-bg: #0d1117;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 15px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+    nav.sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.5rem 0;
+    }
+    .brand {
+      padding: 0 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .brand h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .brand p {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+    .brand .version {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0.15rem 0.5rem;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    nav ul { list-style: none; }
+    nav ul li a {
+      display: block;
+      padding: 0.45rem 1.25rem;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.88rem;
+      border-left: 3px solid transparent;
+      transition: all 0.15s;
+    }
+    nav ul li a:hover,
+    nav ul li a.active {
+      color: var(--text);
+      background: var(--surface2);
+      border-left-color: var(--accent);
+    }
+    nav .nav-group {
+      padding: 0.75rem 1.25rem 0.35rem;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    main.content {
+      padding: 2.5rem 3rem 4rem;
+      max-width: 960px;
+    }
+    section {
+      margin-bottom: 3.5rem;
+      scroll-margin-top: 1.5rem;
+    }
+    h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--border);
+    }
+    h3 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin: 1.75rem 0 0.75rem;
+      color: var(--text);
+    }
+    h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 1.25rem 0 0.5rem;
+      color: var(--muted);
+    }
+    p { margin-bottom: 1rem; color: var(--text); }
+    .lead {
+      font-size: 1.05rem;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+    .alert {
+      padding: 1rem 1.25rem;
+      border-radius: var(--radius);
+      margin: 1rem 0;
+      border-left: 4px solid;
+    }
+    .alert-info { background: rgba(59,130,246,0.12); border-color: var(--accent); }
+    .alert-warn { background: rgba(245,158,11,0.12); border-color: var(--warning); }
+    .alert-danger { background: rgba(239,68,68,0.12); border-color: var(--danger); }
+    .alert-success { background: rgba(34,197,94,0.12); border-color: var(--success); }
+    .alert strong { display: block; margin-bottom: 0.25rem; }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    code {
+      font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+      font-size: 0.88em;
+    }
+    p code, li code, td code {
+      background: var(--code-bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+    }
+    th, td {
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+    th {
+      background: var(--surface2);
+      font-weight: 600;
+      color: var(--text);
+    }
+    td { background: var(--surface); }
+    tr:nth-child(even) td { background: rgba(36,48,68,0.5); }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+    .card h4 { margin-top: 0; color: var(--text); }
+    .card p { font-size: 0.88rem; color: var(--muted); margin-bottom: 0; }
+    .card .icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-blue { background: rgba(59,130,246,0.2); color: #93c5fd; }
+    .badge-green { background: rgba(34,197,94,0.2); color: #86efac; }
+    .badge-orange { background: rgba(245,158,11,0.2); color: #fcd34d; }
+    ol.steps { margin: 1rem 0 1rem 1.25rem; }
+    ol.steps li { margin-bottom: 0.75rem; padding-left: 0.25rem; }
+    ul.bullets { margin: 0.5rem 0 1rem 1.25rem; }
+    ul.bullets li { margin-bottom: 0.35rem; }
+    .arch-diagram {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      font-family: monospace;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      white-space: pre;
+      overflow-x: auto;
+      color: var(--muted);
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      nav.sidebar { position: relative; height: auto; }
+      main.content { padding: 1.5rem; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+    @media print {
+      nav.sidebar { display: none; }
+      .layout { grid-template-columns: 1fr; }
+      body { background: #fff; color: #000; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="brand">
+        <h1>ControlBox</h1>
+        <p>Plataforma de hosting multi-tenant</p>
+        <span class="version">v1.0.0</span>
+      </div>
+      <div class="nav-group">Introducción</div>
+      <ul>
+        <li><a href="#overview">Visión general</a></li>
+        <li><a href="#requirements">Requisitos</a></li>
+        <li><a href="#architecture">Arquitectura</a></li>
+      </ul>
+      <div class="nav-group">Instalación</div>
+      <ul>
+        <li><a href="#install-production">Producción (installer)</a></li>
+        <li><a href="#install-docker">Docker Compose (dev)</a></li>
+        <li><a href="#post-install">Post-instalación</a></li>
+        <li><a href="#first-tenant">Primer tenant</a></li>
+      </ul>
+      <div class="nav-group">Configuración</div>
+      <ul>
+        <li><a href="#env-vars">Variables de entorno</a></li>
+        <li><a href="#domains">Dominios y DNS</a></li>
+        <li><a href="#services">Servicios y puertos</a></li>
+        <li><a href="#cli">Comandos CLI</a></li>
+      </ul>
+      <div class="nav-group">Funcionalidades</div>
+      <ul>
+        <li><a href="#modules">Módulos del panel</a></li>
+        <li><a href="#team">Team Members</a></li>
+        <li><a href="#security-module">Seguridad</a></li>
+        <li><a href="#staging">Staging Sites</a></li>
+      </ul>
+      <div class="nav-group">Operaciones</div>
+      <ul>
+        <li><a href="#hardening">Hardening</a></li>
+        <li><a href="#backups">Backups</a></li>
+        <li><a href="#maintenance">Mantenimiento</a></li>
+        <li><a href="#troubleshooting">Solución de problemas</a></li>
+      </ul>
+    </nav>
+
+    <main class="content">
+      <section id="overview">
+        <h2>Visión general</h2>
+        <p class="lead">
+          ControlBox es una plataforma SaaS de hosting multi-tenant que permite a proveedores de infraestructura
+          ofrecer gestión de sitios web, bases de datos, DNS, FTP, backups, WordPress, entornos staging y más,
+          desde un panel unificado.
+        </p>
+        <div class="grid-3">
+          <div class="card">
+            <div class="icon">⚡</div>
+            <h4>Backend</h4>
+            <p>FastAPI + PostgreSQL + Redis + Celery. API REST en <code>/api/v1</code>.</p>
+          </div>
+          <div class="card">
+            <div class="icon">🖥️</div>
+            <h4>Frontend</h4>
+            <p>Next.js 15 con panel de administración responsive y autenticación por cookies HttpOnly.</p>
+          </div>
+          <div class="card">
+            <div class="icon">🐳</div>
+            <h4>Infraestructura</h4>
+            <p>Docker, Traefik (SSL automático), Nginx, provisionamiento por contenedor por sitio.</p>
+          </div>
+        </div>
+        <h3>Stack tecnológico</h3>
+        <table>
+          <thead>
+            <tr><th>Componente</th><th>Tecnología</th><th>Propósito</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Base de datos plataforma</td><td>PostgreSQL 16</td><td>Tenants, usuarios, RBAC, auditoría</td></tr>
+            <tr><td>Cache y colas</td><td>Redis 7</td><td>Sesiones, rate limiting, Celery broker</td></tr>
+            <tr><td>Proxy inverso</td><td>Traefik v3</td><td>TLS Let's Encrypt, enrutamiento</td></tr>
+            <tr><td>Tareas asíncronas</td><td>Celery 5.4</td><td>WordPress, staging, backups</td></tr>
+            <tr><td>Almacenamiento</td><td>MinIO</td><td>Backups y objetos</td></tr>
+            <tr><td>Monitoreo</td><td>Prometheus + Grafana + Loki</td><td>Métricas y logs (producción)</td></tr>
+            <tr><td>DNS</td><td>PowerDNS 4.8</td><td>Zonas y registros autoritativos</td></tr>
+            <tr><td>FTP</td><td>Pure-FTPd</td><td>Cuentas FTP por tenant</td></tr>
+            <tr><td>BaaS</td><td>Supabase self-hosted</td><td>Proyectos, buckets, RLS, realtime</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="requirements">
+        <h2>Requisitos del servidor</h2>
+        <div class="alert alert-warn">
+          <strong>Mínimos recomendados (producción)</strong>
+          4 GB RAM · 2 CPU · 40 GB disco · Ubuntu 22.04/24.04, Debian 11/12 o RHEL 8/9.
+        </div>
+        <h3>Perfiles de recursos</h3>
+        <p>El instalador detecta automáticamente el perfil según RAM y CPU del servidor:</p>
+        <table>
+          <thead>
+            <tr><th>Perfil</th><th>RAM</th><th>Uso típico</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="badge badge-blue">minimal</span></td><td>4 GB</td><td>Desarrollo, pocos tenants</td></tr>
+            <tr><td><span class="badge badge-green">standard</span></td><td>8 GB</td><td>Producción pequeña</td></tr>
+            <tr><td><span class="badge badge-green">professional</span></td><td>16 GB</td><td>Producción media</td></tr>
+            <tr><td><span class="badge badge-orange">enterprise</span></td><td>32+ GB</td><td>Alto volumen de sitios</td></tr>
+          </tbody>
+        </table>
+        <h3>Software requerido</h3>
+        <ul class="bullets">
+          <li>Docker Engine 24+ y Docker Compose v2</li>
+          <li>Acceso root o sudo para el instalador de producción</li>
+          <li>Puertos 80 y 443 abiertos al público (Traefik / Let's Encrypt)</li>
+          <li>Puerto 22 para administración SSH</li>
+          <li>Dominio con registros DNS apuntando al servidor (producción)</li>
+        </ul>
+      </section>
+
+      <section id="architecture">
+        <h2>Arquitectura</h2>
+        <div class="arch-diagram">┌─────────────────────────────────────────────────────────────┐
+│                        INTERNET                              │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ :80 / :443
+                    ┌──────▼──────┐
+                    │   Traefik   │  ← SSL automático (Let's Encrypt)
+                    └──────┬──────┘
+           ┌───────────────┼───────────────┐
+           │               │               │
+    ┌──────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
+    │  Panel Web  │ │   API       │ │ Sitios      │
+    │  Next.js    │ │  FastAPI    │ │ clientes    │
+    │  :3000      │ │  :8000      │ │ (Docker)    │
+    └─────────────┘ └──────┬──────┘ └─────────────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+       ┌──────▼──┐  ┌──────▼──┐  ┌──────▼──────┐
+       │PostgreSQL│  │  Redis  │  │Celery Worker│
+       │  :5432   │  │  :6379  │  │ (tareas)    │
+       └──────────┘  └─────────┘  └─────────────┘
+                           │
+                    ┌──────▼──────────┐
+                    │ Docker Socket   │
+                    │ Proxy (restringido)│
+                    └─────────────────┘</div>
+        <h3>Rutas del sistema (producción)</h3>
+        <table>
+          <thead>
+            <tr><th>Ruta</th><th>Contenido</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>/opt/controlbox</code></td><td>Instalación y docker-compose principal</td></tr>
+            <tr><td><code>/etc/controlbox</code></td><td><code>platform.env</code>, Traefik, credenciales</td></tr>
+            <tr><td><code>/var/lib/controlbox</code></td><td>Sitios hospedados, backups, datos persistentes</td></tr>
+            <tr><td><code>/var/log/controlbox</code></td><td>Logs del instalador y backups</td></tr>
+            <tr><td><code>/etc/controlbox/credentials.txt</code></td><td>Credenciales generadas (permisos 600)</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="install-production">
+        <h2>Instalación en producción</h2>
+        <p class="lead">Método recomendado para servidores dedicados o VPS. Instalador tipo aaPanel con configuración automática de firewall, SSL y servicios.</p>
+
+        <h3>Opción A — Instalación remota (CDN)</h3>
+        <pre><code>curl -fsSL https://install.grodtech.com/install.sh | bash</code></pre>
+
+        <h3>Opción B — Instalación no interactiva (dominio + tenant)</h3>
+        <pre><code>curl -fsSL https://install.grodtech.com/install.sh | \
+  CONTROLBOX_PRIMARY_DOMAIN=tudominio.com \
+  CONTROLBOX_ADMIN_EMAIL=admin@tudominio.com \
+  CONTROLBOX_TENANT_NAME="Mi Empresa" \
+  CONTROLBOX_TENANT_SLUG=mi-empresa \
+  CONTROLBOX_TENANT_ADMIN_EMAIL=admin@mi-empresa.com \
+  CONTROLBOX_TENANT_ADMIN_PASSWORD='ContraseñaSegura123!' \
+  CONTROLBOX_TENANT_ADMIN_FULL_NAME="Administrador" \
+  CONTROLBOX_PANEL_PORT=8475 \
+  CONTROLBOX_ASSUME_YES=true \
+  bash</code></pre>
+
+        <h3>Opción C — Instalación local desde el repositorio</h3>
+        <pre><code>cd installer
+sudo CONTROLBOX_INSTALLER_ROOT=$(pwd) bash install.sh</code></pre>
+
+        <h3>Variables del instalador</h3>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>CONTROLBOX_PRIMARY_DOMAIN</code></td><td>Dominio principal de la plataforma (opcional en el asistente)</td></tr>
+            <tr><td><code>CONTROLBOX_ADMIN_EMAIL</code></td><td>Email para certificados Let's Encrypt</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_NAME</code></td><td>Nombre de la organización (primer tenant)</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_SLUG</code></td><td>Slug del tenant</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_ADMIN_EMAIL</code></td><td>Email del administrador del panel</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_ADMIN_PASSWORD</code></td><td>Contraseña del administrador (mín. 12 caracteres)</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_ADMIN_FULL_NAME</code></td><td>Nombre completo del administrador</td></tr>
+            <tr><td><code>CONTROLBOX_PANEL_PORT</code></td><td>Puerto del panel en el VPS (ej. <code>8475</code>)</td></tr>
+            <tr><td><code>CONTROLBOX_ASSUME_YES</code></td><td>Omitir confirmaciones interactivas</td></tr>
+            <tr><td><code>CONTROLBOX_FORCE_INSTALL</code></td><td>Forzar instalación en OS no certificado</td></tr>
+            <tr><td><code>CONTROLBOX_REINSTALL</code></td><td>Reinstalar si ya existe una instalación</td></tr>
+            <tr><td><code>CONTROLBOX_PURGE_DATA</code></td><td>Eliminar datos al desinstalar</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Asistente interactivo (estilo aaPanel)</h3>
+        <p>Al ejecutar el instalador sin variables, se muestra un asistente que solicita:</p>
+        <ol class="steps">
+          <li>Dominio principal y email SSL (opcional; puede configurarse después)</li>
+          <li>Datos del primer tenant: organización, slug, email, contraseña y nombre del administrador</li>
+          <li>Puerto del panel en el VPS (se asigna uno aleatorio entre 8000–9999 si no se indica)</li>
+        </ol>
+
+        <h3>Qué instala el script</h3>
+        <ol class="steps">
+          <li>Verifica requisitos de OS, RAM, CPU y disco</li>
+          <li>Recopila la configuración del tenant y del panel</li>
+          <li>Instala Docker y Docker Compose si no están presentes</li>
+          <li>Genera secretos con <code>openssl rand</code> en <code>/etc/controlbox/platform.env</code></li>
+          <li>Configura firewall (UFW o firewalld): SSH, 80, 443 y puerto del panel</li>
+          <li>Despliega stack Docker: PostgreSQL, Redis, Traefik, MinIO, API, Panel, Prometheus, Grafana, Loki, Supabase</li>
+          <li>Ejecuta migraciones Alembic (<code>alembic upgrade head</code>)</li>
+          <li>Crea automáticamente el primer tenant (sin habilitar <code>REGISTRATION_ENABLED</code>)</li>
+          <li>Configura backup automático diario a las 03:00 (retención 14 días)</li>
+          <li>Muestra credenciales de acceso al panel (URL, usuario y contraseña)</li>
+          <li>Crea snapshots de rollback en <code>/var/lib/controlbox/state/rollback/</code></li>
+        </ol>
+
+        <div class="alert alert-info">
+          <strong>Rollback automático</strong>
+          Si la instalación falla, se restaura el snapshot anterior. Manual: <code>sudo bash /opt/controlbox/repair.sh --rollback</code>
+        </div>
+      </section>
+
+      <section id="install-docker">
+        <h2>Instalación con Docker Compose (desarrollo)</h2>
+        <p class="lead">Para entornos de desarrollo o pruebas locales en el repositorio del proyecto.</p>
+
+        <ol class="steps">
+          <li>Clonar el repositorio y copiar variables de entorno:
+            <pre><code>cp .env.example .env</code></pre>
+          </li>
+          <li>Editar <code>.env</code> y configurar obligatoriamente:
+            <ul class="bullets">
+              <li><code>APP_SECRET_KEY</code> — cadena aleatoria de 64+ caracteres</li>
+              <li><code>POSTGRES_PASSWORD</code></li>
+              <li><code>REDIS_PASSWORD</code></li>
+            </ul>
+          </li>
+          <li>Levantar servicios core:
+            <pre><code>docker compose up -d</code></pre>
+          </li>
+          <li>Ejecutar migraciones:
+            <pre><code>docker compose --profile migrate run --rm migrate</code></pre>
+          </li>
+          <li>(Opcional) Activar perfiles adicionales:
+            <pre><code>docker compose --profile databases up -d
+docker compose --profile dns up -d
+docker compose --profile ftp up -d
+docker compose --profile backups up -d
+docker compose --profile security up -d</code></pre>
+          </li>
+        </ol>
+
+        <h3>Acceso local</h3>
+        <table>
+          <thead>
+            <tr><th>Servicio</th><th>URL</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Panel</td><td><code>http://localhost:3000</code></td></tr>
+            <tr><td>API</td><td><code>http://localhost:8000</code></td></tr>
+            <tr><td>API Docs (solo dev)</td><td><code>http://localhost:8000/docs</code></td></tr>
+            <tr><td>Health check</td><td><code>http://localhost:8000/health</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="post-install">
+        <h2>Post-instalación</h2>
+        <h3>Credenciales de acceso (aaPanel)</h3>
+        <p>Al finalizar la instalación, el instalador muestra un resumen similar a aaPanel:</p>
+        <pre><code>URL PANEL:     75.148.75.12:8475/ControlBox_Panel
+USUARIO:       admin@mi-empresa.com
+CONTRASEÑA:    ContraseñaSegura123!</code></pre>
+        <p>Las mismas credenciales se guardan en <code>/etc/controlbox/credentials.txt</code> (permisos 600).</p>
+        <p>El panel usa la ruta base <code>/ControlBox_Panel</code> y un puerto dedicado en el VPS para acceso directo por IP antes de configurar dominios.</p>
+
+        <h3>Configuración básica desde el panel (estilo aaPanel)</h3>
+        <p>Tras iniciar sesión, el usuario Owner o Administrator solo debe completar la configuración básica en <strong>Settings</strong>:</p>
+        <ol class="steps">
+          <li><strong>Producción</strong> — checklist y rotación de secretos de instalación</li>
+          <li><strong>Acceso al panel</strong> — cambiar puerto y ruta (<code>/ControlBox_Panel</code>)</li>
+          <li><strong>Alertas</strong> — umbrales de CPU, RAM y almacenamiento (notificaciones en tiempo real)</li>
+          <li><strong>Seguridad</strong> — activar TOTP/MFA para administradores</li>
+          <li><strong>Dominios</strong> — <code>controlbox domains tudominio.com admin@email.com</code></li>
+        </ol>
+        <p>Si cambia la ruta del panel desde Settings, ejecute en el servidor:</p>
+        <pre><code>sudo controlbox apply-panel
+# o: sudo bash /opt/controlbox/repair.sh --apply-panel</code></pre>
+
+        <h3>Verificar servicios</h3>
+        <pre><code>controlbox status
+
+docker compose -f /opt/controlbox/docker-compose.yml ps
+
+curl -s http://localhost:8000/health | python3 -m json.tool</code></pre>
+
+        <h3>Migraciones de base de datos</h3>
+        <p>ControlBox usa Alembic con 15 revisiones. Siempre ejecutar tras actualizar:</p>
+        <pre><code>docker compose --profile migrate run --rm migrate</code></pre>
+        <table>
+          <thead>
+            <tr><th>Revisión</th><th>Módulo</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>001</td><td>Identity (tenants, usuarios, roles, sesiones)</td></tr>
+            <tr><td>002</td><td>Websites</td></tr>
+            <tr><td>003</td><td>Databases</td></tr>
+            <tr><td>004</td><td>Supabase</td></tr>
+            <tr><td>005–011</td><td>DNS, Files, FTP, Backups, Monitoring, Security</td></tr>
+            <tr><td>012</td><td>WordPress Manager</td></tr>
+            <tr><td>013</td><td>Team Members</td></tr>
+            <tr><td>014</td><td>Staging Sites</td></tr>
+            <tr><td>015</td><td>Platform Settings y alertas de recursos</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Configurar dominios (producción)</h3>
+        <pre><code>controlbox domains tudominio.com admin@tudominio.com</code></pre>
+        <p>Genera subdominios automáticos:</p>
+        <table>
+          <thead>
+            <tr><th>Subdominio</th><th>Servicio</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>panel.tudominio.com</code></td><td>Panel de administración</td></tr>
+            <tr><td><code>api.tudominio.com</code></td><td>API REST</td></tr>
+            <tr><td><code>grafana.tudominio.com</code></td><td>Dashboards de monitoreo</td></tr>
+            <tr><td><code>minio.tudominio.com</code></td><td>Almacenamiento de objetos</td></tr>
+            <tr><td><code>supabase.tudominio.com</code></td><td>API Supabase</td></tr>
+            <tr><td><code>studio.tudominio.com</code></td><td>Supabase Studio</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="first-tenant">
+        <h2>Primer tenant (cuenta administradora)</h2>
+        <div class="alert alert-info">
+          <strong>Automático en producción</strong>
+          El instalador crea el primer tenant durante la instalación. No es necesario habilitar
+          <code>REGISTRATION_ENABLED</code> ni usar <code>curl</code> manualmente.
+        </div>
+        <p>El asistente de instalación solicita los datos del administrador y ejecuta un bootstrap interno
+          (<code>controlbox.installer.bootstrap_tenant</code>) con un token de instalación de un solo uso
+          (<code>INSTALLER_BOOTSTRAP_TOKEN</code>). El registro público permanece deshabilitado
+          (<code>REGISTRATION_ENABLED=false</code>).</p>
+        <p>El registro crea automáticamente: tenant, usuario admin, todos los permisos RBAC, rol owner en Team Members y sesión inicial.</p>
+
+        <h3>Creación manual (solo desarrollo o recuperación)</h3>
+        <p>Si necesita crear un tenant adicional en desarrollo, puede habilitar temporalmente el registro público:</p>
+        <ol class="steps">
+          <li>En <code>.env</code> (dev), establecer:
+            <pre><code>REGISTRATION_ENABLED=true</code></pre>
+          </li>
+          <li>Reiniciar la API:
+            <pre><code>docker compose restart api</code></pre>
+          </li>
+          <li>Registrar el tenant vía API:
+            <pre><code>curl -X POST http://localhost:8000/api/v1/identity/tenants/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Mi Empresa",
+    "slug": "mi-empresa",
+    "admin_email": "admin@mi-empresa.com",
+    "admin_password": "ContraseñaSegura123!",
+    "admin_full_name": "Administrador"
+  }'</code></pre>
+          </li>
+          <li>Deshabilitar registro público nuevamente:
+            <pre><code>REGISTRATION_ENABLED=false</code></pre>
+          </li>
+        </ol>
+      </section>
+
+      <section id="env-vars">
+        <h2>Variables de entorno</h2>
+        <p>Archivo principal: <code>.env</code> (dev) o <code>/etc/controlbox/platform.env</code> (producción).</p>
+
+        <h3>Aplicación</h3>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Default</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>APP_NAME</code></td><td>ControlBox</td><td>Nombre de la aplicación</td></tr>
+            <tr><td><code>APP_ENV</code></td><td>production</td><td>Entorno: development / production</td></tr>
+            <tr><td><code>APP_DEBUG</code></td><td>false</td><td>Modo debug (nunca true en producción)</td></tr>
+            <tr><td><code>APP_SECRET_KEY</code></td><td>—</td><td>Clave JWT y firma (obligatoria, 64+ chars)</td></tr>
+            <tr><td><code>APP_API_PREFIX</code></td><td>/api/v1</td><td>Prefijo de la API</td></tr>
+            <tr><td><code>CORS_ORIGINS</code></td><td>localhost:3000</td><td>Orígenes permitidos (separados por coma)</td></tr>
+            <tr><td><code>LOG_LEVEL</code></td><td>INFO</td><td>Nivel de logging</td></tr>
+            <tr><td><code>UVICORN_WORKERS</code></td><td>1</td><td>Workers de la API</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Base de datos y cache</h3>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Default</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>POSTGRES_HOST</code></td><td>postgres</td><td>Host PostgreSQL plataforma</td></tr>
+            <tr><td><code>POSTGRES_PORT</code></td><td>5432</td><td>Puerto</td></tr>
+            <tr><td><code>POSTGRES_DB</code></td><td>controlbox</td><td>Nombre de BD</td></tr>
+            <tr><td><code>POSTGRES_USER</code></td><td>controlbox</td><td>Usuario</td></tr>
+            <tr><td><code>POSTGRES_PASSWORD</code></td><td>—</td><td>Contraseña (obligatoria)</td></tr>
+            <tr><td><code>REDIS_HOST</code></td><td>redis</td><td>Host Redis</td></tr>
+            <tr><td><code>REDIS_PASSWORD</code></td><td>—</td><td>Contraseña Redis (obligatoria)</td></tr>
+            <tr><td><code>DB_POOL_SIZE</code></td><td>10</td><td>Pool de conexiones SQLAlchemy</td></tr>
+          </tbody>
+        </table>
+
+        <h3>JWT y autenticación</h3>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Default</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>JWT_ACCESS_TOKEN_EXPIRE_MINUTES</code></td><td>15</td><td>TTL token de acceso</td></tr>
+            <tr><td><code>JWT_REFRESH_TOKEN_EXPIRE_DAYS</code></td><td>7</td><td>TTL token de refresh</td></tr>
+            <tr><td><code>REGISTRATION_ENABLED</code></td><td>false</td><td>Permitir auto-registro de tenants (producción: siempre false)</td></tr>
+            <tr><td><code>INSTALLER_BOOTSTRAP_TOKEN</code></td><td>generado</td><td>Token para crear el primer tenant durante la instalación</td></tr>
+            <tr><td><code>REGISTRATION_INVITE_TOKEN</code></td><td>—</td><td>Token de invitación obligatorio</td></tr>
+            <tr><td><code>PANEL_PORT</code></td><td>8475</td><td>Puerto del panel en el host</td></tr>
+            <tr><td><code>PANEL_BASE_PATH</code></td><td>/ControlBox_Panel</td><td>Ruta base del panel Next.js</td></tr>
+            <tr><td><code>WEBAUTHN_RP_ID</code></td><td>localhost</td><td>ID del Relying Party (passkeys)</td></tr>
+            <tr><td><code>WEBAUTHN_ORIGIN</code></td><td>http://localhost:3000</td><td>Origen WebAuthn</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Hosting y rutas</h3>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Default</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>SITES_BASE_PATH</code></td><td>/var/lib/controlbox/sites</td><td>Archivos de sitios hospedados</td></tr>
+            <tr><td><code>BACKUPS_BASE_PATH</code></td><td>/var/lib/controlbox/backups</td><td>Backups generales</td></tr>
+            <tr><td><code>DOCKER_HOST</code></td><td>tcp://docker-socket-proxy:2375</td><td>API Docker (nunca socket directo)</td></tr>
+            <tr><td><code>CELERY_BROKER_URL</code></td><td>redis://…/1</td><td>Broker Celery</td></tr>
+            <tr><td><code>CELERY_RESULT_BACKEND</code></td><td>redis://…/2</td><td>Backend de resultados Celery</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Seguridad</h3>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Default</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>SECURITY_ENABLED</code></td><td>true</td><td>Interruptor maestro de seguridad</td></tr>
+            <tr><td><code>SECURITY_WAF_ENABLED</code></td><td>true</td><td>Web Application Firewall</td></tr>
+            <tr><td><code>SECURITY_CSRF_ENABLED</code></td><td>true</td><td>Protección CSRF global</td></tr>
+            <tr><td><code>SECURITY_BRUTE_FORCE_MAX_ATTEMPTS</code></td><td>5</td><td>Intentos antes de bloqueo IP</td></tr>
+            <tr><td><code>SECURITY_BRUTE_FORCE_BLOCK_SECONDS</code></td><td>3600</td><td>Duración del bloqueo</td></tr>
+            <tr><td><code>SECURITY_RATE_LIMIT_LOGIN</code></td><td>10</td><td>Rate limit login (/min)</td></tr>
+            <tr><td><code>SECURITY_RATE_LIMIT_API</code></td><td>300</td><td>Rate limit API (/min)</td></tr>
+            <tr><td><code>SECURITY_TRUST_PROXY</code></td><td>true</td><td>Confiar en X-Forwarded-For</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Frontend (<code>frontend/.env.local</code>)</h3>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>NEXT_PUBLIC_API_URL</code></td><td>URL base de la API (ej. https://api.tudominio.com)</td></tr>
+            <tr><td><code>NEXT_PUBLIC_WS_URL</code></td><td>WebSocket de monitoreo (ej. wss://api.tudominio.com/ws)</td></tr>
+            <tr><td><code>NEXT_PUBLIC_APP_NAME</code></td><td>Nombre mostrado en el panel</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="domains">
+        <h2>Dominios y DNS</h2>
+        <h3>Registros DNS requeridos (producción)</h3>
+        <p>Crear registros tipo A apuntando a la IP pública del servidor:</p>
+        <pre><code>@                  A    &lt;IP_SERVIDOR&gt;
+panel              A    &lt;IP_SERVIDOR&gt;
+api                A    &lt;IP_SERVIDOR&gt;
+grafana            A    &lt;IP_SERVIDOR&gt;
+minio              A    &lt;IP_SERVIDOR&gt;
+supabase           A    &lt;IP_SERVIDOR&gt;
+studio             A    &lt;IP_SERVIDOR&gt;
+*.staging          A    &lt;IP_SERVIDOR&gt;   (opcional, entornos staging)</code></pre>
+        <p>Traefik obtiene certificados SSL automáticamente vía Let's Encrypt HTTP challenge.</p>
+
+        <h3>Dominios de sitios clientes</h3>
+        <p>Cada sitio web o WordPress desplegado recibe etiquetas Traefik con <code>Host(`dominio.com`)</code> y TLS automático. Los entornos staging usan <code>staging.dominio.com</code> o <code>randomid.staging.dominio.com</code>.</p>
+      </section>
+
+      <section id="services">
+        <h2>Servicios y puertos</h2>
+        <h3>Docker Compose — servicios core</h3>
+        <table>
+          <thead>
+            <tr><th>Servicio</th><th>Contenedor</th><th>Puerto host</th><th>Notas</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>PostgreSQL</td><td>controlbox-postgres</td><td>127.0.0.1:5432</td><td>Solo localhost</td></tr>
+            <tr><td>Redis</td><td>controlbox-redis</td><td>127.0.0.1:6379</td><td>Solo localhost</td></tr>
+            <tr><td>API</td><td>controlbox-api</td><td>127.0.0.1:8000</td><td>FastAPI / Uvicorn</td></tr>
+            <tr><td>Panel</td><td>controlbox-panel</td><td>3000</td><td>Next.js</td></tr>
+            <tr><td>Celery Worker</td><td>controlbox-worker</td><td>—</td><td>WordPress + Staging</td></tr>
+            <tr><td>Docker Proxy</td><td>controlbox-docker-proxy</td><td>interno:2375</td><td>Socket restringido</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Perfiles opcionales</h3>
+        <table>
+          <thead>
+            <tr><th>Perfil</th><th>Servicios</th><th>Puertos</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>databases</code></td><td>MySQL, MariaDB, PostgreSQL, MSSQL</td><td>3306, 3307, 5433, 1433</td></tr>
+            <tr><td><code>dns</code></td><td>PowerDNS</td><td>53, 8081</td></tr>
+            <tr><td><code>ftp</code></td><td>Pure-FTPd</td><td>21, 30000-30009</td></tr>
+            <tr><td><code>backups</code></td><td>MinIO</td><td>9000, 9001</td></tr>
+            <tr><td><code>security</code></td><td>CrowdSec, Fail2ban</td><td>—</td></tr>
+            <tr><td><code>migrate</code></td><td>Migraciones Alembic</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="cli">
+        <h2>Comandos CLI</h2>
+        <p>Tras la instalación de producción, el comando <code>controlbox</code> queda disponible globalmente:</p>
+        <table>
+          <thead>
+            <tr><th>Comando</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>controlbox status</code></td><td>Estado de todos los servicios</td></tr>
+            <tr><td><code>controlbox update</code></td><td>Actualizar imágenes y configuración</td></tr>
+            <tr><td><code>controlbox repair</code></td><td>Diagnóstico y reparación</td></tr>
+            <tr><td><code>controlbox backup</code></td><td>Backup manual de la plataforma</td></tr>
+            <tr><td><code>controlbox domains &lt;dom&gt; &lt;email&gt;</code></td><td>Configurar dominios y SSL</td></tr>
+            <tr><td><code>controlbox logs</code></td><td>Ver logs de servicios</td></tr>
+            <tr><td><code>controlbox uninstall</code></td><td>Desinstalación segura</td></tr>
+          </tbody>
+        </table>
+        <h3>Scripts del instalador</h3>
+        <table>
+          <thead>
+            <tr><th>Script</th><th>Uso</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>installer/install.sh</code></td><td>Instalación completa idempotente</td></tr>
+            <tr><td><code>installer/update.sh</code></td><td>Actualizar plataforma</td></tr>
+            <tr><td><code>installer/repair.sh</code></td><td>Reparar servicios; <code>--rollback</code> para revertir</td></tr>
+            <tr><td><code>installer/uninstall.sh</code></td><td>Desinstalar preservando datos</td></tr>
+            <tr><td><code>installer/package.sh</code></td><td>Empaquetar para CDN</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="modules">
+        <h2>Módulos del panel</h2>
+        <p>Cada módulo expone API bajo <code>/api/v1/&lt;módulo&gt;</code> con permisos RBAC granulares.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h4>🌐 Websites</h4>
+            <p>Despliegue de sitios HTML, PHP, Node.js y Python en contenedores Docker independientes con Traefik SSL.</p>
+            <p><span class="badge badge-blue">websites.read</span> <span class="badge badge-blue">websites.manage</span></p>
+          </div>
+          <div class="card">
+            <h4>📦 WordPress</h4>
+            <p>Instalación one-click: Nginx + PHP-FPM + MySQL + WP-CLI + SSL. Backups, restauración, clonación y PHP version.</p>
+            <p><span class="badge badge-blue">wordpress.read</span> <span class="badge badge-blue">wordpress.manage</span></p>
+          </div>
+          <div class="card">
+            <h4>🔀 Staging Sites</h4>
+            <p>Entornos aislados con BD y contenedor propios. Sync bidireccional (archivos, BD, completo). Protección por contraseña e IP.</p>
+            <p><span class="badge badge-blue">staging.read</span> <span class="badge badge-blue">staging.manage</span></p>
+          </div>
+          <div class="card">
+            <h4>🗄️ Databases</h4>
+            <p>MySQL, MariaDB, PostgreSQL, MSSQL gestionados. Usuarios, permisos, backups y restauración.</p>
+            <p><span class="badge badge-blue">databases.read</span> <span class="badge badge-blue">databases.manage</span></p>
+          </div>
+          <div class="card">
+            <h4>⚡ Supabase</h4>
+            <p>Proyectos BaaS: schemas, buckets, políticas RLS, canales realtime, rotación de claves.</p>
+            <p><span class="badge badge-blue">supabase.read</span> <span class="badge badge-blue">supabase.manage</span></p>
+          </div>
+          <div class="card">
+            <h4>🌍 DNS</h4>
+            <p>Zonas y registros DNS via PowerDNS. Importación/exportación y API keys por tenant.</p>
+            <p><span class="badge badge-blue">dns.read</span> <span class="badge badge-blue">dns.manage</span></p>
+          </div>
+          <div class="card">
+            <h4>📁 File Manager</h4>
+            <p>Explorador de archivos por tenant: subir, crear carpetas, renombrar, comprimir/extraer, permisos.</p>
+            <p><span class="badge badge-blue">files.read</span> <span class="badge badge-blue">files.manage</span></p>
+          </div>
+          <div class="card">
+            <h4>📤 FTP</h4>
+            <p>Cuentas Pure-FTPd con cuotas, logs de transferencia y aislamiento por tenant.</p>
+            <p><span class="badge badge-blue">ftp.read</span> <span class="badge badge-blue">ftp.manage</span></p>
+          </div>
+          <div class="card">
+            <h4>💾 Backups</h4>
+            <p>Destinos (MinIO, S3), programaciones cron, jobs y restauración.</p>
+            <p><span class="badge badge-blue">backups.read</span> <span class="badge badge-blue">backups.manage</span></p>
+          </div>
+          <div class="card">
+            <h4>📊 Monitoring</h4>
+            <p>Métricas de CPU, RAM, disco, Docker y BD. WebSocket en tiempo real en <code>/ws</code>.</p>
+            <p><span class="badge badge-blue">monitoring.read</span></p>
+          </div>
+        </div>
+      </section>
+
+      <section id="team">
+        <h2>Team Members</h2>
+        <p>Gestión de colaboradores con roles granulares y permisos por recurso.</p>
+        <h3>Roles disponibles</h3>
+        <table>
+          <thead>
+            <tr><th>Rol</th><th>Alcance</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Owner</strong></td><td>Acceso total a la cuenta</td></tr>
+            <tr><td><strong>Administrator</strong></td><td>Acceso completo excepto facturación</td></tr>
+            <tr><td><strong>Website Manager</strong></td><td>Sitios web, WordPress, staging, estadísticas</td></tr>
+            <tr><td><strong>DNS Manager</strong></td><td>Solo registros y zonas DNS</td></tr>
+            <tr><td><strong>Database Manager</strong></td><td>Bases de datos y backups</td></tr>
+            <tr><td><strong>FTP Manager</strong></td><td>Cuentas FTP y archivos</td></tr>
+            <tr><td><strong>Billing Manager</strong></td><td>Facturación y auditoría</td></tr>
+            <tr><td><strong>Read Only</strong></td><td>Solo lectura en todos los módulos</td></tr>
+          </tbody>
+        </table>
+        <h3>Funcionalidades</h3>
+        <ul class="bullets">
+          <li>Invitaciones por correo con activación en <code>/accept-invite</code></li>
+          <li>Gestión de permisos por rol</li>
+          <li>Indicadores de MFA, passkeys y sesiones activas por miembro</li>
+          <li>Historial de acciones (auditoría de equipo)</li>
+          <li>Suspender y eliminar colaboradores</li>
+        </ul>
+      </section>
+
+      <section id="security-module">
+        <h2>Módulo de seguridad</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h4>MFA (TOTP)</h4>
+            <p>Autenticación de dos factores compatible con Google Authenticator, Authy, etc.</p>
+          </div>
+          <div class="card">
+            <h4>Passkeys (WebAuthn)</h4>
+            <p>Login sin contraseña con llaves de hardware o biometría del dispositivo.</p>
+          </div>
+          <div class="card">
+            <h4>Dispositivos de confianza</h4>
+            <p>Fingerprinting de dispositivo en cada login para detectar accesos anómalos.</p>
+          </div>
+          <div class="card">
+            <h4>Eventos de seguridad</h4>
+            <p>Registro de logins, fallos MFA, bloqueos IP y actividad sospechosa.</p>
+          </div>
+        </div>
+        <h3>Controles de plataforma</h3>
+        <ul class="bullets">
+          <li>WAF con detección de SQLi, XSS, path traversal y command injection</li>
+          <li>Rate limiting por endpoint (login: 10/min, API: 300/min)</li>
+          <li>Protección brute-force: 5 intentos → bloqueo IP 1 hora</li>
+          <li>CSRF global con cookie <code>cb_csrf</code> y header <code>X-CSRF-Token</code></li>
+          <li>Cookies JWT HttpOnly, SameSite=strict, Secure en producción</li>
+          <li>Headers: HSTS, X-Frame-Options DENY, CSP configurable</li>
+          <li>OpenAPI deshabilitado en producción</li>
+        </ul>
+      </section>
+
+      <section id="staging">
+        <h2>Staging Sites</h2>
+        <p>Entorno staging completamente aislado por sitio de producción.</p>
+        <h3>Proceso de creación</h3>
+        <ol class="steps">
+          <li>Clonar archivos desde producción</li>
+          <li>Crear base de datos MySQL independiente e importar dump</li>
+          <li>Desplegar contenedor Docker propio</li>
+          <li>Configurar dominio staging en Traefik</li>
+          <li>Emitir certificado SSL (Let's Encrypt)</li>
+          <li>Activar métricas independientes</li>
+        </ol>
+        <h3>Dominios staging</h3>
+        <table>
+          <thead>
+            <tr><th>Modo</th><th>Ejemplo (prod: example.com)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>subdomain</td><td><code>staging.example.com</code></td></tr>
+            <tr><td>random</td><td><code>a1b2c3d4.staging.example.com</code></td></tr>
+          </tbody>
+        </table>
+        <h3>Tipos de sincronización</h3>
+        <ul class="bullets">
+          <li><code>files</code> — Solo archivos</li>
+          <li><code>database</code> — Solo base de datos</li>
+          <li><code>full</code> — Archivos + base de datos</li>
+        </ul>
+        <p>Direcciones: <strong>desde producción</strong> (pull) y <strong>hacia producción</strong> (push).</p>
+        <h3>Seguridad staging</h3>
+        <ul class="bullets">
+          <li>Protección por contraseña (basic auth Traefik/Nginx)</li>
+          <li>Restricción por IP (whitelist)</li>
+          <li>Acceso temporal configurable (1–168 horas)</li>
+          <li>Bloqueo de acceso público</li>
+        </ul>
+      </section>
+
+      <section id="hardening">
+        <h2>Hardening de seguridad</h2>
+        <h3>Docker (desarrollo)</h3>
+        <ul class="bullets">
+          <li>API y worker sin acceso directo a <code>docker.sock</code></li>
+          <li>Proxy de socket Docker con permisos mínimos (sin AUTH, SECRETS, SWARM)</li>
+          <li>Contenedores API: <code>no-new-privileges</code>, <code>cap_drop: ALL</code></li>
+          <li>PostgreSQL y Redis enlazados solo a <code>127.0.0.1</code></li>
+        </ul>
+        <h3>Instalador (producción)</h3>
+        <ul class="bullets">
+          <li>Secretos generados con <code>openssl rand</code>, archivos con permisos 600</li>
+          <li>Firewall: deny incoming por defecto, solo SSH/80/443</li>
+          <li>TLS 1.2+ mínimo en Traefik</li>
+          <li>Sin secretos en logs del instalador</li>
+          <li>Snapshots de rollback automáticos</li>
+        </ul>
+        <h3>Secretos que DEBEN rotarse antes de producción</h3>
+        <div class="alert alert-danger">
+          <p>El panel incluye un checklist en <strong>Settings → Producción</strong> para marcar cada secreto como rotado. Solo Owner y Administrator pueden gestionarlo.</p>
+          <ul class="bullets" style="margin:0">
+            <li><code>APP_SECRET_KEY</code></li>
+            <li><code>POSTGRES_PASSWORD</code> y <code>REDIS_PASSWORD</code></li>
+            <li><code>REGISTRATION_INVITE_TOKEN</code></li>
+            <li>Todas las contraseñas <code>*_ADMIN_PASSWORD</code></li>
+            <li><code>SUPABASE_JWT_SECRET</code> y <code>POWERDNS_API_KEY</code></li>
+          </ul>
+        </div>
+        <h3>Alertas de recursos (Owner / Administrator)</h3>
+        <p>El módulo de monitoreo evalúa CPU, RAM y disco cada pocos segundos. Si superan el umbral configurado en Settings, se genera una alerta en el panel (campana de notificaciones) y por WebSocket. Umbral por defecto: 90%.</p>
+        <h3>Perfil security (opcional)</h3>
+        <pre><code>docker compose --profile security up -d</code></pre>
+        <p>Activa CrowdSec (detección de intrusiones) y Fail2ban (bloqueo automático de IPs en la API).</p>
+      </section>
+
+      <section id="backups">
+        <h2>Backups</h2>
+        <h3>Backup automático de plataforma</h3>
+        <p>El instalador configura un cron diario a las <strong>03:00</strong> con retención de <strong>14 días</strong>.</p>
+        <pre><code>controlbox backup</code></pre>
+        <h3>Backups de módulos</h3>
+        <table>
+          <thead>
+            <tr><th>Módulo</th><th>Contenido</th><th>Almacenamiento</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>WordPress</td><td>Archivos WP + dump MySQL</td><td><code>/var/lib/controlbox/backups</code></td></tr>
+            <tr><td>Databases</td><td>Dumps por motor</td><td><code>DATABASE_BACKUPS_PATH</code></td></tr>
+            <tr><td>Backups (módulo)</td><td>Jobs programados a MinIO/S3</td><td>Configurable por tenant</td></tr>
+            <tr><td>Plataforma</td><td>PostgreSQL + configuración</td><td><code>/var/lib/controlbox/state/</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="maintenance">
+        <h2>Mantenimiento</h2>
+        <h3>Actualizar ControlBox</h3>
+        <pre><code>controlbox update
+
+cd /opt/controlbox && docker compose pull && docker compose up -d
+docker compose --profile migrate run --rm migrate</code></pre>
+        <h3>Reiniciar servicios</h3>
+        <pre><code>docker compose restart api worker
+docker compose restart postgres redis</code></pre>
+        <h3>Ver logs</h3>
+        <pre><code>controlbox logs
+docker compose logs -f api --tail=100
+docker compose logs -f worker --tail=100</code></pre>
+        <h3>Monitoreo (producción)</h3>
+        <p>Acceder a Grafana en <code>https://grafana.tudominio.com</code>. Credenciales en <code>/etc/controlbox/credentials.txt</code>.</p>
+        <h3>Desinstalación</h3>
+        <pre><code>controlbox uninstall
+
+CONTROLBOX_PURGE_DATA=true bash installer/uninstall.sh</code></pre>
+      </section>
+
+      <section id="troubleshooting">
+        <h2>Solución de problemas</h2>
+
+        <h3>La API no responde</h3>
+        <pre><code>docker compose ps api
+docker compose logs api --tail=50
+curl http://localhost:8000/health</code></pre>
+        <p>Verificar que PostgreSQL y Redis estén healthy. Comprobar <code>APP_SECRET_KEY</code> y contraseñas en <code>platform.env</code>.</p>
+
+        <h3>Error de migraciones</h3>
+        <pre><code>docker compose --profile migrate run --rm migrate
+docker compose exec postgres psql -U controlbox -c "\dt"</code></pre>
+
+        <h3>SSL no se emite</h3>
+        <ul class="bullets">
+          <li>Verificar que el puerto 80 esté accesible desde internet</li>
+          <li>Confirmar registros DNS propagados (<code>dig api.tudominio.com</code>)</li>
+          <li>Revisar logs de Traefik: <code>docker compose logs traefik</code></li>
+          <li>El email en <code>CONTROLBOX_ADMIN_EMAIL</code> debe ser válido</li>
+        </ul>
+
+        <h3>WordPress / Staging atascado en "provisioning"</h3>
+        <pre><code>docker compose logs worker --tail=100
+docker compose restart worker</code></pre>
+        <p>Verificar que el worker Celery esté activo y que <code>DOCKER_HOST</code> apunte al proxy de socket.</p>
+
+        <h3>Permisos insuficientes en el panel</h3>
+        <p>Los permisos se calculan al login combinando roles de identidad + rol de equipo. Tras cambiar roles, el usuario debe cerrar sesión y volver a entrar.</p>
+
+        <h3>Reparación completa</h3>
+        <pre><code>controlbox repair
+sudo bash /opt/controlbox/repair.sh --rollback</code></pre>
+
+        <div class="alert alert-info">
+          <strong>Health endpoint</strong>
+          <code>GET /health</code> devuelve estado de PostgreSQL y Redis. Útil para balanceadores y monitoreo externo.
+        </div>
+      </section>
+
+      <footer style="margin-top:4rem;padding-top:2rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.85rem;">
+        <p>ControlBox v1.0.0 — Documentación para administradores de servidores</p>
+        <p>Generado para el despliegue y operación de la plataforma de hosting multi-tenant ControlBox.</p>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const sections = document.querySelectorAll("section[id]");
+    const navLinks = document.querySelectorAll("nav a");
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          navLinks.forEach((link) => {
+            link.classList.toggle("active", link.getAttribute("href") === "#" + entry.target.id);
+          });
+        }
+      });
+    }, { rootMargin: "-20% 0px -70% 0px" });
+    sections.forEach((s) => observer.observe(s));
+  </script>
+</body>
+</html>

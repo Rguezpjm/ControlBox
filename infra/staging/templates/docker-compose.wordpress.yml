@@ -1,0 +1,55 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: {{NGINX_CONTAINER}}
+    restart: unless-stopped
+    volumes:
+      - ./wordpress:/var/www/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+    depends_on:
+      - php
+    networks:
+      - controlbox
+      - stg_internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{{ROUTER_NAME}}.rule=Host(`{{DOMAIN}}`)"
+      - "traefik.http.routers.{{ROUTER_NAME}}.entrypoints=websecure"
+      - "traefik.http.services.{{ROUTER_NAME}}.loadbalancer.server.port=80"
+      - "traefik.http.routers.{{ROUTER_NAME}}.tls=true"
+      - "traefik.http.routers.{{ROUTER_NAME}}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.{{ROUTER_NAME}}.middlewares={{MIDDLEWARE_NAME}}"
+      - "controlbox.staging=true"
+      - "controlbox.staging.id={{STAGING_ID}}"
+      - "controlbox.tenant.id={{TENANT_ID}}"
+      - "controlbox.monitoring.scrape=true"
+      - "controlbox.monitoring.port=80"
+      - "controlbox.logs.enabled=true"
+
+  php:
+    image: wordpress:php{{PHP_VERSION}}-fpm
+    container_name: {{PHP_CONTAINER}}
+    restart: unless-stopped
+    volumes:
+      - ./wordpress:/var/www/html
+    networks:
+      - controlbox
+      - stg_internal
+    user: "33:33"
+
+  wp-cli:
+    image: wordpress:cli-php{{PHP_VERSION}}
+    profiles: [cli]
+    volumes:
+      - ./wordpress:/var/www/html
+    networks:
+      - stg_internal
+    user: "33:33"
+    working_dir: /var/www/html
+
+networks:
+  controlbox:
+    external: true
+  stg_internal:
+    driver: bridge

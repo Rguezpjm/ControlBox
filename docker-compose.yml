@@ -1,0 +1,431 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: controlbox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-controlbox}
+      POSTGRES_USER: ${POSTGRES_USER:-controlbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-controlbox} -d ${POSTGRES_DB:-controlbox}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - controlbox
+
+  redis:
+    image: redis:7-alpine
+    container_name: controlbox-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required} --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - controlbox
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: controlbox-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      EXEC: 1
+      POST: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      IMAGES: 1
+      BUILD: 1
+      INFO: 1
+      PING: 1
+      VERSION: 1
+      AUTH: 0
+      SECRETS: 0
+      SWARM: 0
+      SYSTEM: 0
+      DISTRIBUTION: 0
+      TASKS: 0
+      NODES: 0
+      PLUGINS: 0
+      SESSION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - controlbox
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.25"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: controlbox-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      SITES_BASE_PATH: /var/lib/controlbox/sites
+      DATABASE_BACKUPS_PATH: /var/lib/controlbox/backups/databases
+      MYSQL_HOST: mysql
+      MARIADB_HOST: mariadb
+      MANAGED_POSTGRES_HOST: managed-postgres
+      MSSQL_HOST: mssql
+      SUPABASE_DB_HOST: supabase-db
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_STORAGE_URL: http://supabase-storage:5000
+      POWERDNS_API_URL: http://powerdns:8081
+      PUREFTPD_HOST: pureftpd
+      PUREFTPD_LOG_PATH: /var/log/pure-ftpd/transfer.log
+      BACKUPS_BASE_PATH: /var/lib/controlbox/backups
+      UVICORN_WORKERS: 1
+      DB_POOL_SIZE: 10
+      DB_MAX_OVERFLOW: 5
+      SECURITY_CSRF_ENABLED: "true"
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+    volumes:
+      - sites_data:/var/lib/controlbox/sites
+      - database_backups:/var/lib/controlbox/backups/databases
+      - backups_data:/var/lib/controlbox/backups
+      - pureftpd_logs:/var/log/pure-ftpd
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - controlbox
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: controlbox-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      SITES_BASE_PATH: /var/lib/controlbox/sites
+      DATABASE_BACKUPS_PATH: /var/lib/controlbox/backups/databases
+      BACKUPS_BASE_PATH: /var/lib/controlbox/backups
+      MYSQL_HOST: mysql
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+    command: ["celery", "-A", "controlbox.shared.infrastructure.celery.app:celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    volumes:
+      - sites_data:/var/lib/controlbox/sites
+      - database_backups:/var/lib/controlbox/backups/databases
+      - backups_data:/var/lib/controlbox/backups
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    networks:
+      - controlbox
+
+  panel:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: controlbox-panel
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000/ws
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - controlbox
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: controlbox-migrate
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - controlbox
+    profiles:
+      - migrate
+
+  mysql:
+    image: mysql:8.4
+    container_name: controlbox-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ADMIN_PASSWORD:-change-me-mysql-root}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - controlbox
+    profiles:
+      - databases
+
+  mariadb:
+    image: mariadb:11.4
+    container_name: controlbox-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ADMIN_PASSWORD:-change-me-mariadb-root}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - controlbox
+    profiles:
+      - databases
+
+  managed-postgres:
+    image: postgres:16-alpine
+    container_name: controlbox-managed-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MANAGED_POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${MANAGED_POSTGRES_ADMIN_PASSWORD:-change-me-managed-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - managed_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MANAGED_POSTGRES_ADMIN_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - controlbox
+    profiles:
+      - databases
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: controlbox-mssql
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_ADMIN_PASSWORD:-YourStrong!Passw0rd}
+    volumes:
+      - mssql_data:/var/opt/mssql
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - controlbox
+    profiles:
+      - databases
+
+  powerdns:
+    image: powerdns/pdns-auth-48:latest
+    container_name: controlbox-powerdns
+    restart: unless-stopped
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "127.0.0.1:8081:8081"
+    environment:
+      PDNS_API: "yes"
+      PDNS_API_KEY: ${POWERDNS_API_KEY:-changeme}
+      PDNS_WEBSERVER: "yes"
+      PDNS_WEBSERVER_ADDRESS: 0.0.0.0
+      PDNS_WEBSERVERPort: 8081
+      PDNS_LAUNCH: gsqlite3
+      PDNS_GSQLITE3_DATABASE: /var/lib/powerdns/pdns.sqlite3
+    volumes:
+      - powerdns_data:/var/lib/powerdns
+    networks:
+      - controlbox
+    profiles:
+      - dns
+
+  pureftpd:
+    image: stilliard/pure-ftpd:hardened
+    container_name: controlbox-pureftpd
+    restart: unless-stopped
+    ports:
+      - "21:21"
+      - "30000-30009:30000-30009"
+    environment:
+      PUBLICHOST: ${PUREFTPD_PUBLIC_HOST:-localhost}
+      FTP_USER_UID: ${PUREFTPD_VIRTUAL_UID:-1000}
+      FTP_USER_GID: ${PUREFTPD_VIRTUAL_GID:-1000}
+    command: /run.sh -l puredb:/etc/pure-ftpd/pureftpd.pdb -E -j -R -P ${PUREFTPD_PUBLIC_HOST:-localhost} -p 30000:30009 -O clf:/var/log/pure-ftpd/transfer.log
+    volumes:
+      - sites_data:/var/lib/controlbox/sites
+      - pureftpd_passwd:/etc/pure-ftpd
+      - pureftpd_logs:/var/log/pure-ftpd
+    networks:
+      - controlbox
+    profiles:
+      - ftp
+
+  minio:
+    image: minio/minio:latest
+    container_name: controlbox-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - controlbox
+    profiles:
+      - backups
+
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: controlbox-crowdsec
+    restart: unless-stopped
+    environment:
+      COLLECTIONS: crowdsecurity/nginx crowdsecurity/http-cve crowdsecurity/iptables
+    volumes:
+      - crowdsec_data:/var/lib/crowdsec/data
+      - crowdsec_config:/etc/crowdsec
+    networks:
+      - controlbox
+    profiles:
+      - security
+
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: controlbox-fail2ban
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - fail2ban_data:/data
+      - ./infra/fail2ban:/etc/fail2ban
+    profiles:
+      - security
+
+volumes:
+  postgres_data:
+  redis_data:
+  sites_data:
+  database_backups:
+  mysql_data:
+  mariadb_data:
+  managed_postgres_data:
+  mssql_data:
+  powerdns_data:
+  pureftpd_passwd:
+  pureftpd_logs:
+  backups_data:
+  minio_data:
+  crowdsec_data:
+  crowdsec_config:
+  fail2ban_data:
+
+networks:
+  controlbox:
+    driver: bridge

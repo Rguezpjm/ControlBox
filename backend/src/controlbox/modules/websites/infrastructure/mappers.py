@@ -1,0 +1,68 @@
+from controlbox.modules.websites.domain.entities import (
+    DatabaseEngine,
+    SslStatus,
+    Website,
+    WebsiteRuntime,
+    WebsiteStatus,
+)
+from controlbox.modules.websites.infrastructure.models import WebsiteModel
+
+
+def website_to_entity(model: WebsiteModel) -> Website:
+    return Website(
+        id=model.id,
+        tenant_id=model.tenant_id,
+        name=model.name,
+        domain=model.domain,
+        runtime=WebsiteRuntime(model.runtime),
+        runtime_version=model.runtime_version,
+        status=WebsiteStatus(model.status),
+        container_id=model.container_id,
+        container_name=model.container_name,
+        document_root=model.document_root,
+        ssl_enabled=model.ssl_enabled,
+        ssl_status=SslStatus(model.ssl_status),
+        database_engine=DatabaseEngine(model.database_engine),
+        database_config=model.database_config or {},
+        monitoring_enabled=model.monitoring_enabled,
+        logs_enabled=model.logs_enabled,
+        logs_path=model.logs_path,
+        traefik_router=model.traefik_router,
+        port=model.port,
+        disk_used_mb=model.disk_used_mb,
+        disk_limit_mb=model.disk_limit_mb,
+        settings=model.settings or {},
+        error_message=model.error_message,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )
+
+
+def website_to_model(entity: Website) -> WebsiteModel:
+    return WebsiteModel(
+        id=entity.id,
+        tenant_id=entity.tenant_id,
+        name=entity.name,
+        domain=entity.domain,
+        runtime=entity.runtime.value,
+        runtime_version=entity.runtime_version,
+        status=entity.status.value,
+        container_id=entity.container_id,
+        container_name=entity.container_name,
+        document_root=entity.document_root,
+        ssl_enabled=entity.ssl_enabled,
+        ssl_status=entity.ssl_status.value,
+        database_engine=entity.database_engine.value,
+        database_config=entity.database_config,
+        monitoring_enabled=entity.monitoring_enabled,
+        logs_enabled=entity.logs_enabled,
+        logs_path=entity.logs_path,
+        traefik_router=entity.traefik_router,
+        port=entity.port,
+        disk_used_mb=entity.disk_used_mb,
+        disk_limit_mb=entity.disk_limit_mb,
+        settings=entity.settings,
+        error_message=entity.error_message,
+        created_at=entity.created_at,
+        updated_at=entity.updated_at,
+    )

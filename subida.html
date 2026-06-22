@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ControlBox — Guía de publicación del instalador</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --code-bg: #0d1117;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 15px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+    nav.sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.5rem 0;
+    }
+    .brand {
+      padding: 0 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .brand h1 { font-size: 1.35rem; font-weight: 700; }
+    .brand p { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+    .brand .version {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0.15rem 0.5rem;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    nav ul { list-style: none; }
+    nav ul li a {
+      display: block;
+      padding: 0.45rem 1.25rem;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.88rem;
+      border-left: 3px solid transparent;
+      transition: all 0.15s;
+    }
+    nav ul li a:hover { color: var(--text); background: var(--surface2); border-left-color: var(--accent); }
+    nav .nav-group {
+      padding: 0.75rem 1.25rem 0.35rem;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    main.content { padding: 2.5rem 3rem 4rem; max-width: 960px; }
+    section { margin-bottom: 3.5rem; scroll-margin-top: 1.5rem; }
+    h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--border);
+    }
+    h3 { font-size: 1.2rem; font-weight: 600; margin: 1.75rem 0 0.75rem; }
+    h4 { font-size: 1rem; font-weight: 600; margin: 1.25rem 0 0.5rem; color: var(--muted); }
+    p { margin-bottom: 1rem; }
+    .lead { font-size: 1.05rem; color: var(--muted); margin-bottom: 1.5rem; }
+    .alert {
+      padding: 1rem 1.25rem;
+      border-radius: var(--radius);
+      margin: 1rem 0;
+      border-left: 4px solid;
+    }
+    .alert-info { background: rgba(59,130,246,0.12); border-color: var(--accent); }
+    .alert-warn { background: rgba(245,158,11,0.12); border-color: var(--warning); }
+    .alert-danger { background: rgba(239,68,68,0.12); border-color: var(--danger); }
+    .alert-success { background: rgba(34,197,94,0.12); border-color: var(--success); }
+    .alert strong { display: block; margin-bottom: 0.25rem; }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    code {
+      font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+      font-size: 0.88em;
+    }
+    p code, li code, td code {
+      background: var(--code-bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+    }
+    th, td {
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+    th { background: var(--surface2); font-weight: 600; }
+    td { background: var(--surface); }
+    tr:nth-child(even) td { background: rgba(36,48,68,0.5); }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+    .card h4 { margin-top: 0; color: var(--text); }
+    .card p { font-size: 0.88rem; color: var(--muted); margin-bottom: 0; }
+    ol.steps { margin: 1rem 0 1rem 1.25rem; }
+    ol.steps li { margin-bottom: 0.75rem; padding-left: 0.25rem; }
+    ul.bullets { margin: 0.5rem 0 1rem 1.25rem; }
+    ul.bullets li { margin-bottom: 0.35rem; }
+    .arch-diagram {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      font-family: monospace;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      white-space: pre;
+      overflow-x: auto;
+      color: var(--muted);
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-blue { background: rgba(59,130,246,0.2); color: #93c5fd; }
+    .badge-green { background: rgba(34,197,94,0.2); color: #86efac; }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      nav.sidebar { position: relative; height: auto; }
+      main.content { padding: 1.5rem; }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="brand">
+        <h1>ControlBox</h1>
+        <p>Publicar el instalador remoto</p>
+        <span class="version">CDN / install.grodtech.com</span>
+      </div>
+      <div class="nav-group">Conceptos</div>
+      <ul>
+        <li><a href="#overview">Visión general</a></li>
+        <li><a href="#architecture">Arquitectura</a></li>
+        <li><a href="#files">Archivos a publicar</a></li>
+      </ul>
+      <div class="nav-group">Preparación</div>
+      <ul>
+        <li><a href="#images">Imágenes Docker (GHCR)</a></li>
+        <li><a href="#package">Empaquetar instalador</a></li>
+        <li><a href="#cdn-vps">VPS de distribución</a></li>
+      </ul>
+      <div class="nav-group">Despliegue</div>
+      <ul>
+        <li><a href="#upload">Subir archivos</a></li>
+        <li><a href="#nginx">Nginx + SSL</a></li>
+        <li><a href="#dns">DNS</a></li>
+        <li><a href="#verify">Verificar</a></li>
+      </ul>
+      <div class="nav-group">Usuarios finales</div>
+      <ul>
+        <li><a href="#user-commands">Comandos de instalación</a></li>
+        <li><a href="#release">Publicar nueva versión</a></li>
+        <li><a href="#troubleshooting">Solución de problemas</a></li>
+      </ul>
+    </nav>
+
+    <main class="content">
+
+      <section id="overview">
+        <h2>Visión general</h2>
+        <p class="lead">
+          Esta guía explica cómo publicar ControlBox para que cualquier persona instale la plataforma en su propio VPS
+          con un solo comando <code>curl</code>, igual que aaPanel.
+        </p>
+
+        <div class="alert alert-info">
+          <strong>Dos servidores distintos</strong>
+          No confunda el VPS de <em>distribución</em> (donde usted publica el instalador) con el VPS de cada
+          <em>cliente</em> (donde se ejecuta la instalación completa de ControlBox).
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h4>Su VPS de distribución</h4>
+            <p>Sirve archivos estáticos en <code>install.grodtech.com</code>: el bootstrap <code>install.sh</code> y el paquete <code>.tar.gz</code>. Puede ser un VPS pequeño (1 GB RAM).</p>
+          </div>
+          <div class="card">
+            <h4>VPS del usuario final</h4>
+            <p>Ejecuta <code>curl ... | bash</code>, descarga su paquete, instala Docker, despliega PostgreSQL, API, panel, etc. Mínimo 4 GB RAM y 40 GB disco.</p>
+          </div>
+        </div>
+
+        <p>Para que el comando remoto funcione debe tener listo:</p>
+        <ol class="steps">
+          <li>Imágenes Docker publicadas en un registro (<code>ghcr.io/grodtech/controlbox-api</code> y <code>controlbox-panel</code>)</li>
+          <li>Paquete del instalador generado con <code>package.sh</code></li>
+          <li>Archivos accesibles por HTTPS en su dominio de instalación</li>
+        </ol>
+      </section>
+
+      <section id="architecture">
+        <h2>Arquitectura de distribución</h2>
+        <div class="arch-diagram">Usuario final (VPS cliente)
+    |
+    |  curl -fsSL https://install.grodtech.com/install.sh | bash
+    v
+Su VPS CDN (install.grodtech.com)
+    |-- install.sh              (bootstrap, ~5 KB)
+    |-- controlbox-installer-1.0.0.tar.gz   (instalador completo)
+    |
+    v
+Instalador en VPS del cliente
+    |-- Descarga imágenes: ghcr.io/grodtech/controlbox-api:1.0.0
+    |-- Descarga imágenes: ghcr.io/grodtech/controlbox-panel:1.0.0
+    |-- Despliega stack Docker completo
+    |-- Crea primer tenant automáticamente
+    v
+Panel listo: IP:PUERTO/ControlBox_Panel</div>
+      </section>
+
+      <section id="files">
+        <h2>Archivos que debe publicar</h2>
+        <table>
+          <thead>
+            <tr><th>URL pública</th><th>Origen local</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>https://install.grodtech.com/install.sh</code></td>
+              <td><code>installer/dist/install.sh</code></td>
+              <td>Script bootstrap que descarga el paquete y ejecuta la instalación</td>
+            </tr>
+            <tr>
+              <td><code>https://install.grodtech.com/controlbox-installer-1.0.0.tar.gz</code></td>
+              <td><code>installer/dist/controlbox-installer-1.0.0.tar.gz</code></td>
+              <td>Instalador completo (lib, templates, scripts). La versión debe coincidir con <code>CONTROLBOX_VERSION</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="alert alert-warn">
+          <strong>Coincidencia de versión</strong>
+          El nombre del <code>.tar.gz</code> debe ser exactamente
+          <code>controlbox-installer-{CONTROLBOX_VERSION}.tar.gz</code>.
+          Esa versión también se usa para etiquetar las imágenes Docker que el instalador descargará en el VPS del cliente.
+        </div>
+      </section>
+
+      <section id="images">
+        <h2>Paso 1 — Publicar imágenes Docker en GHCR</h2>
+        <p>El instalador de producción no compila el código en el VPS del cliente: descarga imágenes preconstruidas.</p>
+
+        <h3>1.1 Crear token de GitHub Container Registry</h3>
+        <ol class="steps">
+          <li>En GitHub: <strong>Settings → Developer settings → Personal access tokens</strong></li>
+          <li>Crear token con permiso <code>write:packages</code> y <code>read:packages</code></li>
+          <li>Iniciar sesión en el registro:
+            <pre><code>echo "TU_GITHUB_TOKEN" | docker login ghcr.io -u TU_USUARIO --password-stdin</code></pre>
+          </li>
+        </ol>
+
+        <h3>1.2 Construir y subir API</h3>
+        <p>Desde la raíz del repositorio en su máquina de desarrollo o CI:</p>
+        <pre><code>export VERSION=1.0.0
+export REGISTRY=ghcr.io/grodtech
+
+cd backend
+docker build -t ${REGISTRY}/controlbox-api:${VERSION} .
+docker tag ${REGISTRY}/controlbox-api:${VERSION} ${REGISTRY}/controlbox-api:latest
+docker push ${REGISTRY}/controlbox-api:${VERSION}
+docker push ${REGISTRY}/controlbox-api:latest</code></pre>
+
+        <h3>1.3 Construir y subir Panel</h3>
+        <p>El panel de producción usa la ruta base <code>/ControlBox_Panel</code>:</p>
+        <pre><code>cd frontend
+docker build \
+  --build-arg NEXT_PUBLIC_BASE_PATH=/ControlBox_Panel \
+  --build-arg API_PROXY_URL=http://api:8000 \
+  -t ${REGISTRY}/controlbox-panel:${VERSION} .
+docker tag ${REGISTRY}/controlbox-panel:${VERSION} ${REGISTRY}/controlbox-panel:latest
+docker push ${REGISTRY}/controlbox-panel:${VERSION}
+docker push ${REGISTRY}/controlbox-panel:latest</code></pre>
+
+        <h3>1.4 Hacer las imágenes públicas (si aplica)</h3>
+        <p>En GitHub → Packages → cada imagen → <strong>Package settings → Change visibility → Public</strong>.
+        Si permanecen privadas, los VPS de sus usuarios necesitarán autenticarse contra GHCR antes de instalar.</p>
+
+        <div class="alert alert-info">
+          <strong>Registro propio</strong>
+          Si no usa <code>ghcr.io/grodtech</code>, edite
+          <code>installer/templates/docker-compose.platform.yml</code> y cambie las referencias de imagen
+          antes de empaquetar el instalador.
+        </div>
+      </section>
+
+      <section id="package">
+        <h2>Paso 2 — Empaquetar el instalador</h2>
+        <p>En su máquina local, con el repositorio ControlBox clonado:</p>
+
+        <h3>2.1 Revisar versión y URL</h3>
+        <p>Edite <code>installer/config/defaults.conf</code> si necesita cambiar dominio o versión:</p>
+        <pre><code>CONTROLBOX_VERSION=1.0.0
+CONTROLBOX_INSTALL_URL=https://install.grodtech.com</code></pre>
+
+        <h3>2.2 Generar el paquete</h3>
+        <pre><code>cd installer
+chmod +x package.sh
+CONTROLBOX_VERSION=1.0.0 CONTROLBOX_INSTALL_URL=https://install.grodtech.com bash package.sh</code></pre>
+
+        <p>Salida esperada:</p>
+        <pre><code>Paquete creado: installer/dist/controlbox-installer-1.0.0.tar.gz
+Bootstrap:      installer/dist/install.sh</code></pre>
+
+        <h3>2.3 Comprobar contenido del paquete</h3>
+        <pre><code>tar tzf dist/controlbox-installer-1.0.0.tar.gz | head -20</code></pre>
+        <p>Debe incluir <code>install.sh</code>, <code>lib/</code>, <code>templates/</code> y <code>config/</code>.</p>
+      </section>
+
+      <section id="cdn-vps">
+        <h2>Paso 3 — Preparar el VPS de distribución</h2>
+        <p class="lead">VPS ligero recomendado: Ubuntu 22.04/24.04, 1 vCPU, 1 GB RAM, 10 GB disco.</p>
+
+        <h3>3.1 Requisitos</h3>
+        <ul class="bullets">
+          <li>Acceso SSH como root o sudo</li>
+          <li>Dominio apuntando al VPS (ej. <code>install.grodtech.com</code>)</li>
+          <li>Puertos 80 y 443 abiertos</li>
+        </ul>
+
+        <h3>3.2 Instalar Nginx</h3>
+        <pre><code>sudo apt update
+sudo apt install -y nginx certbot python3-certbot-nginx</code></pre>
+
+        <h3>3.3 Crear directorio web</h3>
+        <pre><code>sudo mkdir -p /var/www/install.grodtech.com
+sudo chown -R $USER:$USER /var/www/install.grodtech.com
+sudo chmod 755 /var/www/install.grodtech.com</code></pre>
+      </section>
+
+      <section id="upload">
+        <h2>Paso 4 — Subir archivos al VPS</h2>
+        <p>Desde su PC (donde generó el paquete), use <code>scp</code> o <code>rsync</code>:</p>
+
+        <h3>Opción A — SCP</h3>
+        <pre><code>cd installer/dist
+
+scp install.sh root@IP_DE_SU_VPS:/var/www/install.grodtech.com/
+scp controlbox-installer-1.0.0.tar.gz root@IP_DE_SU_VPS:/var/www/install.grodtech.com/</code></pre>
+
+        <h3>Opción B — RSYNC (recomendado para actualizaciones)</h3>
+        <pre><code>rsync -avz --progress installer/dist/ \
+  root@IP_DE_SU_VPS:/var/www/install.grodtech.com/</code></pre>
+
+        <h3>Permisos en el servidor</h3>
+        <pre><code>ssh root@IP_DE_SU_VPS
+
+cd /var/www/install.grodtech.com
+chmod 644 install.sh controlbox-installer-1.0.0.tar.gz
+chown -R www-data:www-data /var/www/install.grodtech.com</code></pre>
+
+        <div class="alert alert-success">
+          <strong>Tip</strong>
+          Puede automatizar esto con GitHub Actions: al crear un tag <code>v1.0.0</code>, construir imágenes,
+          empaquetar el instalador y subir por SSH/rsync al VPS de distribución.
+        </div>
+      </section>
+
+      <section id="nginx">
+        <h2>Paso 5 — Configurar Nginx y SSL</h2>
+
+        <h3>5.1 Virtual host</h3>
+        <pre><code>sudo nano /etc/nginx/sites-available/install.grodtech.com</code></pre>
+        <pre><code>server {
+    listen 80;
+    listen [::]:80;
+    server_name install.grodtech.com;
+
+    root /var/www/install.grodtech.com;
+    index index.html;
+
+    location / {
+        autoindex off;
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ \.(sh|tar\.gz)$ {
+        add_header Cache-Control "public, max-age=300";
+        add_header Access-Control-Allow-Origin "*";
+        default_type application/octet-stream;
+    }
+}</code></pre>
+
+        <pre><code>sudo ln -sf /etc/nginx/sites-available/install.grodtech.com /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx</code></pre>
+
+        <h3>5.2 Certificado Let's Encrypt</h3>
+        <pre><code>sudo certbot --nginx -d install.grodtech.com</code></pre>
+      </section>
+
+      <section id="dns">
+        <h2>Paso 6 — Configurar DNS</h2>
+        <table>
+          <thead>
+            <tr><th>Tipo</th><th>Nombre</th><th>Valor</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>A</td><td><code>install</code> (o <code>install.grodtech.com</code>)</td><td>IP pública de su VPS de distribución</td></tr>
+          </tbody>
+        </table>
+        <p>Espere la propagación DNS (minutos u horas) antes de probar HTTPS.</p>
+      </section>
+
+      <section id="verify">
+        <h2>Paso 7 — Verificar publicación</h2>
+        <p>Ejecute estas pruebas desde cualquier máquina con Internet:</p>
+
+        <h3>7.1 Comprobar archivos</h3>
+        <pre><code>curl -fsSL -I https://install.grodtech.com/install.sh
+curl -fsSL -I https://install.grodtech.com/controlbox-installer-1.0.0.tar.gz</code></pre>
+        <p>Debe responder <code>HTTP/2 200</code> (o 301 → 200).</p>
+
+        <h3>7.2 Probar bootstrap sin instalar</h3>
+        <pre><code>curl -fsSL https://install.grodtech.com/install.sh | head -20</code></pre>
+        <p>Debe mostrar el script bash de ControlBox con <code>CONTROLBOX_INSTALL_URL</code>.</p>
+
+        <h3>7.3 Instalación de prueba en un VPS limpio</h3>
+        <p>Use un VPS de prueba (no su CDN) con Ubuntu 22.04 y ejecute el comando interactivo o no interactivo de la sección siguiente.</p>
+
+        <div class="alert alert-danger">
+          <strong>No pruebe en el VPS de distribución</strong>
+          El VPS que sirve <code>install.sh</code> solo aloja archivos estáticos. La instalación completa de ControlBox
+          debe hacerse en un servidor dedicado distinto.
+        </div>
+      </section>
+
+      <section id="user-commands">
+        <h2>Comandos que usarán sus usuarios</h2>
+        <p>Una vez publicado, sus clientes instalan ControlBox en <strong>su propio VPS</strong> con:</p>
+
+        <h3>Instalación interactiva (recomendada)</h3>
+        <p>El asistente pregunta dominio, tenant, contraseña y puerto del panel:</p>
+        <pre><code>curl -fsSL https://install.grodtech.com/install.sh | bash</code></pre>
+
+        <h3>Instalación no interactiva (automatizada)</h3>
+        <pre><code>curl -fsSL https://install.grodtech.com/install.sh | \
+  CONTROLBOX_PRIMARY_DOMAIN=tudominio.com \
+  CONTROLBOX_ADMIN_EMAIL=admin@tudominio.com \
+  CONTROLBOX_TENANT_NAME="Mi Empresa" \
+  CONTROLBOX_TENANT_SLUG=mi-empresa \
+  CONTROLBOX_TENANT_ADMIN_EMAIL=admin@mi-empresa.com \
+  CONTROLBOX_TENANT_ADMIN_PASSWORD='ContraseñaSegura123!' \
+  CONTROLBOX_TENANT_ADMIN_FULL_NAME="Administrador" \
+  CONTROLBOX_PANEL_PORT=8475 \
+  CONTROLBOX_ASSUME_YES=true \
+  bash</code></pre>
+
+        <h3>Resultado esperado al finalizar</h3>
+        <pre><code>URL PANEL:     75.148.75.12:8475/ControlBox_Panel
+USUARIO:       admin@mi-empresa.com
+CONTRASEÑA:    ContraseñaSegura123!</code></pre>
+
+        <p>El usuario luego completa en el panel: <strong>Settings → Producción</strong> (rotación de secretos, TOTP, umbrales de alertas).</p>
+
+        <h3>Variables disponibles para automatización</h3>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>CONTROLBOX_PRIMARY_DOMAIN</code></td><td>Dominio principal (opcional)</td></tr>
+            <tr><td><code>CONTROLBOX_ADMIN_EMAIL</code></td><td>Email para Let's Encrypt</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_NAME</code></td><td>Nombre de la organización</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_SLUG</code></td><td>Slug del tenant</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_ADMIN_EMAIL</code></td><td>Email del administrador</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_ADMIN_PASSWORD</code></td><td>Contraseña (mín. 12 caracteres)</td></tr>
+            <tr><td><code>CONTROLBOX_TENANT_ADMIN_FULL_NAME</code></td><td>Nombre completo</td></tr>
+            <tr><td><code>CONTROLBOX_PANEL_PORT</code></td><td>Puerto del panel (ej. 8475)</td></tr>
+            <tr><td><code>CONTROLBOX_ASSUME_YES=true</code></td><td>Sin confirmaciones interactivas</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="release">
+        <h2>Publicar una nueva versión</h2>
+        <ol class="steps">
+          <li>Actualice <code>CONTROLBOX_VERSION</code> en <code>installer/config/defaults.conf</code></li>
+          <li>Construya y suba nuevas imágenes Docker con el tag de versión (ej. <code>1.0.1</code>)</li>
+          <li>Ejecute <code>package.sh</code> con la nueva versión</li>
+          <li>Suba al CDN:
+            <ul class="bullets">
+              <li><code>install.sh</code> (siempre sobrescribir)</li>
+              <li><code>controlbox-installer-NUEVA_VERSION.tar.gz</code> (archivo nuevo)</li>
+            </ul>
+          </li>
+          <li>Mantenga el <code>.tar.gz</code> de la versión anterior un tiempo por si hay instalaciones en curso</li>
+          <li>Pruebe: <code>curl -fsSL https://install.grodtech.com/install.sh | bash</code> en un VPS de staging</li>
+        </ol>
+
+        <h3>Checklist de release</h3>
+        <table>
+          <thead>
+            <tr><th>Ítem</th><th>Estado</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Imagen <code>controlbox-api:VERSION</code> en GHCR</td><td><span class="badge badge-blue">requerido</span></td></tr>
+            <tr><td>Imagen <code>controlbox-panel:VERSION</code> en GHCR</td><td><span class="badge badge-blue">requerido</span></td></tr>
+            <tr><td><code>install.sh</code> accesible por HTTPS</td><td><span class="badge badge-blue">requerido</span></td></tr>
+            <tr><td><code>controlbox-installer-VERSION.tar.gz</code> accesible</td><td><span class="badge badge-blue">requerido</span></td></tr>
+            <tr><td>Migraciones Alembic incluidas en imagen API</td><td><span class="badge badge-green">incluido en build</span></td></tr>
+            <tr><td>Prueba de instalación en VPS limpio</td><td><span class="badge badge-blue">recomendado</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="troubleshooting">
+        <h2>Solución de problemas</h2>
+
+        <h3><code>curl: (22) The requested URL returned error: 404</code></h3>
+        <ul class="bullets">
+          <li>Verifique que <code>install.sh</code> y el <code>.tar.gz</code> existen en <code>/var/www/install.grodtech.com/</code></li>
+          <li>El nombre del tar debe coincidir exactamente con <code>CONTROLBOX_VERSION</code> embebida en <code>install.sh</code></li>
+          <li>Revise <code>sudo nginx -t</code> y los logs en <code>/var/log/nginx/error.log</code></li>
+        </ul>
+
+        <h3><code>No se pudo descargar el instalador</code></h3>
+        <ul class="bullets">
+          <li>Confirme HTTPS y certificado válido en el dominio</li>
+          <li>Pruebe manualmente: <code>curl -fsSL -O https://install.grodtech.com/controlbox-installer-1.0.0.tar.gz</code></li>
+          <li>Revise que <code>CONTROLBOX_INSTALL_URL</code> en <code>defaults.conf</code> sea el dominio correcto antes de empaquetar</li>
+        </ul>
+
+        <h3>Error al descargar imágenes Docker en el VPS del cliente</h3>
+        <ul class="bullets">
+          <li>Imagen no publicada o tag incorrecto en GHCR</li>
+          <li>Paquete GHCR privado sin autenticación en el VPS del cliente</li>
+          <li>Versión en <code>platform.env</code> / <code>defaults.conf</code> no coincide con el tag subido</li>
+        </ul>
+
+        <h3>Cambiar de dominio (no usar grodtech.com)</h3>
+        <ol class="steps">
+          <li>Edite <code>CONTROLBOX_INSTALL_URL=https://install.sudominio.com</code> en <code>defaults.conf</code></li>
+          <li>Regenere el paquete con <code>package.sh</code></li>
+          <li>Configure DNS, Nginx y SSL en su nuevo dominio</li>
+          <li>Distribuya el nuevo comando: <code>curl -fsSL https://install.sudominio.com/install.sh | bash</code></li>
+        </ol>
+
+        <div class="alert alert-info">
+          <strong>Documentación relacionada</strong>
+          Para administrar ControlBox ya instalado, consulte <code>documentacion.html</code> en la raíz del repositorio.
+        </div>
+      </section>
+
+    </main>
+  </div>
+</body>
+</html>

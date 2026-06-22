@@ -1,0 +1,441 @@
+services:
+  traefik:
+    image: traefik:${TRAEFIK_VERSION:-v3.2}
+    container_name: controlbox-traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${CONTROLBOX_CONFIG_DIR}/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ${CONTROLBOX_CONFIG_DIR}/traefik/dynamic:/etc/traefik/dynamic:ro
+      - ${CONTROLBOX_DATA_DIR}/letsencrypt:/letsencrypt
+    networks:
+      - controlbox
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=true"
+
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-16-alpine}
+    container_name: controlbox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-controlbox}
+      POSTGRES_USER: ${POSTGRES_USER:-controlbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    command:
+      - postgres
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-512MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE:-2GB}
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/postgres:/var/lib/postgresql/data
+    networks:
+      - controlbox
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-controlbox}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:${REDIS_VERSION:-7-alpine}
+    container_name: controlbox-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?required}
+      --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-512mb}
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/redis:/data
+    networks:
+      - controlbox
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    image: mysql:8.4
+    container_name: controlbox-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ADMIN_PASSWORD:?required}
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/mysql:/var/lib/mysql
+    networks:
+      - controlbox
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ADMIN_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  minio:
+    image: minio/minio:${MINIO_VERSION:-latest}
+    container_name: controlbox-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-controlbox}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/minio:/data
+    networks:
+      - controlbox
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api:
+    image: ghcr.io/grodtech/controlbox-api:${CONTROLBOX_VERSION:-latest}
+    container_name: controlbox-api
+    restart: unless-stopped
+    env_file:
+      - ${CONTROLBOX_CONFIG_DIR}/platform.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      MYSQL_HOST: mysql
+      PLATFORM_CONFIG_DIR: /host/etc/controlbox
+      CONTROLBOX_INSTALL_DIR: /host/opt/controlbox
+      SITES_BASE_PATH: /var/lib/controlbox/sites
+      BACKUPS_BASE_PATH: /var/lib/controlbox/backups
+      DATABASE_BACKUPS_PATH: /var/lib/controlbox/backups/databases
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+    volumes:
+      - ${CONTROLBOX_CONFIG_DIR}:/host/etc/controlbox:rw
+      - ${CONTROLBOX_INSTALL_DIR}:/host/opt/controlbox:rw
+      - ${CONTROLBOX_DATA_DIR}/sites:/var/lib/controlbox/sites
+      - ${CONTROLBOX_DATA_DIR}/backups:/var/lib/controlbox/backups
+      - ${CONTROLBOX_DATA_DIR}/letsencrypt:/var/lib/controlbox/letsencrypt:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    networks:
+      - controlbox
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
+
+  worker:
+    image: ghcr.io/grodtech/controlbox-api:${CONTROLBOX_VERSION:-latest}
+    container_name: controlbox-worker
+    restart: unless-stopped
+    env_file:
+      - ${CONTROLBOX_CONFIG_DIR}/platform.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      MYSQL_HOST: mysql
+      SITES_BASE_PATH: /var/lib/controlbox/sites
+      BACKUPS_BASE_PATH: /var/lib/controlbox/backups
+      DATABASE_BACKUPS_PATH: /var/lib/controlbox/backups/databases
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+    command: ["celery", "-A", "controlbox.shared.infrastructure.celery.app:celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/sites:/var/lib/controlbox/sites
+      - ${CONTROLBOX_DATA_DIR}/backups:/var/lib/controlbox/backups
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - controlbox
+
+  panel:
+    image: ghcr.io/grodtech/controlbox-panel:${CONTROLBOX_VERSION:-latest}
+    container_name: controlbox-panel
+    restart: unless-stopped
+    environment:
+      API_PROXY_URL: http://api:8000
+      NEXT_PUBLIC_BASE_PATH: ${PANEL_BASE_PATH:-}
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - controlbox
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('net').connect(3000).on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.55.1}
+    container_name: controlbox-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --web.enable-lifecycle
+    volumes:
+      - ${CONTROLBOX_CONFIG_DIR}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${CONTROLBOX_DATA_DIR}/prometheus:/prometheus
+    networks:
+      - controlbox
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-11.4.0}
+    container_name: controlbox-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?required}
+      GF_SERVER_ROOT_URL: https://grafana.localhost
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/grafana:/var/lib/grafana
+      - ${CONTROLBOX_CONFIG_DIR}/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - controlbox
+
+  loki:
+    image: grafana/loki:${LOKI_VERSION:-3.3.2}
+    container_name: controlbox-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ${CONTROLBOX_CONFIG_DIR}/loki/loki.yml:/etc/loki/loki.yml:ro
+      - ${CONTROLBOX_DATA_DIR}/loki:/loki
+    networks:
+      - controlbox
+
+  promtail:
+    image: grafana/promtail:${PROMTAIL_VERSION:-3.3.2}
+    container_name: controlbox-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ${CONTROLBOX_CONFIG_DIR}/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    networks:
+      - controlbox
+
+  supabase-db:
+    image: supabase/postgres:15.8.1.060
+    container_name: controlbox-supabase-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${SUPABASE_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+      JWT_SECRET: ${SUPABASE_JWT_SECRET:?required}
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/supabase/db:/var/lib/postgresql/data
+    networks:
+      - controlbox
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  supabase-kong:
+    image: kong:2.8.1
+    container_name: controlbox-supabase-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+    volumes:
+      - ${CONTROLBOX_CONFIG_DIR}/supabase/kong.yml:/home/kong/kong.yml:ro
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    networks:
+      - controlbox
+
+  supabase-auth:
+    image: supabase/gotrue:v2.167.0
+    container_name: controlbox-supabase-auth
+    restart: unless-stopped
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: http://supabase-kong:8000
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${SUPABASE_DB_PASSWORD:-${POSTGRES_PASSWORD}}@supabase-db:5432/postgres
+      GOTRUE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      GOTRUE_SITE_URL: http://localhost
+      GOTRUE_DISABLE_SIGNUP: "false"
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    networks:
+      - controlbox
+
+  supabase-rest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: controlbox-supabase-rest
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${SUPABASE_DB_PASSWORD:-${POSTGRES_PASSWORD}}@supabase-db:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    networks:
+      - controlbox
+
+  supabase-realtime:
+    image: supabase/realtime:v2.33.58
+    container_name: controlbox-supabase-realtime
+    restart: unless-stopped
+    environment:
+      DB_HOST: supabase-db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${SUPABASE_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+      DB_NAME: postgres
+      API_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      SECRET_KEY_BASE: ${SUPABASE_JWT_SECRET}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    networks:
+      - controlbox
+
+  supabase-storage:
+    image: supabase/storage-api:v1.14.6
+    container_name: controlbox-supabase-storage
+    restart: unless-stopped
+    environment:
+      ANON_KEY: ${SUPABASE_ANON_KEY}
+      SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      POSTGREST_URL: http://supabase-rest:3000
+      PGRST_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${SUPABASE_DB_PASSWORD:-${POSTGRES_PASSWORD}}@supabase-db:5432/postgres
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: s3
+      GLOBAL_S3_BUCKET: supabase
+      GLOBAL_S3_ENDPOINT: http://minio:9000
+      GLOBAL_S3_PROTOCOL: http
+      GLOBAL_S3_FORCE_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_DEFAULT_REGION: us-east-1
+    depends_on:
+      - supabase-rest
+      - minio
+    networks:
+      - controlbox
+
+  supabase-studio:
+    image: supabase/studio:20241202-71e5240
+    container_name: controlbox-supabase-studio
+    restart: unless-stopped
+    environment:
+      STUDIO_PG_META_URL: http://supabase-meta:8080
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+    depends_on:
+      - supabase-kong
+    networks:
+      - controlbox
+
+  supabase-meta:
+    image: supabase/postgres-meta:v0.84.2
+    container_name: controlbox-supabase-meta
+    restart: unless-stopped
+    environment:
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${SUPABASE_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    networks:
+      - controlbox
+
+  migrate:
+    image: ghcr.io/grodtech/controlbox-api:${CONTROLBOX_VERSION:-latest}
+    container_name: controlbox-migrate
+    env_file:
+      - ${CONTROLBOX_CONFIG_DIR}/platform.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - controlbox
+    profiles:
+      - migrate
+
+  bootstrap-tenant:
+    image: ghcr.io/grodtech/controlbox-api:${CONTROLBOX_VERSION:-latest}
+    container_name: controlbox-bootstrap-tenant
+    env_file:
+      - ${CONTROLBOX_CONFIG_DIR}/platform.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      INSTALLER_TENANT_NAME: ${INSTALLER_TENANT_NAME}
+      INSTALLER_TENANT_SLUG: ${INSTALLER_TENANT_SLUG}
+      INSTALLER_TENANT_ADMIN_EMAIL: ${INSTALLER_TENANT_ADMIN_EMAIL}
+      INSTALLER_TENANT_ADMIN_PASSWORD: ${INSTALLER_TENANT_ADMIN_PASSWORD}
+      INSTALLER_TENANT_ADMIN_FULL_NAME: ${INSTALLER_TENANT_ADMIN_FULL_NAME}
+      INSTALLER_BOOTSTRAP_TOKEN: ${INSTALLER_BOOTSTRAP_TOKEN}
+    command: ["python", "-m", "controlbox.installer.bootstrap_tenant"]
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - controlbox
+    profiles:
+      - bootstrap
+
+networks:
+  controlbox:
+    name: controlbox
+    driver: bridge

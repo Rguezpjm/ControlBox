@@ -1,0 +1,31 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.log
+.DS_Store
+dist/
+*.tar.gz
+
+# Google Drive sync temp folders
+.tmp.driveupload/
+.tmp.drivedownload/
+
+# Node / Next.js build artifacts
+node_modules/
+.next/
+frontend/node_modules/
+frontend/.next/
