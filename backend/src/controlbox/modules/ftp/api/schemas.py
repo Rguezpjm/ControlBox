@@ -80,3 +80,25 @@ class FtpServiceStatusSchema(BaseModel):
     status: str
     host: str
     port: int | None
+    protocol: str = "ftp"
+    passive_port_min: int = 30000
+    passive_port_max: int = 30009
+    public_host: str = ""
+    running: bool = False
+    can_manage: bool = False
+    message: str = ""
+
+
+class UpdateFtpServiceRequest(BaseModel):
+    enabled: bool
+    protocol: str = Field(default="ftp", pattern="^(ftp|ftps|sftp)$")
+    port: int = Field(default=21, ge=1, le=65535)
+    passive_port_min: int = Field(default=30000, ge=1024, le=65535)
+    passive_port_max: int = Field(default=30009, ge=1024, le=65535)
+    public_host: str = Field(default="", max_length=255)
+
+
+class FtpServiceActionResponse(BaseModel):
+    success: bool
+    message: str
+    service: FtpServiceStatusSchema

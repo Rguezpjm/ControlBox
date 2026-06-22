@@ -1,7 +1,8 @@
 import re
 from uuid import UUID
 
-from controlbox.modules.wordpress.domain.entities import PHP_VERSIONS
+from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
+from controlbox.modules.wordpress.domain.entities import DEFAULT_PHP_VERSION
 from controlbox.modules.wordpress.domain.repositories import WordPressSiteRepository
 from controlbox.shared.domain.base import ConflictError, ValidationError
 
@@ -11,8 +12,13 @@ DOMAIN_PATTERN = re.compile(
 
 
 class WordPressDomainService:
-    def __init__(self, repository: WordPressSiteRepository) -> None:
+    def __init__(
+        self,
+        repository: WordPressSiteRepository,
+        runtime_catalog: RuntimeCatalogManager | None = None,
+    ) -> None:
         self._sites = repository
+        self._runtime_catalog = runtime_catalog
 
     def validate_domain(self, domain: str) -> str:
         normalized = domain.strip().lower()
@@ -21,8 +27,9 @@ class WordPressDomainService:
         return normalized
 
     def validate_php_version(self, version: str) -> str:
-        if version not in PHP_VERSIONS:
-            raise ValidationError(f"Unsupported PHP version. Allowed: {', '.join(PHP_VERSIONS)}")
+        allowed = self._runtime_catalog.get_php_versions() if self._runtime_catalog else ["8.2", "8.3"]
+        if version not in allowed:
+            raise ValidationError(f"Versión PHP no habilitada. Disponibles: {', '.join(allowed)}")
         return version
 
     def validate_admin_user(self, username: str) -> str:

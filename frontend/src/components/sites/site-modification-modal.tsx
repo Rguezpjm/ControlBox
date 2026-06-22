@@ -14,19 +14,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   siteModificationApi,
   type SiteModification,
   type SiteSettings,
   type SiteType,
+  type UpdateSiteModificationPayload,
 } from "@/lib/site-modification";
+import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
+import { websitesApi } from "@/lib/websites";
+import { wordpressApi } from "@/lib/wordpress";
+import { SiteAccessLogViewer } from "@/components/sites/site-access-log-viewer";
+import { SiteDirectoryPanel } from "@/components/sites/site-directory-panel";
 
 type SectionId =
   | "domains"
   | "directory"
-  | "limit-access"
   | "url-rewrite"
   | "default-document"
   | "config"
@@ -48,7 +61,6 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   { id: "domains", label: "Domain Manager", types: ["website", "wordpress"] },
   { id: "directory", label: "Directory", types: ["website", "wordpress"] },
-  { id: "limit-access", label: "Limit access", types: ["website", "wordpress"] },
   { id: "url-rewrite", label: "URL rewrite", types: ["website", "wordpress"] },
   { id: "default-document", label: "Default document", types: ["website", "wordpress"] },
   { id: "config", label: "Config", types: ["website", "wordpress"] },
@@ -102,6 +114,10 @@ export function SiteModificationModal({
   const [vhostConfig, setVhostConfig] = useState("");
   const [nginxConfig, setNginxConfig] = useState("");
   const [sslEnabled, setSslEnabled] = useState(true);
+  const [sslTab, setSslTab] = useState<"deployed" | "letsencrypt" | "custom">("deployed");
+  const [sslForceHttps, setSslForceHttps] = useState(true);
+  const [sslCertificatePem, setSslCertificatePem] = useState("");
+  const [sslPrivateKeyPem, setSslPrivateKeyPem] = useState("");
   const [runtimeVersion, setRuntimeVersion] = useState("");
   const [activeSection, setActiveSection] = useState<SectionId>("domains");
   const [loading, setLoading] = useState(false);
@@ -109,6 +125,8 @@ export function SiteModificationModal({
   const [error, setError] = useState<string | null>(null);
   const [newDomainsText, setNewDomainsText] = useState("");
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [phpVersions, setPhpVersions] = useState<string[]>([]);
+  const [websiteRuntimeVersions, setWebsiteRuntimeVersions] = useState<string[]>([]);
 
   const sidebarSections = useMemo(() => sectionsForType(siteType), [siteType]);
 
@@ -118,6 +136,11 @@ export function SiteModificationModal({
     setVhostConfig(mod.vhost_config || "");
     setNginxConfig(mod.nginx_config || "");
     setSslEnabled(mod.ssl_enabled);
+    setSslForceHttps(mod.ssl_config?.force_https ?? true);
+    setSslCertificatePem(mod.ssl_config?.certificate_pem || "");
+    setSslPrivateKeyPem("");
+    const provider = mod.ssl_config?.provider ?? "letsencrypt";
+    setSslTab(provider === "custom" ? "deployed" : provider === "letsencrypt" ? "letsencrypt" : "deployed");
     setRuntimeVersion(mod.php_version || mod.runtime_version || "");
   }, []);
 
@@ -128,6 +151,14 @@ export function SiteModificationModal({
     try {
       const mod = await siteModificationApi.get(siteType, siteId);
       syncFromData(mod);
+      if (siteType === "wordpress") {
+        const opts = await wordpressApi.options();
+        setPhpVersions(opts.php_versions);
+      } else {
+        const rtOpts = await websitesApi.options();
+        const current = rtOpts.runtimes.find((r) => r.runtime === mod.runtime);
+        setWebsiteRuntimeVersions(current?.versions ?? []);
+      }
       setActiveSection("domains");
       setNewDomainsText("");
       setSelectedDomains([]);
@@ -149,13 +180,13 @@ export function SiteModificationModal({
     }
   }, [open, siteId, load]);
 
-  async function handleSave(sectionSettings?: Partial<SiteSettings>) {
+  async function handleSave(sectionSettings?: Partial<SiteSettings>, sslPayload?: UpdateSiteModificationPayload) {
     if (!siteId) return;
     setSaving(true);
     setError(null);
     try {
       const mergedSettings = sectionSettings ? { ...settings, ...sectionSettings } : settings;
-      const payload = {
+      const payload: UpdateSiteModificationPayload = sslPayload ?? {
         settings: mergedSettings,
         vhost_config: activeSection === "config" ? vhostConfig : undefined,
         nginx_config: activeSection === "nginx" ? nginxConfig : undefined,
@@ -312,40 +343,15 @@ export function SiteModificationModal({
         );
 
       case "directory":
-        return (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Document root</Label>
-              <Input
-                value={settings.document_root || data.document_root}
-                onChange={(e) => updateSettings({ document_root: e.target.value })}
-              />
-            </div>
-            <SaveBar saving={saving} onSave={() => handleSave()} />
-          </div>
-        );
-
-      case "limit-access":
-        return (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label>Password protect site</Label>
-              <Switch
-                checked={!!settings.limit_access_enabled}
-                onCheckedChange={(v) => updateSettings({ limit_access_enabled: v })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Auth user (htpasswd)</Label>
-              <Input
-                value={settings.limit_access_user || ""}
-                onChange={(e) => updateSettings({ limit_access_user: e.target.value })}
-                placeholder="admin"
-              />
-            </div>
-            <SaveBar saving={saving} onSave={() => handleSave()} />
-          </div>
-        );
+        return siteId && data ? (
+          <SiteDirectoryPanel
+            siteType={siteType}
+            siteId={siteId}
+            data={data}
+            onUpdated={(mod) => syncFromData(mod)}
+            onError={setError}
+          />
+        ) : null;
 
       case "url-rewrite":
         return (
@@ -390,34 +396,218 @@ export function SiteModificationModal({
           </div>
         );
 
-      case "ssl":
+      case "ssl": {
+        const ssl = data.ssl_config;
+        const expiryLabel =
+          ssl?.expires_at && ssl.days_remaining != null
+            ? `${ssl.expires_at}, expira en ${ssl.days_remaining} días`
+            : ssl?.expires_at ?? "—";
+
+        async function saveSsl(payload: UpdateSiteModificationPayload) {
+          await handleSave(undefined, payload);
+        }
+
         return (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label>SSL enabled</Label>
-                <p className="text-xs text-muted-foreground">Status: {data.ssl_status}</p>
-              </div>
-              <Switch checked={sslEnabled} onCheckedChange={setSslEnabled} />
-            </div>
-            <SaveBar saving={saving} onSave={() => handleSave()} />
+            <Tabs value={sslTab} onValueChange={(v) => setSslTab(v as typeof sslTab)}>
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="deployed">
+                  Certificado actual
+                  {ssl?.deployed && (
+                    <Badge variant="outline" className="ml-1.5 h-5 border-emerald-500/40 text-[10px] text-emerald-600">
+                      Activo
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="letsencrypt">Let&apos;s Encrypt</TabsTrigger>
+                <TabsTrigger value="custom">Terceros / Cloudflare</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="deployed" className="mt-4 space-y-4">
+                <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Tipo de certificado</p>
+                    <p className="font-medium">{ssl?.cert_type ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Emisor</p>
+                    <p className="font-medium">{ssl?.cert_brand ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Dominios</p>
+                    <p className="font-medium break-all">{(ssl?.cert_domains ?? [data.primary_domain]).join(", ")}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Vencimiento</p>
+                    <p className="font-medium">{expiryLabel}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                  <div>
+                    <Label>Forzar HTTPS</Label>
+                    <p className="text-xs text-muted-foreground">Redirige HTTP a HTTPS vía Traefik</p>
+                  </div>
+                  <Switch checked={sslForceHttps} onCheckedChange={setSslForceHttps} />
+                </div>
+
+                {ssl?.certificate_pem && (
+                  <div className="space-y-2">
+                    <Label>Certificado (PEM)</Label>
+                    <Textarea readOnly value={ssl.certificate_pem} className="min-h-[160px]" />
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    disabled={saving}
+                    onClick={() =>
+                      saveSsl({
+                        ssl_force_https: sslForceHttps,
+                        ssl_enabled: true,
+                      })
+                    }
+                  >
+                    {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Guardar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={saving}
+                    onClick={() =>
+                      saveSsl({
+                        ssl_enabled: false,
+                        ssl_provider: "none",
+                      })
+                    }
+                  >
+                    Desactivar SSL
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="letsencrypt" className="mt-4 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Traefik solicitará y renovará automáticamente un certificado Let&apos;s Encrypt para{" "}
+                  <span className="font-medium text-foreground">{data.primary_domain}</span>.
+                </p>
+                <Button
+                  disabled={saving}
+                  onClick={() =>
+                    saveSsl({
+                      ssl_provider: "letsencrypt",
+                      ssl_enabled: true,
+                      ssl_force_https: sslForceHttps,
+                    })
+                  }
+                >
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Usar Let&apos;s Encrypt
+                </Button>
+              </TabsContent>
+
+              <TabsContent value="custom" className="mt-4 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Pegue la clave privada y el certificado PEM/CRT de Cloudflare u otro proveedor (Origin Certificate,
+                  comercial, etc.).
+                </p>
+                <div className="space-y-2">
+                  <Label>Clave privada (KEY)</Label>
+                  <Textarea
+                    value={sslPrivateKeyPem}
+                    onChange={(e) => setSslPrivateKeyPem(e.target.value)}
+                    placeholder="-----BEGIN PRIVATE KEY-----"
+                    className="min-h-[140px]"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Certificado (CRT / PEM)</Label>
+                  <Textarea
+                    value={sslCertificatePem}
+                    onChange={(e) => setSslCertificatePem(e.target.value)}
+                    placeholder="-----BEGIN CERTIFICATE-----"
+                    className="min-h-[140px]"
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                  <Label>Forzar HTTPS</Label>
+                  <Switch checked={sslForceHttps} onCheckedChange={setSslForceHttps} />
+                </div>
+                <Button
+                  disabled={saving || !sslPrivateKeyPem.trim() || !sslCertificatePem.trim()}
+                  onClick={() =>
+                    saveSsl({
+                      ssl_provider: "custom",
+                      ssl_enabled: true,
+                      ssl_certificate_pem: sslCertificatePem,
+                      ssl_private_key_pem: sslPrivateKeyPem,
+                      ssl_force_https: sslForceHttps,
+                    })
+                  }
+                >
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  Configurar certificado
+                </Button>
+              </TabsContent>
+            </Tabs>
           </div>
         );
+      }
 
-      case "runtime":
+      case "runtime": {
+        const versions = siteType === "wordpress" ? phpVersions : websiteRuntimeVersions;
+        const label =
+          siteType === "wordpress"
+            ? "Versión PHP"
+            : data.runtime === "php"
+              ? "Versión PHP"
+              : data.runtime === "nodejs"
+                ? "Versión Node.js"
+                : data.runtime === "python"
+                  ? "Versión Python"
+                  : "Versión de runtime";
+
+        if (siteType === "website" && data.runtime === "html") {
+          return (
+            <p className="text-sm text-muted-foreground">
+              Los sitios HTML estáticos no requieren selección de versión.
+            </p>
+          );
+        }
+
+        if (versions.length === 0) {
+          return (
+            <p className="text-sm text-muted-foreground">
+              No hay versiones habilitadas en el servidor. Configúrelas en Preparación para producción →
+              Runtimes.
+            </p>
+          );
+        }
+
         return (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{siteType === "wordpress" ? "PHP version" : "Runtime version"}</Label>
-              <Input
-                value={runtimeVersion}
-                onChange={(e) => setRuntimeVersion(e.target.value)}
-                placeholder={siteType === "wordpress" ? "8.2" : "8.3"}
-              />
+              <Label>{label}</Label>
+              <Select value={runtimeVersion} onValueChange={setRuntimeVersion}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccione versión" />
+                </SelectTrigger>
+                <SelectContent>
+                  {versions.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Solo se muestran versiones instaladas/habilitadas en el sistema.
+              </p>
             </div>
             <SaveBar saving={saving} onSave={() => handleSave()} />
           </div>
         );
+      }
 
       case "nginx":
         return (
@@ -513,21 +703,13 @@ export function SiteModificationModal({
         );
 
       case "logs":
-        return (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Access log (last lines)</Label>
-              <Textarea readOnly value={data.access_log || "(empty)"} className="min-h-[160px]" />
-            </div>
-            <div className="space-y-2">
-              <Label>Error log (last lines)</Label>
-              <Textarea readOnly value={data.error_log || "(empty)"} className="min-h-[160px]" />
-            </div>
-            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-              Refresh logs
-            </Button>
-          </div>
-        );
+        return siteId ? (
+          <SiteAccessLogViewer
+            siteType={siteType}
+            siteId={siteId}
+            active={activeSection === "logs"}
+          />
+        ) : null;
 
       default:
         return null;

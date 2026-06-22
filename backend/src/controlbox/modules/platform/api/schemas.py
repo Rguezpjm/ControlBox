@@ -92,6 +92,34 @@ class ApplyServicesResponse(BaseModel):
     enabled_profiles: list[str] = Field(default_factory=list)
 
 
+class RuntimeVersionSchema(BaseModel):
+    id: str
+    runtime: str
+    version: str
+    name: str
+    category: str
+    image: str
+    enabled: bool
+    installed: bool
+
+
+class RuntimesOverviewSchema(BaseModel):
+    can_manage: bool
+    enabled_runtimes: list[str]
+    runtimes: list[RuntimeVersionSchema]
+    message: str = ""
+
+
+class ApplyRuntimesRequest(BaseModel):
+    runtimes: list[str] = Field(min_length=1)
+
+
+class ApplyRuntimesResponse(BaseModel):
+    success: bool
+    message: str
+    enabled_runtimes: list[str] = Field(default_factory=list)
+
+
 class ResourceAlertSchema(BaseModel):
     id: str
     metric: str

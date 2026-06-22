@@ -3,6 +3,8 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from controlbox.version import __version__
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -80,6 +82,11 @@ class Settings(BaseSettings):
     pureftpd_enabled: bool = Field(default=True, alias="PUREFTPD_ENABLED")
     pureftpd_host: str = Field(default="localhost", alias="PUREFTPD_HOST")
     pureftpd_port: int = Field(default=21, alias="PUREFTPD_PORT")
+    pureftpd_protocol: str = Field(default="ftp", alias="PUREFTPD_PROTOCOL")
+    pureftpd_public_host: str = Field(default="localhost", alias="PUREFTPD_PUBLIC_HOST")
+    pureftpd_passive_port_min: int = Field(default=30000, alias="PUREFTPD_PASSIVE_MIN")
+    pureftpd_passive_port_max: int = Field(default=30009, alias="PUREFTPD_PASSIVE_MAX")
+    pureftpd_tls: int = Field(default=0, alias="PUREFTPD_TLS")
     pureftpd_container: str = Field(default="controlbox-pureftpd", alias="PUREFTPD_CONTAINER")
     pureftpd_use_docker: bool = Field(default=True, alias="PUREFTPD_USE_DOCKER")
     pureftpd_passwd_file: str = Field(default="/etc/pure-ftpd/pureftpd.passwd", alias="PUREFTPD_PASSWD_FILE")
@@ -133,13 +140,17 @@ class Settings(BaseSettings):
     controlbox_data_dir: str = Field(default="/var/lib/controlbox", alias="CONTROLBOX_DATA_DIR")
     panel_port: int = Field(default=8475, alias="PANEL_PORT")
     panel_base_path: str = Field(default="", alias="PANEL_BASE_PATH")
-    controlbox_version: str = Field(default="1.1.0", alias="CONTROLBOX_VERSION")
+    controlbox_version: str = Field(default=__version__, alias="CONTROLBOX_VERSION")
     controlbox_profile: str = Field(default="standard", alias="CONTROLBOX_PROFILE")
     controlbox_os_label: str = Field(default="Linux", alias="CONTROLBOX_OS_LABEL")
     controlbox_install_url: str = Field(default="https://install.grodtech.com", alias="CONTROLBOX_INSTALL_URL")
-    controlbox_github_repo: str = Field(default="grodtech/ControlBox", alias="CONTROLBOX_GITHUB_REPO")
+    controlbox_github_repo: str = Field(default="Rguezpjm/ControlBox", alias="CONTROLBOX_GITHUB_REPO")
     controlbox_server_ip: str = Field(default="", alias="CONTROLBOX_SERVER_IP")
     controlbox_enabled_profiles: str = Field(default="databases,backups", alias="CONTROLBOX_ENABLED_PROFILES")
+    controlbox_enabled_runtimes: str = Field(
+        default="php:8.2,php:8.3,nodejs:22,python:3.13,flutter:3.44.2",
+        alias="CONTROLBOX_ENABLED_RUNTIMES",
+    )
 
     celery_broker_url: str = Field(default="redis://localhost:6379/1", alias="CELERY_BROKER_URL")
     celery_result_backend: str = Field(default="redis://localhost:6379/2", alias="CELERY_RESULT_BACKEND")

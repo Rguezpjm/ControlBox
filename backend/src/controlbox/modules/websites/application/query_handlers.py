@@ -13,7 +13,8 @@ from controlbox.modules.websites.domain.entities import (
     DatabaseEngine,
     WebsiteRuntime,
 )
-from controlbox.shared.application.cqrs import QueryHandler
+from controlbox.config.settings import Settings
+from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import NotFoundError
 
@@ -83,16 +84,19 @@ class GetWebsiteHandler(QueryHandler[GetWebsiteQuery, WebsiteResponse]):
 
 
 class GetWebsiteOptionsHandler(QueryHandler[GetRuntimeOptionsQuery, WebsiteOptionsResponse]):
-    def __init__(self, uow: UnitOfWork) -> None:
+    def __init__(self, uow: UnitOfWork, settings: Settings) -> None:
         self._uow = uow
+        self._runtimes = RuntimeCatalogManager(settings)
 
     async def handle(self, query: GetRuntimeOptionsQuery) -> WebsiteOptionsResponse:
+        enabled = self._runtimes.get_enabled_by_runtime()
         runtimes = [
             RuntimeOptionResponse(
                 runtime=runtime.value,
                 label=RUNTIME_LABELS[runtime],
-                versions=RUNTIME_VERSIONS.get(runtime, []),
-                default_version=DEFAULT_RUNTIME_VERSIONS.get(runtime, ""),
+                versions=enabled.get(runtime.value, []),
+                default_version=self._runtimes.get_default_version(runtime.value)
+                or DEFAULT_RUNTIME_VERSIONS.get(runtime, ""),
             )
             for runtime in WebsiteRuntime
         ]

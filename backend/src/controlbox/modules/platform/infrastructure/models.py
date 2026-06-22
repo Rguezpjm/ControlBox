@@ -27,6 +27,13 @@ class TenantPlatformSettingsModel(Base, TimestampMixin):
     telegram_alerts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     telegram_bot_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cloudflare_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cloudflare_api_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cloudflare_account_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cloudflare_tunnel_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cloudflare_tunnel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cloudflare_tunnel_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cloudflare_tunnel_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     secrets_rotation_status: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     setup_checklist: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     panel_settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -70,6 +77,13 @@ def settings_to_entity(model: TenantPlatformSettingsModel) -> TenantPlatformSett
         telegram_alerts_enabled=model.telegram_alerts_enabled,
         telegram_bot_token_enc=model.telegram_bot_token_enc,
         telegram_chat_id=model.telegram_chat_id,
+        cloudflare_enabled=model.cloudflare_enabled,
+        cloudflare_api_token_enc=model.cloudflare_api_token_enc,
+        cloudflare_account_id=model.cloudflare_account_id,
+        cloudflare_tunnel_enabled=model.cloudflare_tunnel_enabled,
+        cloudflare_tunnel_id=model.cloudflare_tunnel_id,
+        cloudflare_tunnel_token_enc=model.cloudflare_tunnel_token_enc,
+        cloudflare_tunnel_hostname=model.cloudflare_tunnel_hostname,
         secrets_rotation_status=merged,
         setup_checklist=model.setup_checklist or {},
         panel_settings=model.panel_settings or {},
@@ -87,6 +101,13 @@ def settings_to_model(entity: TenantPlatformSettings) -> TenantPlatformSettingsM
         telegram_alerts_enabled=entity.telegram_alerts_enabled,
         telegram_bot_token_enc=entity.telegram_bot_token_enc,
         telegram_chat_id=entity.telegram_chat_id,
+        cloudflare_enabled=entity.cloudflare_enabled,
+        cloudflare_api_token_enc=entity.cloudflare_api_token_enc,
+        cloudflare_account_id=entity.cloudflare_account_id,
+        cloudflare_tunnel_enabled=entity.cloudflare_tunnel_enabled,
+        cloudflare_tunnel_id=entity.cloudflare_tunnel_id,
+        cloudflare_tunnel_token_enc=entity.cloudflare_tunnel_token_enc,
+        cloudflare_tunnel_hostname=entity.cloudflare_tunnel_hostname,
         secrets_rotation_status=entity.secrets_rotation_status,
         setup_checklist=entity.setup_checklist,
         panel_settings=entity.panel_settings,

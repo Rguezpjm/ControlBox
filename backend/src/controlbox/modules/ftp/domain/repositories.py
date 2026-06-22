@@ -30,5 +30,9 @@ class FtpAccountRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def list_active(self) -> list[FtpAccount]:
+        raise NotImplementedError
+
+    @abstractmethod
     async def delete(self, account_id: UUID) -> None:
         raise NotImplementedError

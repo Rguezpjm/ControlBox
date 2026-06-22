@@ -26,6 +26,13 @@ class TenantPlatformSettings:
     telegram_alerts_enabled: bool = False
     telegram_bot_token_enc: str | None = None
     telegram_chat_id: str | None = None
+    cloudflare_enabled: bool = False
+    cloudflare_api_token_enc: str | None = None
+    cloudflare_account_id: str | None = None
+    cloudflare_tunnel_enabled: bool = False
+    cloudflare_tunnel_id: str | None = None
+    cloudflare_tunnel_token_enc: str | None = None
+    cloudflare_tunnel_hostname: str | None = None
     secrets_rotation_status: dict[str, bool] = field(default_factory=dict)
     setup_checklist: dict[str, bool] = field(default_factory=dict)
     panel_settings: dict[str, object] = field(default_factory=dict)

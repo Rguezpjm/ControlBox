@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -98,6 +99,11 @@ class SslCertificateService:
         domain = domain.strip().lower()
         if not domain:
             return None
+
+        custom_days = self._custom_cert_days(domain)
+        if custom_days is not None:
+            return custom_days
+
         try:
             mtime = self._path.stat().st_mtime if self._path.is_file() else 0.0
         except OSError:
@@ -108,3 +114,36 @@ class SslCertificateService:
         if domain.startswith("www."):
             return cache.get(domain[4:])
         return cache.get(f"www.{domain}")
+
+    def _custom_cert_days(self, domain: str) -> int | None:
+        data_dir = getattr(self._settings, "controlbox_data_dir", "") or "/var/lib/controlbox"
+        certs_root = Path(data_dir.replace("/host", "") if data_dir.startswith("/host/") else data_dir) / "certs"
+        if not certs_root.is_dir():
+            return None
+        now = datetime.now(timezone.utc)
+        for cert_file in certs_root.rglob("cert.pem"):
+            try:
+                pem = cert_file.read_text(encoding="utf-8", errors="replace")
+                for block in re.findall(
+                    r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
+                    pem,
+                    re.DOTALL,
+                ):
+                    cert = x509.load_pem_x509_certificate(block.encode("utf-8"), default_backend())
+                    names: list[str] = []
+                    try:
+                        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+                        names = [str(n.value).lower() for n in san.value]
+                    except x509.ExtensionNotFound:
+                        cn = cert.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+                        if cn:
+                            names = [str(cn[0].value).lower()]
+                    if domain not in names and f"www.{domain}" not in names:
+                        continue
+                    expires = getattr(cert, "not_valid_after_utc", cert.not_valid_after)
+                    if expires.tzinfo is None:
+                        expires = expires.replace(tzinfo=timezone.utc)
+                    return max(0, (expires - now).days)
+            except Exception:
+                continue
+        return None

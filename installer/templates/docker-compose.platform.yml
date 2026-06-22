@@ -13,6 +13,7 @@ services:
       - ${CONTROLBOX_CONFIG_DIR}/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ${CONTROLBOX_CONFIG_DIR}/traefik/dynamic:/etc/traefik/dynamic:ro
       - ${CONTROLBOX_DATA_DIR}/letsencrypt:/letsencrypt
+      - ${CONTROLBOX_DATA_DIR}/certs:/certs:ro
     networks:
       - controlbox
     healthcheck:
@@ -102,6 +103,12 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2375/_ping >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
   mysql:
     image: mysql:8.4
@@ -163,12 +170,15 @@ services:
       DATABASE_BACKUPS_PATH: /var/lib/controlbox/backups/databases
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+      PUREFTPD_HOST: pureftpd
+      PUREFTPD_LOG_PATH: /var/log/pure-ftpd/transfer.log
     volumes:
       - ${CONTROLBOX_CONFIG_DIR}:/host/etc/controlbox:rw
       - ${CONTROLBOX_INSTALL_DIR}:/host/opt/controlbox:rw
       - ${CONTROLBOX_DATA_DIR}/sites:/var/lib/controlbox/sites
       - ${CONTROLBOX_DATA_DIR}/backups:/var/lib/controlbox/backups
       - ${CONTROLBOX_DATA_DIR}/letsencrypt:/etc/controlbox/letsencrypt:ro
+      - pureftpd_logs:/var/log/pure-ftpd
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro
@@ -503,7 +513,43 @@ services:
     profiles:
       - bootstrap
 
+  pureftpd:
+    image: stilliard/pure-ftpd:hardened
+    container_name: controlbox-pureftpd
+    restart: unless-stopped
+    profiles:
+      - ftp
+    environment:
+      PUBLICHOST: ${PUREFTPD_PUBLIC_HOST:-localhost}
+      FTP_USER_UID: ${PUREFTPD_VIRTUAL_UID:-1000}
+      FTP_USER_GID: ${PUREFTPD_VIRTUAL_GID:-1000}
+      TLS: ${PUREFTPD_TLS:-0}
+    command: /run.sh -l puredb:/etc/pure-ftpd/pureftpd.pdb -E -j -R -P ${PUREFTPD_PUBLIC_HOST:-localhost} -p ${PUREFTPD_PASSIVE_MIN:-30000}:${PUREFTPD_PASSIVE_MAX:-30009} -O clf:/var/log/pure-ftpd/transfer.log
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/sites:/var/lib/controlbox/sites
+      - pureftpd_passwd:/etc/pure-ftpd
+      - pureftpd_logs:/var/log/pure-ftpd
+    networks:
+      - controlbox
+
+  sftp:
+    image: atmoz/sftp:alpine
+    container_name: controlbox-sftp
+    restart: unless-stopped
+    profiles:
+      - ftp
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/sites:/var/lib/controlbox/sites
+    networks:
+      - controlbox
+
 networks:
   controlbox:
     name: controlbox
     driver: bridge
+
+volumes:
+  pureftpd_passwd:
+    name: controlbox_pureftpd_passwd
+  pureftpd_logs:
+    name: controlbox_pureftpd_logs

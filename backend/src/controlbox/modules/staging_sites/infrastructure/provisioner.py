@@ -22,8 +22,9 @@ from controlbox.modules.staging_sites.domain.entities import (
     SyncType,
 )
 from controlbox.modules.supabase.infrastructure.crypto import SecretEncryptor
+from controlbox.shared.infrastructure.mysql_cli import mysql_connection_args
 from controlbox.modules.websites.domain.entities import RUNTIME_PORTS
-from controlbox.modules.websites.infrastructure.provisioner import RUNTIME_IMAGES
+from controlbox.modules.platform.infrastructure.runtime_catalog import RUNTIME_IMAGE_MAP
 from controlbox.modules.wordpress.infrastructure.provisioner import (
     WordPressProvisioner,
     _render_wp_config,
@@ -111,10 +112,12 @@ class StagingProvisioner:
     ) -> None:
         proc = await asyncio.create_subprocess_exec(
             "mysqldump",
-            "-h", self._settings.mysql_host,
-            "-P", str(self._settings.mysql_port),
-            "-u", source_db_user,
-            f"-p{source_db_password}",
+            *mysql_connection_args(
+                self._settings.mysql_host,
+                self._settings.mysql_port,
+                source_db_user,
+                source_db_password,
+            ),
             source_db_name,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -125,10 +128,12 @@ class StagingProvisioner:
 
         import_proc = await asyncio.create_subprocess_exec(
             "mysql",
-            "-h", self._settings.mysql_host,
-            "-P", str(self._settings.mysql_port),
-            "-u", target_db_user,
-            f"-p{target_db_password}",
+            *mysql_connection_args(
+                self._settings.mysql_host,
+                self._settings.mysql_port,
+                target_db_user,
+                target_db_password,
+            ),
             target_db_name,
             stdin=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -267,7 +272,7 @@ class StagingProvisioner:
 
         stack = staging.stack_type.value
         image_key = (stack, staging.runtime_version)
-        image = RUNTIME_IMAGES.get(image_key) or RUNTIME_IMAGES.get((stack, "")) or "nginx:1.27-alpine"
+        image = RUNTIME_IMAGE_MAP.get(image_key) or RUNTIME_IMAGE_MAP.get((stack, "")) or "nginx:1.27-alpine"
         port = RUNTIME_PORTS.get(stack, 80)
         container_port = 8000 if stack == "python" else port
 
@@ -283,7 +288,7 @@ class StagingProvisioner:
             volume_section = "- .:/app\n      - ./logs:/var/log/app"
         elif stack == "php":
             volume_section = "- ./public:/var/www/html\n      - ./logs:/var/log/app"
-            image = RUNTIME_IMAGES.get(("php", staging.runtime_version), "php:8.3-apache")
+            image = RUNTIME_IMAGE_MAP.get(("php", staging.runtime_version), "php:8.3-apache")
 
         _, _, middleware_chain = self._security_blocks(staging)
         compose_template = self._load_template("docker-compose.website.yml")

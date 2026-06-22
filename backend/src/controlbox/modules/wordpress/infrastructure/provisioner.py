@@ -8,16 +8,15 @@ from pathlib import Path
 from uuid import UUID
 
 from controlbox.config.settings import Settings
-from controlbox.modules.databases.domain.entities import DatabaseEngineType, DatabaseStatus
-from controlbox.modules.databases.infrastructure.engine_adapters import compute_checksum, generate_password
-from controlbox.modules.databases.infrastructure.provisioner import (
-    DatabaseProvisioner,
-    build_database_user,
-    build_managed_database,
-)
+from controlbox.modules.databases.infrastructure.engine_adapters import compute_checksum
 from controlbox.modules.supabase.infrastructure.crypto import SecretEncryptor
 from controlbox.modules.wordpress.domain.entities import WordPressBackup, WordPressSite
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env, validate_container_name
+from controlbox.shared.infrastructure.mysql_cli import mysql_connection_args
+from controlbox.shared.infrastructure.site_directory_config import (
+    render_wordpress_nginx,
+    write_directory_security_files,
+)
 
 
 def _generate_wp_salts() -> dict[str, str]:
@@ -63,6 +62,9 @@ def _render_nginx_conf() -> str:
     root /var/www/html;
     index index.php index.html;
     client_max_body_size 128M;
+
+    access_log /var/log/nginx/access.log combined;
+    error_log /var/log/nginx/error.log warn;
 
     location / {
         try_files $uri $uri/ /index.php?$args;
@@ -111,6 +113,8 @@ def _render_compose(
     volumes:
       - ./wordpress:/var/www/html:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+      - ./logs:/var/log/nginx
     depends_on:
       - php
     networks:
@@ -130,6 +134,7 @@ def _render_compose(
     restart: unless-stopped
     volumes:
       - ./wordpress:/var/www/html
+      - ./nginx/php-security.ini:/usr/local/etc/php/conf.d/zzz-controlbox.ini:ro
     networks:
       - controlbox
       - wp_internal
@@ -157,7 +162,6 @@ networks:
 class WordPressProvisioner:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._db = DatabaseProvisioner(settings)
         self._crypto = SecretEncryptor(settings)
 
     def get_site_path(self, tenant_id: UUID, site_id: UUID) -> Path:
@@ -168,43 +172,8 @@ class WordPressProvisioner:
         path.mkdir(parents=True, exist_ok=True)
         return path / f"{backup_id}.tar.gz"
 
-    async def provision_database(
-        self,
-        tenant_id: UUID,
-        site_id: UUID,
-    ) -> tuple[UUID, UUID, str, str, str]:
-        db_slug = f"wp_{site_id.hex[:8]}"
-        database_name = f"db_{str(tenant_id).split('-')[0]}_{db_slug}"[:63]
-        database = build_managed_database(
-            tenant_id=tenant_id,
-            name=db_slug,
-            engine=DatabaseEngineType.MYSQL,
-            host=self._settings.mysql_host,
-            port=self._settings.mysql_port,
-            database_name=database_name,
-            charset="utf8mb4",
-            max_connections=50,
-        )
-        await self._db.provision_database(database)
-        if database.status != DatabaseStatus.ACTIVE:
-            raise RuntimeError("Failed to provision MySQL database")
-
-        db_user_name = f"u_{str(tenant_id).split('-')[0]}_{db_slug}"[:32]
-        plain_password = generate_password()
-        user, _ = build_database_user(
-            database_id=database.id,
-            tenant_id=tenant_id,
-            username=db_user_name,
-            plain_password=plain_password,
-            host="%",
-            max_connections=20,
-            grants=["ALL PRIVILEGES"],
-        )
-        await self._db.provision_user(database, user, plain_password)
-        return database.id, user.id, database_name, db_user_name, plain_password
-
     def _setup_directories(self, site_path: Path) -> None:
-        for sub in ("wordpress", "nginx", "backups"):
+        for sub in ("wordpress", "nginx", "backups", "logs"):
             (site_path / sub).mkdir(parents=True, exist_ok=True)
         os.chmod(site_path, 0o750)
         os.chmod(site_path / "wordpress", 0o750)
@@ -238,7 +207,19 @@ class WordPressProvisioner:
         os.chmod(wp_config_path, 0o640)
 
         nginx_conf_path = site_path / "nginx" / "default.conf"
-        nginx_conf_path.write_text(_render_nginx_conf(), encoding="utf-8")
+        site_directory = site_path / "wordpress"
+        settings = site.settings or {}
+        settings.setdefault("document_root", str(site_directory))
+        settings.setdefault("running_directory", "/")
+        settings.setdefault("open_basedir_enabled", True)
+        settings.setdefault("logs_enabled", True)
+        write_directory_security_files(
+            site_path,
+            settings,
+            site_directory=site_directory,
+            mount_path=Path("/var/www/html"),
+        )
+        nginx_conf_path.write_text(render_wordpress_nginx(settings, site_directory), encoding="utf-8")
 
         router_name = f"wp-{str(site.id).split('-')[0]}"
         php_image = f"wordpress:php{site.php_version}-fpm"
@@ -394,10 +375,12 @@ class WordPressProvisioner:
             db_dump = temp_dir / "database.sql"
             proc = await asyncio.create_subprocess_exec(
                 "mysqldump",
-                "-h", self._settings.mysql_host,
-                "-P", str(self._settings.mysql_port),
-                "-u", site.settings["db_user"],
-                f"-p{self._crypto.decrypt(site.settings['db_password_enc'])}",
+                *mysql_connection_args(
+                    self._settings.mysql_host,
+                    self._settings.mysql_port,
+                    site.settings["db_user"],
+                    self._crypto.decrypt(site.settings["db_password_enc"]),
+                ),
                 site.settings["db_name"],
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -437,10 +420,12 @@ class WordPressProvisioner:
         if db_dump.exists() and site.settings.get("db_name"):
             proc = await asyncio.create_subprocess_exec(
                 "mysql",
-                "-h", self._settings.mysql_host,
-                "-P", str(self._settings.mysql_port),
-                "-u", site.settings["db_user"],
-                f"-p{self._crypto.decrypt(site.settings['db_password_enc'])}",
+                *mysql_connection_args(
+                    self._settings.mysql_host,
+                    self._settings.mysql_port,
+                    site.settings["db_user"],
+                    self._crypto.decrypt(site.settings["db_password_enc"]),
+                ),
                 site.settings["db_name"],
                 stdin=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

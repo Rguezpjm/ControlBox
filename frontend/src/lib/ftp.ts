@@ -36,6 +36,28 @@ export interface FtpServiceStatus {
   status: string;
   host: string;
   port: number | null;
+  protocol: string;
+  passive_port_min: number;
+  passive_port_max: number;
+  public_host: string;
+  running: boolean;
+  can_manage: boolean;
+  message: string;
+}
+
+export interface UpdateFtpServicePayload {
+  enabled: boolean;
+  protocol: "ftp" | "ftps" | "sftp";
+  port: number;
+  passive_port_min: number;
+  passive_port_max: number;
+  public_host: string;
+}
+
+export interface FtpServiceActionResult {
+  success: boolean;
+  message: string;
+  service: FtpServiceStatus;
 }
 
 export interface CreateFtpAccountPayload {
@@ -54,6 +76,15 @@ function authRequest<T>(endpoint: string, init: RequestInit = {}): Promise<T> {
 
 export const ftpApi = {
   status: () => authRequest<FtpServiceStatus>("/api/v1/ftp/status"),
+  configureService: (payload: UpdateFtpServicePayload) =>
+    authRequest<FtpServiceActionResult>("/api/v1/ftp/service", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  startService: () =>
+    authRequest<FtpServiceActionResult>("/api/v1/ftp/service/start", { method: "POST" }),
+  stopService: () =>
+    authRequest<FtpServiceActionResult>("/api/v1/ftp/service/stop", { method: "POST" }),
   list: () => authRequest<FtpAccount[]>("/api/v1/ftp/accounts"),
   get: (id: string) => authRequest<FtpAccount>(`/api/v1/ftp/accounts/${id}`),
   create: (payload: CreateFtpAccountPayload) =>

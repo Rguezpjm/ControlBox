@@ -12,11 +12,13 @@ interface SessionUser {
 export function useSysadminBar() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [system, setSystem] = useState<SystemInfo | null>(null);
+  const [systemLoading, setSystemLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
 
     async function load() {
+      setSystemLoading(true);
       try {
         const [me, sys] = await Promise.all([
           api.auth.me() as Promise<{ email: string; full_name: string }>,
@@ -30,6 +32,8 @@ export function useSysadminBar() {
           setUser(null);
           setSystem(null);
         }
+      } finally {
+        if (active) setSystemLoading(false);
       }
     }
 
@@ -39,5 +43,5 @@ export function useSysadminBar() {
     };
   }, []);
 
-  return { user, system };
+  return { user, system, systemLoading };
 }

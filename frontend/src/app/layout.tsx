@@ -4,7 +4,7 @@ import { ThemeProvider } from "@/providers/theme-provider";
 import { RealtimeProvider } from "@/providers/realtime-provider";
 import { I18nProvider } from "@/providers/i18n-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { withBasePath } from "@/lib/base-path";
+import { publicAsset } from "@/lib/base-path";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -21,8 +21,8 @@ export const metadata: Metadata = {
   title: "ControlBox",
   description: "Multi-tenant hosting control panel",
   icons: {
-    icon: withBasePath("/logo.png"),
-    apple: withBasePath("/logo.png"),
+    icon: publicAsset("/logo.png"),
+    apple: publicAsset("/logo.png"),
   },
 };
 

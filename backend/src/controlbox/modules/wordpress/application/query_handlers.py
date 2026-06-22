@@ -6,7 +6,9 @@ from controlbox.modules.wordpress.application.queries import (
     WordPressOptionsResponse,
     WordPressSiteResponse,
 )
-from controlbox.modules.wordpress.domain.entities import DEFAULT_PHP_VERSION, PHP_VERSIONS, WORDPRESS_VERSION
+from controlbox.config.settings import Settings
+from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
+from controlbox.modules.wordpress.domain.entities import DEFAULT_PHP_VERSION, WORDPRESS_VERSION
 from controlbox.modules.wordpress.infrastructure.provisioner import WordPressProvisioner
 from controlbox.config.settings import Settings
 from controlbox.shared.application.cqrs import QueryHandler
@@ -95,5 +97,12 @@ class ListWordPressBackupsHandler(QueryHandler[ListWordPressBackupsQuery, list[W
 
 
 class GetWordPressOptionsHandler(QueryHandler[None, WordPressOptionsResponse]):
+    def __init__(self, settings: Settings) -> None:
+        self._runtimes = RuntimeCatalogManager(settings)
+
     async def handle(self, query: None = None) -> WordPressOptionsResponse:
-        return WordPressOptionsResponse(php_versions=list(PHP_VERSIONS), wordpress_version=WORDPRESS_VERSION)
+        php_versions = self._runtimes.get_php_versions()
+        return WordPressOptionsResponse(
+            php_versions=php_versions or ["8.2", "8.3"],
+            wordpress_version=WORDPRESS_VERSION,
+        )

@@ -62,3 +62,10 @@ class FtpServiceStatusResponse:
     status: str
     host: str
     port: int | None
+    protocol: str = "ftp"
+    passive_port_min: int = 30000
+    passive_port_max: int = 30009
+    public_host: str = ""
+    running: bool = False
+    can_manage: bool = False
+    message: str = ""

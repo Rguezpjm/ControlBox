@@ -1,16 +1,15 @@
 import re
 from uuid import UUID
 
+from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
 from controlbox.modules.websites.domain.entities import (
     DEFAULT_RUNTIME_VERSIONS,
     RUNTIME_VERSIONS,
     DatabaseEngine,
-    Website,
     WebsiteRuntime,
 )
 from controlbox.modules.websites.domain.repositories import WebsiteRepository
 from controlbox.shared.domain.base import ConflictError, ValidationError
-
 
 DOMAIN_PATTERN = re.compile(
     r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
@@ -18,8 +17,13 @@ DOMAIN_PATTERN = re.compile(
 
 
 class WebsiteDomainService:
-    def __init__(self, repository: WebsiteRepository) -> None:
+    def __init__(
+        self,
+        repository: WebsiteRepository,
+        runtime_catalog: RuntimeCatalogManager | None = None,
+    ) -> None:
         self._websites = repository
+        self._runtime_catalog = runtime_catalog
 
     def validate_domain(self, domain: str) -> str:
         normalized = domain.strip().lower()
@@ -30,10 +34,18 @@ class WebsiteDomainService:
     def validate_runtime_version(self, runtime: WebsiteRuntime, version: str | None) -> str:
         if runtime == WebsiteRuntime.HTML:
             return ""
-        resolved = version or DEFAULT_RUNTIME_VERSIONS[runtime]
-        allowed = RUNTIME_VERSIONS.get(runtime, [])
+        if self._runtime_catalog:
+            allowed = self._runtime_catalog.get_enabled_by_runtime().get(runtime.value, [])
+            default = self._runtime_catalog.get_default_version(runtime.value) or DEFAULT_RUNTIME_VERSIONS[runtime]
+        else:
+            allowed = RUNTIME_VERSIONS.get(runtime, [])
+            default = DEFAULT_RUNTIME_VERSIONS[runtime]
+        resolved = version or default
         if resolved not in allowed:
-            raise ValidationError(f"Unsupported version '{resolved}' for runtime '{runtime.value}'")
+            raise ValidationError(
+                f"Versión '{resolved}' no habilitada para {runtime.value}. "
+                f"Disponibles: {', '.join(allowed) or 'ninguna'}"
+            )
         return resolved
 
     def validate_database_engine(self, engine: DatabaseEngine) -> DatabaseEngine:

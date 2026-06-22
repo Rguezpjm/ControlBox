@@ -14,6 +14,7 @@ class CreateSchemaRequest(BaseModel):
 
 class SupabaseServiceStatusSchema(BaseModel):
     enabled: bool
+    profile_enabled: bool
     status: str
     host: str
     port: int

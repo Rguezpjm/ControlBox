@@ -15,6 +15,9 @@ class CreateWordPressSiteRequest(BaseModel):
     admin_email: PanelEmail
     php_version: str = "8.3"
     ssl_enabled: bool = True
+    db_name: str | None = Field(default=None, min_length=2, max_length=63)
+    db_user: str | None = Field(default=None, min_length=2, max_length=31)
+    db_password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 class ChangePhpVersionRequest(BaseModel):
@@ -86,3 +89,27 @@ class WordPressBackupResponseSchema(BaseModel):
 class WordPressOptionsSchema(BaseModel):
     php_versions: list[str]
     wordpress_version: str
+
+
+class WordPressProvisionStepSchema(BaseModel):
+    step: str
+    message: str
+    at: str
+
+
+class WordPressDeployCredentialsSchema(BaseModel):
+    site_url: str
+    login_url: str
+    admin_user: str
+    db_name: str
+    db_user: str
+    db_password: str
+    db_host: str = ""
+
+
+class WordPressProvisionStatusSchema(BaseModel):
+    site_id: UUID
+    status: str
+    error_message: str | None = None
+    steps: list[WordPressProvisionStepSchema] = Field(default_factory=list)
+    credentials: WordPressDeployCredentialsSchema | None = None

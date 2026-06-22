@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, useEffect, useCallback } from "react";
-import { Plus, FolderOpen, Key, Shield, ScrollText } from "lucide-react";
+import { Plus, FolderOpen, ScrollText } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TableSkeleton } from "@/components/skeletons";
 import { CreateFtpAccountDialog } from "@/components/ftp/create-ftp-account-dialog";
+import { FtpServiceSettings } from "@/components/ftp/ftp-service-settings";
 import { ManageFtpAccountDialog } from "@/components/ftp/manage-ftp-account-dialog";
 import { ftpApi, type FtpAccount, type FtpLogEntry, type FtpServiceStatus } from "@/lib/ftp";
 import { formatDistanceToNow } from "date-fns";
@@ -70,24 +71,16 @@ function FtpContent() {
     <div className="space-y-6">
       <PageHeader
         title="FTP Manager"
-        description="Manage PureFTPD accounts with directory limits, quotas and transfer logs"
+        description="FTP, FTPS y SFTP — cuentas, cuotas y logs de transferencia"
         action={
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={() => setCreateOpen(true)} disabled={!serviceStatus?.enabled || !serviceStatus?.running}>
             <Plus className="h-4 w-4" />
             Create Account
           </Button>
         }
       />
 
-      {serviceStatus && (
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <StatusBadge status={mapStatus(serviceStatus.status)} />
-          <span>
-            {serviceStatus.host}
-            {serviceStatus.port ? `:${serviceStatus.port}` : ""}
-          </span>
-        </div>
-      )}
+      <FtpServiceSettings serviceStatus={serviceStatus} onUpdated={loadData} />
 
       <Tabs defaultValue="accounts">
         <TabsList>
@@ -142,10 +135,7 @@ function FtpContent() {
                           </td>
                           <td className="px-4 py-3 text-right space-x-1">
                             <Button variant="ghost" size="sm" onClick={() => openManage(account)}>
-                              <Key className="h-3 w-3" />
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => openManage(account)}>
-                              <Shield className="h-3 w-3" />
+                              Manage
                             </Button>
                           </td>
                         </tr>

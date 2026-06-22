@@ -26,11 +26,13 @@ from controlbox.modules.wordpress.api.router import router as wordpress_router
 from controlbox.modules.team_members.api.router import router as team_router
 from controlbox.modules.staging_sites.api.router import router as staging_router
 from controlbox.modules.platform.api.router import router as platform_router
+from controlbox.modules.cloudflare.api.router import router as cloudflare_router
 from controlbox.modules.security.api.router import router as security_router
 from controlbox.modules.identity.api.schemas import ErrorResponseSchema, HealthResponseSchema
 from controlbox.modules.identity.domain.services import TokenService
 from controlbox.modules.identity.infrastructure.unit_of_work import Database
 from controlbox.shared.domain.base import DomainException
+from controlbox.shared.infrastructure.version_info import resolve_controlbox_version
 from controlbox.shared.infrastructure.logging_config import setup_logging
 from controlbox.shared.infrastructure.metrics import increment_errors, increment_requests, router as metrics_router
 from controlbox.shared.infrastructure.redis.client import RedisClient, SessionCache
@@ -202,6 +204,7 @@ def create_app() -> FastAPI:
             environment=container.settings.app_env,
             postgres=postgres_status,
             redis=redis_status,
+            version=resolve_controlbox_version(container.settings),
         )
 
     app.include_router(metrics_router)
@@ -221,6 +224,7 @@ def create_app() -> FastAPI:
     app.include_router(team_router, prefix=settings.app_api_prefix)
     app.include_router(staging_router, prefix=settings.app_api_prefix)
     app.include_router(platform_router, prefix=settings.app_api_prefix)
+    app.include_router(cloudflare_router, prefix=settings.app_api_prefix)
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket, token: str | None = None):

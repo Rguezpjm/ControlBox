@@ -139,3 +139,4 @@ class HealthResponseSchema(BaseModel):
     environment: str
     postgres: str
     redis: str
+    version: str = ""

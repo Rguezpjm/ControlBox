@@ -44,7 +44,10 @@ class PathResolver:
 
     def tenant_root(self, tenant_id: UUID) -> Path:
         root = (self._base / str(tenant_id)).resolve()
-        root.mkdir(parents=True, exist_ok=True)
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ForbiddenError(f"Cannot access tenant file root: {exc}") from exc
         return root
 
     def resolve(self, tenant_id: UUID, relative_path: str = "") -> Path:
@@ -59,7 +62,13 @@ class PathResolver:
 
     def to_relative(self, tenant_id: UUID, absolute: Path) -> str:
         root = self.tenant_root(tenant_id)
-        rel = absolute.relative_to(root)
+        resolved = absolute.resolve()
+        if resolved == root:
+            return ""
+        try:
+            rel = resolved.relative_to(root)
+        except ValueError as exc:
+            raise ForbiddenError("Access denied") from exc
         return "" if str(rel) == "." else str(rel).replace("\\", "/")
 
 
@@ -68,6 +77,7 @@ class FileSystemService:
         self._resolver = PathResolver(settings)
 
     def browse(self, tenant_id: UUID, path: str = "") -> BrowseResult:
+        root = self._resolver.tenant_root(tenant_id)
         target = self._resolver.resolve(tenant_id, path)
         if not target.exists():
             raise NotFoundError("Path not found")
@@ -75,16 +85,27 @@ class FileSystemService:
             raise ValidationError("Path is not a directory")
 
         entries: list[FileEntry] = []
-        for item in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
-            entries.append(self._to_entry(tenant_id, item))
+        try:
+            items = sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        except OSError as exc:
+            raise ForbiddenError(f"Cannot read directory: {exc}") from exc
 
-        parent = self._resolver.to_relative(tenant_id, target.parent)
-        if parent == "" and str(target) == str(self._resolver.tenant_root(tenant_id)):
+        for item in items:
+            try:
+                entries.append(self._to_entry(tenant_id, item))
+            except OSError:
+                continue
+
+        rel_path = self._resolver.to_relative(tenant_id, target)
+        if not rel_path:
             parent = None
+        else:
+            parent_path = str(Path(rel_path).parent).replace("\\", "/")
+            parent = None if parent_path in ("", ".") else parent_path
 
         return BrowseResult(
-            path=self._resolver.to_relative(tenant_id, target),
-            parent=parent if parent != self._resolver.to_relative(tenant_id, target) else None,
+            path=rel_path,
+            parent=parent,
             entries=entries,
         )
 

@@ -160,6 +160,8 @@ cb_config_generate() {
 
     {
         cb_env_emit "CONTROLBOX_VERSION" "${CONTROLBOX_VERSION}"
+        cb_env_emit "CONTROLBOX_GITHUB_REPO" "${CONTROLBOX_GITHUB_REPO:-Rguezpjm/ControlBox}"
+        cb_env_emit "CONTROLBOX_INSTALL_URL" "${CONTROLBOX_INSTALL_URL:-https://install.grodtech.com}"
         cb_env_emit "CONTROLBOX_PROFILE" "${CB_PROFILE}"
         cb_env_emit "CONTROLBOX_OS_LABEL" "${os_label}"
         cb_env_emit "CONTROLBOX_INSTALL_DATE" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -245,9 +247,18 @@ cb_config_generate() {
         cb_env_emit "WEBAUTHN_ORIGIN" "${webauthn_origin}"
         cb_env_emit "WEBAUTHN_RP_ID" "${CONTROLBOX_PRIMARY_DOMAIN:-${server_ip}}"
         cb_env_emit "CONTROLBOX_ENABLED_PROFILES" "${CONTROLBOX_ENABLED_PROFILES:-databases,backups}"
+        cb_env_emit "CONTROLBOX_ENABLED_RUNTIMES" "${CONTROLBOX_ENABLED_RUNTIMES:-php:8.2,php:8.3,nodejs:22,python:3.13,flutter:3.44.2}"
         cb_env_emit "CONTROLBOX_FEATURE_DNS" "${CONTROLBOX_FEATURE_DNS:-false}"
         cb_env_emit "CONTROLBOX_FEATURE_MAIL" "${CONTROLBOX_FEATURE_MAIL:-false}"
         cb_env_emit "CONTROLBOX_FEATURE_FTP" "${CONTROLBOX_FEATURE_FTP:-false}"
+        cb_env_emit "PUREFTPD_ENABLED" "${CONTROLBOX_FEATURE_FTP:-false}"
+        cb_env_emit "PUREFTPD_HOST" "pureftpd"
+        cb_env_emit "PUREFTPD_PORT" "21"
+        cb_env_emit "PUREFTPD_PROTOCOL" "ftp"
+        cb_env_emit "PUREFTPD_PUBLIC_HOST" "${CONTROLBOX_PRIMARY_DOMAIN:-${server_ip}}"
+        cb_env_emit "PUREFTPD_PASSIVE_MIN" "30000"
+        cb_env_emit "PUREFTPD_PASSIVE_MAX" "30009"
+        cb_env_emit "PUREFTPD_TLS" "0"
         cb_env_emit "LOG_LEVEL" "INFO"
     } > "${env_file}"
 
@@ -293,7 +304,7 @@ cb_config_deploy_templates() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-1.1.0}"
+    local version="${CONTROLBOX_VERSION:-4.11.0}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     [[ -f "${install_dir}/src/backend/Dockerfile" ]] \

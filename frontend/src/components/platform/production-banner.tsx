@@ -1,32 +1,37 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Shield } from "lucide-react";
-import { getPlatformOverview } from "@/lib/platform";
+import { AlertTriangle, Shield } from "lucide-react";
+import { getPlatformOverview, type PlatformOverview } from "@/lib/platform";
+import { ensureCsrfToken } from "@/lib/auth";
 import { ProductionSetupDialog } from "@/components/platform/production-setup-dialog";
 import { Button } from "@/components/ui/button";
 
+function isConfigureServicesPending(overview: PlatformOverview | null): boolean {
+  if (!overview) return false;
+  const item = overview.setup_checklist.items.find((i) => i.key === "configure_services");
+  return !item?.completed;
+}
+
 export function ProductionBanner() {
-  const [visible, setVisible] = useState(false);
-  const [message, setMessage] = useState("");
+  const [overview, setOverview] = useState<PlatformOverview | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const overview = await getPlatformOverview();
-      if (!overview.is_production_ready) {
-        const pending = overview.setup_checklist.total_count - overview.setup_checklist.completed_count;
-        setMessage(
-          pending === 1
-            ? "Queda 1 tarea pendiente en el checklist de producción"
-            : `Quedan ${pending} tareas pendientes en el checklist de producción`
-        );
-        setVisible(true);
+      await ensureCsrfToken();
+      const next = await getPlatformOverview();
+      setOverview(next);
+      if (isConfigureServicesPending(next)) {
+        setDialogOpen(true);
       } else {
-        setVisible(false);
+        setDialogOpen(false);
       }
     } catch {
-      setVisible(false);
+      setOverview(null);
+    } finally {
+      setLoaded(true);
     }
   }, []);
 
@@ -34,14 +39,10 @@ export function ProductionBanner() {
     load();
   }, [load]);
 
-  if (!visible) {
-    return (
-      <ProductionSetupDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onComplete={load}
-      />
-    );
+  const needsInitialSetup = isConfigureServicesPending(overview);
+
+  if (!loaded || !needsInitialSetup) {
+    return null;
   }
 
   return (
@@ -50,7 +51,9 @@ export function ProductionBanner() {
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
         <div className="flex-1">
           <p className="font-medium text-amber-900 dark:text-amber-100">Preparación para producción</p>
-          <p className="text-amber-800/90 dark:text-amber-200/90">{message}</p>
+          <p className="text-amber-800/90 dark:text-amber-200/90">
+            Seleccione los servicios que desea instalar y activar en este servidor.
+          </p>
         </div>
         <Button
           size="sm"
@@ -59,29 +62,14 @@ export function ProductionBanner() {
           onClick={() => setDialogOpen(true)}
         >
           <Shield className="h-3.5 w-3.5" />
-          Completar configuración
+          Configurar servicios
         </Button>
-        <button
-          type="button"
-          onClick={() => setVisible(false)}
-          className="text-amber-700 hover:text-amber-900 dark:text-amber-300"
-          aria-label="Cerrar"
-        >
-          <CheckCircle2 className="h-4 w-4 opacity-50" />
-        </button>
       </div>
 
       <ProductionSetupDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        onComplete={() => {
-          load();
-          if (dialogOpen) {
-            getPlatformOverview().then((o) => {
-              if (o.is_production_ready) setVisible(false);
-            });
-          }
-        }}
+        onComplete={load}
       />
     </>
   );

@@ -105,6 +105,7 @@ cb_services_prompt() {
             cb_info "Supabase requiere MinIO — perfil backups activado"
         fi
     fi
+    [[ "${use_ftp}" == "y" ]] && profiles+=("ftp")
 
     local joined=""
     local item

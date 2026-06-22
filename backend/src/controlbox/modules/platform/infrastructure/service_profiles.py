@@ -47,6 +47,15 @@ SERVICE_CATALOG: tuple[dict[str, object], ...] = (
         "requires": (),
     },
     {
+        "id": "ftp",
+        "profile": "ftp",
+        "name": "FTP / SFTP",
+        "category": "platform",
+        "description": "Pure-FTPd y SFTP para transferencia de archivos de sitios.",
+        "containers": ("controlbox-pureftpd", "controlbox-sftp"),
+        "requires": (),
+    },
+    {
         "id": "supabase",
         "profile": "supabase",
         "name": "Supabase",
@@ -108,7 +117,7 @@ class ServiceProfilesManager:
             "-f",
             str(install_dir / "docker-compose.yml"),
         ]
-        for extra in ("docker-compose.override.yml", "docker-compose.ports.yml", "docker-compose.build.yml"):
+        for extra in ("docker-compose.override.yml", "docker-compose.ports.yml", "docker-compose.ftp.yml", "docker-compose.build.yml"):
             path = install_dir / extra
             if path.exists():
                 cmd.extend(["-f", str(path)])
@@ -218,6 +227,20 @@ class ServiceProfilesManager:
             message=message,
         )
 
+    def _ensure_supabase_config(self) -> None:
+        config_supabase = self._config_dir() / "supabase"
+        kong = config_supabase / "kong.yml"
+        if kong.is_file():
+            return
+        templates = self._install_dir() / "templates" / "supabase"
+        if not templates.is_dir():
+            return
+        config_supabase.mkdir(parents=True, exist_ok=True)
+        for item in templates.iterdir():
+            dest = config_supabase / item.name
+            if item.is_file() and not dest.exists():
+                dest.write_bytes(item.read_bytes())
+
     async def apply_profiles(self, selected: list[str]) -> tuple[bool, str, list[str]]:
         profiles = self._normalize_profiles(selected)
         if not profiles:
@@ -231,6 +254,32 @@ class ServiceProfilesManager:
             self._write_profiles_to_env(profiles)
         except FileNotFoundError as exc:
             return False, str(exc), profiles
+
+        if "ftp" in profiles:
+            try:
+                env_file = self._env_file()
+                lines = env_file.read_text(encoding="utf-8").splitlines()
+                updated: list[str] = []
+                found_enabled = found_feature = False
+                for line in lines:
+                    if line.startswith("PUREFTPD_ENABLED="):
+                        updated.append("PUREFTPD_ENABLED=true")
+                        found_enabled = True
+                    elif line.startswith("CONTROLBOX_FEATURE_FTP="):
+                        updated.append("CONTROLBOX_FEATURE_FTP=true")
+                        found_feature = True
+                    else:
+                        updated.append(line)
+                if not found_enabled:
+                    updated.append("PUREFTPD_ENABLED=true")
+                if not found_feature:
+                    updated.append("CONTROLBOX_FEATURE_FTP=true")
+                env_file.write_text("\n".join(updated) + "\n", encoding="utf-8")
+            except OSError as exc:
+                logger.warning("Could not enable FTP in platform.env: %s", exc)
+
+        if "supabase" in profiles:
+            self._ensure_supabase_config()
 
         cmd = self._compose_base_cmd()
         for profile in profiles:
@@ -252,5 +301,16 @@ class ServiceProfilesManager:
         if proc.returncode != 0:
             logger.error("Profile apply failed: %s", output)
             return False, f"Error al instalar servicios: {output[-400:]}", profiles
+
+        recreate = self._compose_base_cmd()
+        for profile in profiles:
+            recreate.extend(["--profile", profile])
+        recreate.extend(["up", "-d", "--force-recreate", "api", "worker"])
+        recreate_proc = await asyncio.create_subprocess_exec(
+            *recreate,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        await asyncio.wait_for(recreate_proc.communicate(), timeout=300)
 
         return True, f"Servicios activados: {', '.join(profiles)}", profiles

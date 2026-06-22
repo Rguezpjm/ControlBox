@@ -7,7 +7,8 @@ from controlbox.modules.ftp.application.queries import (
     ListFtpAccountsQuery,
     ListFtpLogsQuery,
 )
-from controlbox.modules.ftp.infrastructure.provisioner import FtpLogReader, PureFtpdProvisioner
+from controlbox.modules.ftp.infrastructure.provisioner import FtpLogReader
+from controlbox.modules.ftp.infrastructure.service_manager import FtpServiceManager
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import NotFoundError
 
@@ -98,13 +99,20 @@ class ListFtpLogsHandler:
 class GetFtpServiceStatusHandler:
     def __init__(self) -> None:
         self._settings = get_settings()
-        self._provisioner = PureFtpdProvisioner(self._settings)
+        self._manager = FtpServiceManager(self._settings)
 
     async def handle(self) -> FtpServiceStatusResponse:
-        status = await self._provisioner.service_status()
+        config = await self._manager.get_config()
         return FtpServiceStatusResponse(
-            enabled=bool(status.get("enabled", False)),
-            status=str(status.get("status", "unknown")),
-            host=str(status.get("host", self._settings.pureftpd_host)),
-            port=status.get("port") if isinstance(status.get("port"), int) else self._settings.pureftpd_port,
+            enabled=config.enabled,
+            status=config.status,
+            host=config.host,
+            port=config.port,
+            protocol=config.protocol,
+            passive_port_min=config.passive_port_min,
+            passive_port_max=config.passive_port_max,
+            public_host=config.public_host,
+            running=config.running,
+            can_manage=config.can_manage,
+            message=config.message,
         )

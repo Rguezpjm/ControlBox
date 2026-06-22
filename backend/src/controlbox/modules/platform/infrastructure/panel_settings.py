@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from controlbox.config.settings import Settings
+from controlbox.shared.infrastructure.version_info import resolve_controlbox_version
 from controlbox.modules.platform.domain.entities import TenantPlatformSettings
 from controlbox.modules.platform.infrastructure.panel_config import PanelConfigService
 from controlbox.modules.supabase.infrastructure.crypto import SecretEncryptor
@@ -128,7 +129,7 @@ class PanelSettingsService:
             "telegram_alerts_enabled": platform.telegram_alerts_enabled,
             "telegram_chat_id": platform.telegram_chat_id or "",
             "telegram_bot_configured": bool(platform.telegram_bot_token_enc),
-            "controlbox_version": self._settings.controlbox_version,
+            "controlbox_version": resolve_controlbox_version(self._settings),
             "controlbox_profile": self._settings.controlbox_profile,
             "os_label": self._settings.controlbox_os_label,
             "sidebar_hidden_items": prefs["sidebar_hidden_items"],

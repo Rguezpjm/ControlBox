@@ -7,6 +7,7 @@ from pathlib import Path
 from controlbox.config.settings import Settings
 from controlbox.modules.databases.domain.entities import DatabaseEngineType, ManagedDatabase
 from controlbox.modules.databases.infrastructure.engine_config import EngineConfigResolver, EngineConnection
+from controlbox.shared.infrastructure.mysql_cli import mysql_connection_args
 from passlib.context import CryptContext
 
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -103,10 +104,7 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
     async def backup(self, conn: EngineConnection, database_name: str, output_path: Path) -> None:
         cmd = [
             "mysqldump",
-            f"-h{conn.host}",
-            f"-P{conn.port}",
-            f"-u{conn.admin_user}",
-            f"-p{conn.admin_password}",
+            *mysql_connection_args(conn.host, conn.port, conn.admin_user, conn.admin_password),
             "--single-transaction",
             "--routines",
             "--triggers",
@@ -117,10 +115,7 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
     async def restore(self, conn: EngineConnection, database_name: str, input_path: Path) -> None:
         cmd = [
             "mysql",
-            f"-h{conn.host}",
-            f"-P{conn.port}",
-            f"-u{conn.admin_user}",
-            f"-p{conn.admin_password}",
+            *mysql_connection_args(conn.host, conn.port, conn.admin_user, conn.admin_password),
             database_name,
         ]
         proc = await asyncio.create_subprocess_exec(
@@ -137,10 +132,7 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
     async def _execute(self, conn: EngineConnection, sql: str) -> None:
         cmd = [
             "mysql",
-            f"-h{conn.host}",
-            f"-P{conn.port}",
-            f"-u{conn.admin_user}",
-            f"-p{conn.admin_password}",
+            *mysql_connection_args(conn.host, conn.port, conn.admin_user, conn.admin_password),
             "-e",
             sql,
         ]

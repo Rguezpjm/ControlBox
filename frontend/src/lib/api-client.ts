@@ -186,7 +186,7 @@ export const api = {
         body: JSON.stringify({}),
       }),
   },
-  health: () => request<{ status: string }>("/health"),
+  health: () => request<{ status: string; version?: string }>("/health"),
 };
 
 export { ApiError, request };

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-1.1.0}"
+CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-4.11.0}"
 CONTROLBOX_INSTALL_URL="${CONTROLBOX_INSTALL_URL:-https://install.grodtech.com}"
 
 echo "ControlBox Installer Packager v${CONTROLBOX_VERSION}"
@@ -99,6 +99,14 @@ tar czf "${ARCHIVE}" -C "${STAGING_ROOT}" controlbox-installer
 sed 's/\r$//' "${SCRIPT_DIR}/install.sh" | tr -d '\r' > "${OUTPUT_DIR}/install.sh"
 chmod +x "${OUTPUT_DIR}/install.sh"
 
+repo_root="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [[ -f "${repo_root}/frontend/public/logo.png" ]]; then
+    cp -f "${repo_root}/frontend/public/logo.png" "${OUTPUT_DIR}/logo.png"
+fi
+if [[ -f "${repo_root}/logo.png" ]]; then
+    cp -f "${repo_root}/logo.png" "${OUTPUT_DIR}/logo.png"
+fi
+
 BOOTSTRAP_FIXES_B64="$(base64 -w0 "${SCRIPT_DIR}/lib/bootstrap-fixes.sh" 2>/dev/null || base64 "${SCRIPT_DIR}/lib/bootstrap-fixes.sh" | tr -d '\n')"
 REINSTALL_B64="$(base64 -w0 "${SCRIPT_DIR}/lib/reinstall.sh" 2>/dev/null || base64 "${SCRIPT_DIR}/lib/reinstall.sh" | tr -d '\n')"
 sed -i "s|__BOOTSTRAP_FIXES_B64__|${BOOTSTRAP_FIXES_B64}|g" "${OUTPUT_DIR}/install.sh"
@@ -114,6 +122,7 @@ test -f "${STAGING_DIR}/lib/bootstrap-fixes.sh"
 test -f "${STAGING_DIR}/lib/reinstall.sh"
 test -f "${STAGING_DIR}/src/backend/Dockerfile"
 test -f "${STAGING_DIR}/src/frontend/Dockerfile"
+test -f "${STAGING_DIR}/src/frontend/public/logo.png"
 test -f "${STAGING_DIR}/config/defaults.conf"
 
 if [[ -f "${STAGING_DIR}/src/frontend/src/app/icon.png" ]]; then

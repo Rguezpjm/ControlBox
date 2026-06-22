@@ -168,6 +168,23 @@ cb_env_emit() {
     printf '%s="%s"\n' "${key}" "${value}"
 }
 
+cb_env_patch_key() {
+    local file="$1"
+    local key="$2"
+    local value="$3"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    if [[ ! -f "${file}" ]]; then
+        cb_env_emit "${key}" "${value}" >> "${file}"
+        return 0
+    fi
+    if grep -q "^${key}=" "${file}"; then
+        sed -i "s|^${key}=.*|${key}=\"${value}\"|" "${file}"
+    else
+        cb_env_emit "${key}" "${value}" >> "${file}"
+    fi
+}
+
 cb_sanitize_port() {
     local value="${1:-}"
     local default="${2:-}"

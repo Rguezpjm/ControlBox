@@ -24,6 +24,8 @@ from controlbox.modules.wordpress.domain.entities import (
     WordPressSslStatus,
     WordPressStatus,
 )
+from controlbox.modules.databases.domain.services import DatabaseDomainService
+from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
 from controlbox.modules.wordpress.domain.services import WordPressDomainService
 from controlbox.modules.wordpress.infrastructure.provisioner import WordPressProvisioner
 from controlbox.modules.wordpress.workers.tasks import (
@@ -72,7 +74,10 @@ class CreateWordPressSiteHandler(CommandHandler[CreateWordPressSiteCommand, Word
         if not command.tenant_id:
             raise ForbiddenError("Tenant context required")
 
-        domain_service = WordPressDomainService(self._uow.wordpress_sites)
+        domain_service = WordPressDomainService(
+            self._uow.wordpress_sites,
+            runtime_catalog=RuntimeCatalogManager(self._settings),
+        )
         domain = domain_service.validate_domain(command.domain)
         php_version = domain_service.validate_php_version(command.php_version or DEFAULT_PHP_VERSION)
         admin_user = domain_service.validate_admin_user(command.admin_user)
@@ -99,6 +104,17 @@ class CreateWordPressSiteHandler(CommandHandler[CreateWordPressSiteCommand, Word
         site.site_path = str(self._provisioner.get_site_path(command.tenant_id, site.id))
         site.nginx_container_name = nginx_name
         site.php_container_name = php_name
+
+        db_domain = DatabaseDomainService(self._uow.managed_databases)
+        if command.db_name:
+            site.settings["requested_db_name"] = db_domain.validate_name(command.db_name)
+            await db_domain.ensure_name_available(site.settings["requested_db_name"], command.tenant_id)
+        if command.db_user:
+            site.settings["requested_db_user"] = db_domain.validate_username(command.db_user)
+        if command.db_password:
+            if len(command.db_password) < 8:
+                raise ValidationError("Database password must be at least 8 characters")
+            site.settings["requested_db_password"] = command.db_password
 
         await self._uow.wordpress_sites.add(site)
 
@@ -180,7 +196,10 @@ class ChangePhpVersionHandler(CommandHandler[ChangePhpVersionCommand, WordPressS
         site = await self._uow.wordpress_sites.get_by_id_and_tenant(command.site_id, command.tenant_id)
         if site is None:
             raise NotFoundError("WordPress site not found")
-        version = WordPressDomainService(self._uow.wordpress_sites).validate_php_version(command.php_version)
+        version = WordPressDomainService(
+            self._uow.wordpress_sites,
+            runtime_catalog=RuntimeCatalogManager(self._settings),
+        ).validate_php_version(command.php_version)
         await self._provisioner.change_php_version(site, version)
         site.php_version = version
         await self._uow.wordpress_sites.save(site)
@@ -215,7 +234,10 @@ class CloneWordPressSiteHandler(CommandHandler[CloneWordPressSiteCommand, WordPr
         if source is None:
             raise NotFoundError("WordPress site not found")
 
-        domain_service = WordPressDomainService(self._uow.wordpress_sites)
+        domain_service = WordPressDomainService(
+            self._uow.wordpress_sites,
+            runtime_catalog=RuntimeCatalogManager(self._settings),
+        )
         domain = domain_service.validate_domain(command.new_domain)
         await domain_service.ensure_domain_available(domain, command.tenant_id)
 

@@ -68,6 +68,8 @@ async def browse(
         )
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
+    except OSError as exc:
+        raise map_domain_exception(ForbiddenError(f"Filesystem error: {exc}")) from exc
 
 
 @router.get("/content", response_model=ReadContentResponse)

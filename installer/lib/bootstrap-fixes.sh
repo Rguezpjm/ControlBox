@@ -151,6 +151,17 @@ cb_compose_ensure_docker_proxy() {
         cb_info "DOCKER_HOST configurado en platform.env"
     fi
 
+    if [[ -f "${env_file}" ]] && ! grep -q '^CONTROLBOX_ENABLED_RUNTIMES=' "${env_file}" 2>/dev/null; then
+        echo "CONTROLBOX_ENABLED_RUNTIMES=php:8.2,php:8.3,nodejs:22,python:3.13,flutter:3.44.2" >> "${env_file}"
+        cb_info "CONTROLBOX_ENABLED_RUNTIMES configurado en platform.env"
+    fi
+
+    if [[ -f "${compose_file}" ]] && ! grep -q '/certs:/certs' "${compose_file}" 2>/dev/null; then
+        cb_warn "Actualizando docker-compose.yml para certificados SSL personalizados"
+        cp -f "${template_file}" "${compose_file}"
+        cb_compose_repair_compose_ports
+    fi
+
     if [[ -f "${env_file}" ]] && grep -q '^REDIS_PASSWORD=' "${env_file}" 2>/dev/null; then
         local redis_pass
         redis_pass="$(grep '^REDIS_PASSWORD=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
@@ -231,7 +242,7 @@ cb_docker_registry_image_ok() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-1.1.0}"
+    local version="${CONTROLBOX_VERSION:-4.11.0}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     cb_app_source_available || return 1
@@ -372,7 +383,7 @@ cb_compose_validate_env_file() {
 cb_docker_pull_images() {
     cb_step "Descargando imágenes Docker"
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
-    local version="${CONTROLBOX_VERSION:-1.1.0}"
+    local version="${CONTROLBOX_VERSION:-4.11.0}"
     local api_image="ghcr.io/grodtech/controlbox-api:${version}"
 
     if ! cb_compose_validate_env_file "${env_file}"; then
@@ -388,6 +399,13 @@ cb_docker_pull_images() {
         local profiles="${CONTROLBOX_ENABLED_PROFILES:-databases,backups}"
         [[ "${profiles}" == *databases* ]] && pull_services+=(mysql)
         [[ "${profiles}" == *backups* ]] && pull_services+=(minio)
+        if [[ "${profiles}" == *supabase* ]]; then
+            pull_services+=(
+                supabase-db supabase-kong supabase-auth supabase-rest
+                supabase-realtime supabase-storage supabase-meta supabase-studio
+            )
+        fi
+        [[ "${profiles}" == *ftp* ]] && pull_services+=(pureftpd sftp)
         cb_docker_compose_run "${env_file}" pull "${pull_services[@]}" --progress=plain 2>/dev/null \
             || cb_docker_compose_run_verbose "${env_file}" pull "${pull_services[@]}" \
             || true
@@ -531,7 +549,15 @@ cb_docker_deploy_stack() {
         cb_die "Las migraciones de base de datos fallaron"
     fi
 
-    cb_progress_note "Fase 3/4: iniciando API (antes del resto del stack)..."
+    cb_progress_note "Fase 3/4: proxy Docker y API..."
+    if ! cb_run_stream "Iniciando docker-socket-proxy" \
+        cb_docker_compose_run "${env_file}" up -d docker-socket-proxy; then
+        cb_die "No se pudo iniciar docker-socket-proxy"
+    fi
+
+    cb_wait_for_service "docker-socket-proxy" \
+        "cb_docker_compose_run '${env_file}' ps docker-socket-proxy 2>/dev/null | grep -qE 'Up|running'" 90
+
     if ! cb_run_stream "Iniciando controlbox-api" \
         cb_docker_compose_run "${env_file}" up -d api; then
         cb_docker_diagnose_api

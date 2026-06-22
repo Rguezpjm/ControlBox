@@ -69,6 +69,8 @@ class CreateDatabaseHandler:
             except Exception as exc:
                 database.mark_error(str(exc))
                 await self._uow.managed_databases.save(database)
+                await self._uow.commit()
+                raise RuntimeError(str(exc)) from exc
             await self._uow.commit()
 
         return database
@@ -122,7 +124,9 @@ class CreateDatabaseUserHandler:
             if not database:
                 raise NotFoundError("Database not found")
             if database.status != DatabaseStatus.ACTIVE:
-                raise NotFoundError("Database is not active")
+                raise NotFoundError(
+                    "Database is not active. It may have failed to provision — check its status or delete and recreate it."
+                )
 
             existing = await self._uow.database_users.get_by_username(database.id, username)
             if existing:

@@ -139,6 +139,35 @@ export function applyServiceProfiles(profiles: string[]) {
   );
 }
 
+export interface RuntimeVersion {
+  id: string;
+  runtime: string;
+  version: string;
+  name: string;
+  category: string;
+  image: string;
+  enabled: boolean;
+  installed: boolean;
+}
+
+export interface RuntimesOverview {
+  can_manage: boolean;
+  enabled_runtimes: string[];
+  runtimes: RuntimeVersion[];
+  message: string;
+}
+
+export function getRuntimeProfiles() {
+  return request<RuntimesOverview>("/api/v1/platform/runtimes");
+}
+
+export function applyRuntimeProfiles(runtimes: string[]) {
+  return request<{ success: boolean; message: string; enabled_runtimes: string[] }>(
+    "/api/v1/platform/runtimes/apply",
+    { method: "POST", body: JSON.stringify({ runtimes }) }
+  );
+}
+
 export function confirmSecretsReviewed() {
   return request<PlatformOverview["secrets_rotation"]>("/api/v1/platform/secrets/confirm-reviewed", {
     method: "POST",

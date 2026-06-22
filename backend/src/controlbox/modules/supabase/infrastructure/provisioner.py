@@ -186,14 +186,31 @@ class SupabaseProvisioner:
                 return max(1, int(line.strip()) // (1024 * 1024))
         return 0
 
+    def _profile_enabled(self) -> bool:
+        raw = self._settings.controlbox_enabled_profiles or ""
+        profiles = {p.strip().lower() for p in raw.replace(" ", "").split(",") if p.strip()}
+        return "supabase" in profiles
+
     async def check_connection(self) -> tuple[bool, str]:
+        if not self._profile_enabled():
+            return False, (
+                "Supabase no está habilitado en este servidor. "
+                "Abra Configuración de producción, active Supabase (requiere MinIO/Backups) "
+                "y pulse Aplicar, o ejecute controlbox repair en el VPS."
+            )
         try:
             await self._query("SELECT 1")
-            return True, "Supabase PostgreSQL is reachable"
+            return True, "PostgreSQL de Supabase accesible"
         except Exception as exc:
+            err = str(exc).strip()
+            if "could not translate host name" in err or "Name or service not known" in err:
+                return False, (
+                    f"El contenedor supabase-db no está en ejecución ({self._conn.host}:{self._conn.port}). "
+                    "Active el perfil supabase en Configuración de producción y ejecute controlbox repair."
+                )
             return False, (
-                f"Cannot reach Supabase database at {self._conn.host}:{self._conn.port}. "
-                f"Enable the supabase profile and run controlbox repair. ({exc})"
+                f"No se puede conectar a Supabase en {self._conn.host}:{self._conn.port}. "
+                f"Ejecute controlbox repair en el VPS. ({err})"
             )
 
     async def _execute(self, sql: str) -> None:

@@ -17,6 +17,8 @@ from controlbox.modules.websites.domain.entities import (
     WebsiteRuntime,
     WebsiteStatus,
 )
+from controlbox.config.settings import Settings
+from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
 from controlbox.modules.websites.domain.services import WebsiteDomainService
 from controlbox.modules.websites.infrastructure.provisioner import DatabaseProvisioner, DockerProvisioner
 from controlbox.shared.application.cqrs import CommandHandler
@@ -65,7 +67,10 @@ class CreateWebsiteHandler(CommandHandler[CreateWebsiteCommand, WebsiteResponse]
         if not command.tenant_id:
             raise ForbiddenError("Tenant context required")
 
-        domain_service = WebsiteDomainService(self._uow.websites)
+        domain_service = WebsiteDomainService(
+            self._uow.websites,
+            runtime_catalog=RuntimeCatalogManager(self._settings),
+        )
         domain = domain_service.validate_domain(command.domain)
         await domain_service.ensure_domain_available(domain, command.tenant_id)
 

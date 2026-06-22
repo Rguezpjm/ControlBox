@@ -119,9 +119,11 @@ async def get_supabase_status(
     _require_tenant(context)
     settings = get_settings()
     provisioner = SupabaseProvisioner(settings)
+    profile_enabled = provisioner._profile_enabled()
     ok, message = await provisioner.check_connection()
     return SupabaseServiceStatusSchema(
         enabled=ok,
+        profile_enabled=profile_enabled,
         status="healthy" if ok else "unavailable",
         host=settings.supabase_db_host,
         port=settings.supabase_db_port,

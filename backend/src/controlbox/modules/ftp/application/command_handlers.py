@@ -14,8 +14,30 @@ from controlbox.modules.ftp.application.commands import (
 from controlbox.modules.ftp.domain.entities import FtpAccount, FtpAccountStatus
 from controlbox.modules.ftp.domain.services import FtpDomainService
 from controlbox.modules.ftp.infrastructure.provisioner import PureFtpdProvisioner
+from controlbox.modules.ftp.infrastructure.service_manager import FtpServiceManager
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import NotFoundError, ValidationError
+
+
+async def _sync_sftp_account(
+    uow: UnitOfWork,
+    account: FtpAccount,
+    plain_password: str,
+    settings: Settings | None = None,
+) -> None:
+    settings = settings or get_settings()
+    manager = FtpServiceManager(settings)
+    async with uow:
+        active = await uow.ftp_accounts.list_active()
+    await manager.sync_sftp_user(account, plain_password, active)
+
+
+async def _rebuild_sftp_accounts(uow: UnitOfWork, settings: Settings | None = None) -> None:
+    settings = settings or get_settings()
+    manager = FtpServiceManager(settings)
+    async with uow:
+        active = await uow.ftp_accounts.list_active()
+    await manager.rebuild_sftp(active)
 
 
 def build_ftp_account(
@@ -86,6 +108,8 @@ class CreateFtpAccountHandler:
                 await self._uow.ftp_accounts.save(account)
             await self._uow.commit()
 
+        if account.status == FtpAccountStatus.ACTIVE:
+            await _sync_sftp_account(self._uow, account, plain_password, self._settings)
         return account, plain_password
 
 
@@ -154,6 +178,8 @@ class ChangeFtpPasswordHandler:
             await self._uow.ftp_accounts.save(account)
             await self._uow.commit()
 
+        if account.status == FtpAccountStatus.ACTIVE:
+            await _sync_sftp_account(self._uow, account, plain_password, self._settings)
         return account, plain_password
 
 
@@ -244,19 +270,29 @@ class SetFtpStatusHandler:
             await self._uow.ftp_accounts.save(account)
             await self._uow.commit()
 
+        manager = FtpServiceManager(self._settings)
+        if target_status == FtpAccountStatus.SUSPENDED:
+            manager.remove_sftp_password(account.system_username)
+            await _rebuild_sftp_accounts(self._uow, self._settings)
+        elif target_status == FtpAccountStatus.ACTIVE and generated_password:
+            await _sync_sftp_account(self._uow, account, generated_password, self._settings)
+
         return account, generated_password
 
 
 class DeleteFtpAccountHandler:
     def __init__(self, uow: UnitOfWork, settings: Settings | None = None) -> None:
         self._uow = uow
-        self._provisioner = PureFtpdProvisioner(settings or get_settings())
+        self._settings = settings or get_settings()
+        self._provisioner = PureFtpdProvisioner(self._settings)
 
     async def handle(self, command: DeleteFtpAccountCommand) -> None:
+        system_username = ""
         async with self._uow:
             account = await self._uow.ftp_accounts.get_by_id_and_tenant(command.account_id, command.tenant_id)
             if not account:
                 raise NotFoundError("FTP account not found")
+            system_username = account.system_username
 
             if account.status == FtpAccountStatus.ACTIVE:
                 try:
@@ -266,3 +302,6 @@ class DeleteFtpAccountHandler:
 
             await self._uow.ftp_accounts.delete(account.id)
             await self._uow.commit()
+
+        FtpServiceManager(self._settings).remove_sftp_password(system_username)
+        await _rebuild_sftp_accounts(self._uow, self._settings)

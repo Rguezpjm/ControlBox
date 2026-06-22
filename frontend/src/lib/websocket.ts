@@ -84,6 +84,7 @@ export class WebSocketClient {
 
   onConnectionChange(handler: ConnectionHandler) {
     this.connectionHandlers.add(handler);
+    handler(this.isConnected);
     return () => this.connectionHandlers.delete(handler);
   }
 

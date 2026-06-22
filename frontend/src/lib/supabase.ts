@@ -92,6 +92,7 @@ function authRequest<T>(endpoint: string, init: RequestInit = {}): Promise<T> {
 
 export interface SupabaseServiceStatus {
   enabled: boolean;
+  profile_enabled: boolean;
   status: string;
   host: string;
   port: number;

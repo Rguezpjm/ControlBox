@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 
 from controlbox.config.settings import Settings
+from controlbox.shared.infrastructure.version_info import resolve_controlbox_version
 
 logger = logging.getLogger("controlbox.platform")
 
@@ -125,6 +126,13 @@ class PanelOperationsService:
             logger.debug("Could not fetch version from install.sh", exc_info=True)
             return None
 
+    @staticmethod
+    def _normalize_version_tag(raw: str) -> str:
+        value = raw.strip().strip('"').strip("'")
+        if value and value[0] in {"v", "V"}:
+            value = value[1:]
+        return value
+
     async def _fetch_github_release(self, client: httpx.AsyncClient) -> tuple[str | None, str | None, str | None]:
         repo = self._settings.controlbox_github_repo.strip()
         if not repo:
@@ -137,12 +145,12 @@ class PanelOperationsService:
                 return None, None, None
             response.raise_for_status()
             data = response.json()
-            tag = str(data.get("tag_name", "")).lstrip("v")
+            tag = self._normalize_version_tag(str(data.get("tag_name", "")))
             html_url = data.get("html_url")
             tarball = None
             for asset in data.get("assets", []):
                 name = str(asset.get("name", ""))
-                if name.endswith(".tar.gz") and "controlbox-installer" in name:
+                if name.endswith(".tar.gz") and "controlbox-installer" in name.lower():
                     tarball = asset.get("browser_download_url")
                     break
             return tag or None, html_url, tarball
@@ -152,30 +160,36 @@ class PanelOperationsService:
 
     @staticmethod
     def _parse_version(version: str) -> tuple[int, ...]:
+        normalized = PanelOperationsService._normalize_version_tag(version)
         parts: list[int] = []
-        for piece in re.split(r"[.\-]", version):
+        for piece in re.split(r"[.\-_]", normalized):
             if piece.isdigit():
                 parts.append(int(piece))
         return tuple(parts) if parts else (0,)
 
-    def _is_newer(self, latest: str, current: str) -> bool:
-        return self._parse_version(latest) > self._parse_version(current)
+    def _versions_equal(self, left: str, right: str) -> bool:
+        return self._parse_version(left) == self._parse_version(right)
 
     async def check_updates(self) -> UpdateCheckResult:
-        current = self._settings.controlbox_version
+        current = resolve_controlbox_version(self._settings)
         async with httpx.AsyncClient(timeout=20) as client:
             github_version, release_url, github_tarball = await self._fetch_github_release(client)
-            cdn_version = await self._fetch_install_sh_version(client)
+            cdn_version = None if github_version else await self._fetch_install_sh_version(client)
 
-        latest = github_version or cdn_version
-        source = "github" if github_version else "cdn"
-        tarball_url = github_tarball
-        if cdn_version and (not latest or self._is_newer(cdn_version, latest)):
+        if github_version:
+            latest = github_version
+            source = "github"
+            tarball_url = github_tarball
+        elif cdn_version:
             latest = cdn_version
             source = "cdn"
             tarball_url = f"{self._settings.controlbox_install_url.rstrip('/')}/controlbox-installer-{cdn_version}.tar.gz"
+        else:
+            latest = None
+            source = "none"
+            tarball_url = None
 
-        update_available = bool(latest and self._is_newer(latest, current))
+        update_available = bool(latest and not self._versions_equal(latest, current))
         return UpdateCheckResult(
             current_version=current,
             latest_version=latest,
@@ -187,15 +201,27 @@ class PanelOperationsService:
 
     async def apply_update(self) -> OperationResult:
         check = await self.check_updates()
-        if not check.update_available or not check.latest_version:
-            return OperationResult(True, f"Already on latest version ({check.current_version})")
+        if not check.latest_version:
+            return OperationResult(
+                False,
+                "Could not fetch latest release from GitHub",
+                f"Repository: {self._settings.controlbox_github_repo}",
+            )
+        if not check.update_available:
+            return OperationResult(
+                True,
+                f"Already on release v{check.current_version}",
+            )
 
         update_script = self._install_dir() / "update.sh"
         env = {
             **dict(__import__("os").environ),
             "CONTROLBOX_VERSION": check.latest_version,
             "CONTROLBOX_INSTALL_URL": self._settings.controlbox_install_url,
+            "CONTROLBOX_GITHUB_REPO": self._settings.controlbox_github_repo,
         }
+        if check.tarball_url:
+            env["CONTROLBOX_RELEASE_TARBALL"] = check.tarball_url
 
         if update_script.exists():
             proc = await asyncio.create_subprocess_exec(

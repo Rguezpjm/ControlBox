@@ -112,9 +112,13 @@ cb_repair_fix() {
         # shellcheck disable=SC2206
         profile_args=($(cb_docker_compose_profile_args))
         cd "${CONTROLBOX_INSTALL_DIR}"
-        docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" down --remove-orphans 2>/dev/null || true
-        docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" "${profile_args[@]}" up -d --remove-orphans --force-recreate api worker 2>/dev/null \
-            || docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" "${profile_args[@]}" up -d --remove-orphans
+        docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" up -d docker-socket-proxy 2>/dev/null \
+            || cb_warn "No se pudo iniciar docker-socket-proxy (revise docker-compose.yml)"
+        cb_info "Iniciando stack con perfiles: ${CONTROLBOX_ENABLED_PROFILES:-databases,backups}"
+        docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" "${profile_args[@]}" up -d --remove-orphans \
+            || cb_die "No se pudo levantar el stack Docker"
+        docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" "${profile_args[@]}" up -d --force-recreate api worker 2>/dev/null \
+            || true
 
         cb_info "Aplicando migraciones de base de datos..."
         docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" run --rm migrate 2>/dev/null \

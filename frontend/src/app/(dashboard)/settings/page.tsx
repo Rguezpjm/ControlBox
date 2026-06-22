@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Bell,
+  Cloud,
   ExternalLink,
   FolderOpen,
   Globe,
@@ -28,7 +29,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageSkeleton } from "@/components/skeletons";
+import { CloudflareSettingsPanel } from "@/components/cloudflare/cloudflare-settings-panel";
 import {
   PanelSettingRow,
   PanelSettingsCard,
@@ -219,6 +222,20 @@ function SettingsContent() {
         description={`ControlBox ${data.controlbox_version} · ${data.os_label} · ${data.controlbox_profile}`}
       />
 
+      <Tabs defaultValue="general" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="cloudflare" className="gap-1.5">
+            <Cloud className="h-3.5 w-3.5" />
+            Cloudflare
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="cloudflare">
+          <CloudflareSettingsPanel />
+        </TabsContent>
+
+        <TabsContent value="general" className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
         <SettingsSection
           icon={<Settings2 className="h-4 w-4" />}
@@ -696,6 +713,8 @@ function SettingsContent() {
           <code className="rounded bg-muted px-1.5 py-0.5 font-mono">sudo controlbox repair --apply-panel</code>
         </p>
       )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

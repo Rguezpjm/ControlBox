@@ -14,6 +14,9 @@ class CreateWordPressSiteCommand:
     admin_email: str
     php_version: str = "8.3"
     ssl_enabled: bool = True
+    db_name: str | None = None
+    db_user: str | None = None
+    db_password: str | None = None
 
 
 @dataclass(frozen=True)

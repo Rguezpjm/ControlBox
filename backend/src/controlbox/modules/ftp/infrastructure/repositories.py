@@ -83,5 +83,13 @@ class SqlAlchemyFtpAccountRepository(FtpAccountRepository):
         )
         return [to_ftp_account(model) for model in result.scalars().all()]
 
+    async def list_active(self) -> list[FtpAccount]:
+        result = await self._session.execute(
+            select(FtpAccountModel)
+            .where(FtpAccountModel.status == "active")
+            .order_by(FtpAccountModel.created_at.desc())
+        )
+        return [to_ftp_account(model) for model in result.scalars().all()]
+
     async def delete(self, account_id: UUID) -> None:
         await self._session.execute(delete(FtpAccountModel).where(FtpAccountModel.id == account_id))

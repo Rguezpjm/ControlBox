@@ -12,17 +12,10 @@ from controlbox.modules.websites.domain.entities import (
     Website,
     WebsiteRuntime,
 )
-from controlbox.shared.infrastructure.docker.env import docker_subprocess_env, validate_container_name
+from controlbox.shared.infrastructure.docker.env import docker_connectivity_hint, docker_subprocess_env, validate_container_name
 
 
-RUNTIME_IMAGES: dict[tuple[str, str], str] = {
-    ("html", ""): "nginx:1.27-alpine",
-    ("php", "8.2"): "php:8.2-apache",
-    ("php", "8.3"): "php:8.3-apache",
-    ("nodejs", "22"): "node:22-alpine",
-    ("python", "3.13"): "python:3.13-slim",
-    ("flutter", "3.44.2"): "nginx:1.27-alpine",
-}
+from controlbox.modules.platform.infrastructure.runtime_catalog import RUNTIME_IMAGE_MAP
 
 class DockerProvisioner:
     def __init__(self, settings: Settings) -> None:
@@ -137,7 +130,7 @@ class DockerProvisioner:
 
     def _write_compose(self, site_path: Path, website: Website) -> Path:
         image_key = (website.runtime.value, website.runtime_version)
-        image = RUNTIME_IMAGES.get(image_key) or RUNTIME_IMAGES.get((website.runtime.value, ""))
+        image = RUNTIME_IMAGE_MAP.get(image_key) or RUNTIME_IMAGE_MAP.get((website.runtime.value, ""))
         port = RUNTIME_PORTS.get(website.runtime.value, 80)
         container_port = 8000 if website.runtime == WebsiteRuntime.PYTHON else port
 
@@ -252,7 +245,10 @@ networks:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(stderr.decode() or stdout.decode() or f"Command failed: {' '.join(args)}")
+            detail = stderr.decode() or stdout.decode() or f"Command failed: {' '.join(args)}"
+            if "docker-socket-proxy" in detail or "controlbox-docker-proxy" in detail or "docker API" in detail:
+                detail = f"{detail.strip()}\n{docker_connectivity_hint(self._settings)}"
+            raise RuntimeError(detail)
         return stdout.decode()
 
 

@@ -1,9 +1,10 @@
 from typing import Annotated
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from controlbox.config.settings import get_settings
+from controlbox.config.settings import Settings, get_settings
 from controlbox.modules.identity.api.dependencies import (
     AppState,
     RequestContext,
@@ -20,11 +21,14 @@ from controlbox.modules.wordpress.api.schemas import (
     ToggleMaintenanceRequest,
     WordPressBackupResponseSchema,
     WordPressOptionsSchema,
+    WordPressProvisionStatusSchema,
     WordPressSiteResponseSchema,
 )
 from controlbox.shared.api.site_modification_schemas import (
     AddSiteDomainRequest,
     SiteModificationSchema,
+    SiteSslConfigSchema,
+    SubdirectoryBindingSchema,
     UpdateSiteModificationRequest,
 )
 from controlbox.shared.infrastructure.site_modification import SiteModificationService
@@ -63,6 +67,9 @@ from controlbox.modules.wordpress.application.queries import (
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import DomainException, ForbiddenError
+from controlbox.shared.api.site_log_schemas import AccessLogEntrySchema, SiteAccessLogsSchema, SiteErrorLogSchema
+from controlbox.shared.infrastructure.site_logs import SiteLogReader
+from controlbox.modules.wordpress.infrastructure.provision_progress import build_provision_status
 from controlbox.shared.infrastructure.site_stats import enrich_site_monitoring_fields, get_ssl_days_remaining
 
 
@@ -95,7 +102,18 @@ def _modification_schema(view) -> SiteModificationSchema:
         php_version=view.php_version,
         ssl_enabled=view.ssl_enabled,
         ssl_status=view.ssl_status,
+        ssl_config=SiteSslConfigSchema(**view.ssl_config.__dict__) if view.ssl_config else None,
         document_root=view.document_root,
+        running_directory=view.running_directory,
+        running_directory_options=view.running_directory_options,
+        open_basedir_enabled=view.open_basedir_enabled,
+        logs_enabled=view.logs_enabled,
+        site_files_path=view.site_files_path,
+        site_path=view.site_path,
+        subdirectory_bindings=[
+            SubdirectoryBindingSchema(**item) if isinstance(item, dict) else item
+            for item in view.subdirectory_bindings
+        ],
         settings=view.settings,
         vhost_config=view.vhost_config,
         nginx_config=view.nginx_config,
@@ -113,8 +131,9 @@ def _require_tenant(context: RequestContext) -> UUID:
 @router.get("/options", response_model=WordPressOptionsSchema)
 async def get_options(
     context: Annotated[RequestContext, Depends(require_permission("wordpress.read"))],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> WordPressOptionsSchema:
-    handler = GetWordPressOptionsHandler()
+    handler = GetWordPressOptionsHandler(settings=settings)
     options = await handler.handle()
     return WordPressOptionsSchema(**options.__dict__)
 
@@ -158,6 +177,9 @@ async def create_site(
                 admin_email=str(payload.admin_email),
                 php_version=payload.php_version,
                 ssl_enabled=payload.ssl_enabled,
+                db_name=payload.db_name,
+                db_user=payload.db_user,
+                db_password=payload.db_password,
             )
         )
         return WordPressSiteResponseSchema(**site.__dict__)
@@ -182,6 +204,20 @@ async def get_site(
         raise map_domain_exception(exc) from exc
 
 
+@router.get("/{site_id}/provision-status", response_model=WordPressProvisionStatusSchema)
+async def get_provision_status(
+    site_id: UUID,
+    context: Annotated[RequestContext, Depends(require_permission("wordpress.read"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> WordPressProvisionStatusSchema:
+    tenant_id = _require_tenant(context)
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    payload = build_provision_status(site_entity)
+    return WordPressProvisionStatusSchema(**payload)
+
+
 @router.get("/{site_id}/modification", response_model=SiteModificationSchema)
 async def get_site_modification(
     site_id: UUID,
@@ -195,6 +231,55 @@ async def get_site_modification(
         raise map_domain_exception(ForbiddenError("WordPress site not found"))
     view = await SiteModificationService(settings).get_wordpress(site_entity)
     return _modification_schema(view)
+
+
+@router.get("/{site_id}/access-logs", response_model=SiteAccessLogsSchema)
+async def get_wordpress_access_logs(
+    site_id: UUID,
+    context: Annotated[RequestContext, Depends(require_permission("wordpress.read"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limit: int = 100,
+) -> SiteAccessLogsSchema:
+    tenant_id = _require_tenant(context)
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    reader = SiteLogReader(settings)
+    site_path = Path(site_entity.site_path)
+    cap = 2000 if limit <= 0 else min(max(limit, 1), 2000)
+    source, entries = await reader.read_access_logs(
+        site_path=site_path,
+        container_name=site_entity.nginx_container_name,
+        limit=cap,
+    )
+    return SiteAccessLogsSchema(
+        source=source or str(site_path / "logs" / "access.log"),
+        entries=[AccessLogEntrySchema.model_validate(e) for e in entries],
+    )
+
+
+@router.get("/{site_id}/error-log", response_model=SiteErrorLogSchema)
+async def get_wordpress_error_log(
+    site_id: UUID,
+    context: Annotated[RequestContext, Depends(require_permission("wordpress.read"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limit: int = 100,
+) -> SiteErrorLogSchema:
+    tenant_id = _require_tenant(context)
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    reader = SiteLogReader(settings)
+    site_path = Path(site_entity.site_path)
+    cap = 2000 if limit <= 0 else min(max(limit, 1), 2000)
+    source, content = await reader.read_error_log(
+        site_path=site_path,
+        container_name=site_entity.nginx_container_name,
+        limit=cap,
+    )
+    return SiteErrorLogSchema(source=source or str(site_path / "logs" / "error.log"), content=content)
 
 
 @router.patch("/{site_id}/modification", response_model=SiteModificationSchema)
@@ -214,10 +299,16 @@ async def update_site_modification(
         view = await service.update_wordpress(
             site_entity,
             settings_patch=payload.settings,
+            document_root=payload.document_root,
+            logs_enabled=payload.logs_enabled,
             vhost_config=payload.vhost_config,
             nginx_config=payload.nginx_config,
             ssl_enabled=payload.ssl_enabled,
             php_version=payload.php_version,
+            ssl_provider=payload.ssl_provider,
+            ssl_certificate_pem=payload.ssl_certificate_pem,
+            ssl_private_key_pem=payload.ssl_private_key_pem,
+            ssl_force_https=payload.ssl_force_https,
         )
         await uow.wordpress_sites.save(site_entity)
         await uow.commit()

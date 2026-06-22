@@ -1,6 +1,6 @@
 {
   "name": "controlbox-panel",
-  "version": "1.1.0",
+  "version": "4.11.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -32,6 +32,7 @@
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0",
     "sonner": "^1.7.1",
+    "http-proxy": "^1.18.1",
     "tailwind-merge": "^2.6.0",
     "zustand": "^5.0.2"
   },

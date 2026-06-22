@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
+from controlbox.config.settings import get_settings
 from controlbox.modules.ftp.api.schemas import (
     ChangeFtpPasswordRequest,
     CreateFtpAccountRequest,
@@ -10,11 +11,13 @@ from controlbox.modules.ftp.api.schemas import (
     FtpAccountSchema,
     FtpLogSchema,
     FtpPasswordChangedSchema,
+    FtpServiceActionResponse,
     FtpServiceStatusSchema,
     SetFtpDirectoryRequest,
     SetFtpQuotaRequest,
     SetFtpStatusRequest,
     UpdateFtpAccountRequest,
+    UpdateFtpServiceRequest,
 )
 from controlbox.modules.ftp.application.command_handlers import (
     ChangeFtpPasswordHandler,
@@ -56,6 +59,7 @@ from controlbox.modules.identity.api.dependencies import (
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import ForbiddenError
+from controlbox.modules.ftp.infrastructure.service_manager import FtpServiceManager
 
 
 router = APIRouter(prefix="/ftp", tags=["ftp"])
@@ -86,6 +90,22 @@ def _to_schema(account: FtpAccountResponse) -> FtpAccountSchema:
     )
 
 
+def _to_service_schema(status) -> FtpServiceStatusSchema:
+    return FtpServiceStatusSchema(
+        enabled=status.enabled,
+        status=status.status if hasattr(status, "status") else ("running" if getattr(status, "running", False) else "stopped"),
+        host=getattr(status, "host", ""),
+        port=getattr(status, "port", None),
+        protocol=getattr(status, "protocol", "ftp"),
+        passive_port_min=getattr(status, "passive_port_min", 30000),
+        passive_port_max=getattr(status, "passive_port_max", 30009),
+        public_host=getattr(status, "public_host", ""),
+        running=getattr(status, "running", False),
+        can_manage=getattr(status, "can_manage", False),
+        message=getattr(status, "message", ""),
+    )
+
+
 @router.get("/status", response_model=FtpServiceStatusSchema)
 async def get_ftp_status(
     context: Annotated[RequestContext, Depends(get_current_context)],
@@ -93,12 +113,54 @@ async def get_ftp_status(
 ) -> FtpServiceStatusSchema:
     _require_tenant(context)
     status = await GetFtpServiceStatusHandler().handle()
-    return FtpServiceStatusSchema(
-        enabled=status.enabled,
-        status=status.status,
-        host=status.host,
-        port=status.port,
+    return _to_service_schema(status)
+
+
+@router.put("/service", response_model=FtpServiceActionResponse)
+async def configure_ftp_service(
+    body: UpdateFtpServiceRequest,
+    context: Annotated[RequestContext, Depends(get_current_context)],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    _: Annotated[None, Depends(require_permission("ftp.manage"))],
+) -> FtpServiceActionResponse:
+    _require_tenant(context)
+    manager = FtpServiceManager(get_settings())
+    async with uow:
+        active_accounts = await uow.ftp_accounts.list_active()
+    ok, message, config = await manager.apply_config(
+        enabled=body.enabled,
+        protocol=body.protocol,
+        port=body.port,
+        passive_port_min=body.passive_port_min,
+        passive_port_max=body.passive_port_max,
+        public_host=body.public_host,
+        sftp_accounts=active_accounts if body.protocol == "sftp" else None,
     )
+    return FtpServiceActionResponse(success=ok, message=message, service=_to_service_schema(config))
+
+
+@router.post("/service/start", response_model=FtpServiceActionResponse)
+async def start_ftp_service(
+    context: Annotated[RequestContext, Depends(get_current_context)],
+    _: Annotated[None, Depends(require_permission("ftp.manage"))],
+) -> FtpServiceActionResponse:
+    _require_tenant(context)
+    manager = FtpServiceManager(get_settings())
+    ok, message = await manager.start()
+    config = await manager.get_config()
+    return FtpServiceActionResponse(success=ok, message=message, service=_to_service_schema(config))
+
+
+@router.post("/service/stop", response_model=FtpServiceActionResponse)
+async def stop_ftp_service(
+    context: Annotated[RequestContext, Depends(get_current_context)],
+    _: Annotated[None, Depends(require_permission("ftp.manage"))],
+) -> FtpServiceActionResponse:
+    _require_tenant(context)
+    manager = FtpServiceManager(get_settings())
+    ok, message = await manager.stop()
+    config = await manager.get_config()
+    return FtpServiceActionResponse(success=ok, message=message, service=_to_service_schema(config))
 
 
 @router.get("/accounts", response_model=list[FtpAccountSchema])

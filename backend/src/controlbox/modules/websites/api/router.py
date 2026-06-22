@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from controlbox.config.settings import get_settings
+from controlbox.config.settings import Settings, get_settings
 from controlbox.modules.identity.api.dependencies import (
     AppState,
     RequestContext,
@@ -21,6 +21,8 @@ from controlbox.modules.websites.api.schemas import (
 from controlbox.shared.api.site_modification_schemas import (
     AddSiteDomainRequest,
     SiteModificationSchema,
+    SiteSslConfigSchema,
+    SubdirectoryBindingSchema,
     UpdateSiteModificationRequest,
 )
 from controlbox.shared.infrastructure.site_modification import SiteModificationService
@@ -48,6 +50,8 @@ from controlbox.modules.websites.application.queries import (
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import DomainException, ForbiddenError
+from controlbox.shared.api.site_log_schemas import AccessLogEntrySchema, SiteAccessLogsSchema, SiteErrorLogSchema
+from controlbox.shared.infrastructure.site_logs import SiteLogReader
 from controlbox.shared.infrastructure.site_stats import enrich_site_monitoring_fields, get_ssl_days_remaining
 
 
@@ -84,7 +88,18 @@ def _modification_schema(view) -> SiteModificationSchema:
         php_version=view.php_version,
         ssl_enabled=view.ssl_enabled,
         ssl_status=view.ssl_status,
+        ssl_config=SiteSslConfigSchema(**view.ssl_config.__dict__) if view.ssl_config else None,
         document_root=view.document_root,
+        running_directory=view.running_directory,
+        running_directory_options=view.running_directory_options,
+        open_basedir_enabled=view.open_basedir_enabled,
+        logs_enabled=view.logs_enabled,
+        site_files_path=view.site_files_path,
+        site_path=view.site_path,
+        subdirectory_bindings=[
+            SubdirectoryBindingSchema(**item) if isinstance(item, dict) else item
+            for item in view.subdirectory_bindings
+        ],
         settings=view.settings,
         vhost_config=view.vhost_config,
         nginx_config=view.nginx_config,
@@ -103,9 +118,10 @@ def _require_tenant(context: RequestContext) -> UUID:
 async def get_website_options(
     context: Annotated[RequestContext, Depends(require_permission("websites.read"))],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> WebsiteOptionsSchema:
     try:
-        handler = GetWebsiteOptionsHandler(uow=uow)
+        handler = GetWebsiteOptionsHandler(uow=uow, settings=settings)
         options = await handler.handle(GetRuntimeOptionsQuery())
         return WebsiteOptionsSchema(
             runtimes=[r.__dict__ for r in options.runtimes],
@@ -210,9 +226,15 @@ async def update_website_modification(
         view = await service.update_website(
             website_entity,
             settings_patch=payload.settings,
+            document_root=payload.document_root,
+            logs_enabled=payload.logs_enabled,
             vhost_config=payload.vhost_config,
             ssl_enabled=payload.ssl_enabled,
             runtime_version=payload.runtime_version,
+            ssl_provider=payload.ssl_provider,
+            ssl_certificate_pem=payload.ssl_certificate_pem,
+            ssl_private_key_pem=payload.ssl_private_key_pem,
+            ssl_force_https=payload.ssl_force_https,
         )
         await uow.websites.save(website_entity)
         await uow.commit()
@@ -261,6 +283,59 @@ async def remove_website_domain(
     await uow.websites.save(website_entity)
     await uow.commit()
     return _modification_schema(view)
+
+
+@router.get("/{website_id}/access-logs", response_model=SiteAccessLogsSchema)
+async def get_website_access_logs(
+    website_id: UUID,
+    context: Annotated[RequestContext, Depends(require_permission("websites.read"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limit: int = 100,
+) -> SiteAccessLogsSchema:
+    tenant_id = _require_tenant(context)
+    website = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
+    if website is None:
+        raise map_domain_exception(ForbiddenError("Website not found"))
+    reader = SiteLogReader(settings)
+    from controlbox.modules.websites.infrastructure.provisioner import DockerProvisioner
+
+    site_path = DockerProvisioner(settings).get_site_path(website.tenant_id, website.id)
+    cap = 2000 if limit <= 0 else min(max(limit, 1), 2000)
+    source, entries = await reader.read_access_logs(
+        site_path=site_path,
+        container_name=website.container_name,
+        limit=cap,
+    )
+    return SiteAccessLogsSchema(
+        source=source or str(site_path / "logs" / "access.log"),
+        entries=[AccessLogEntrySchema.model_validate(e) for e in entries],
+    )
+
+
+@router.get("/{website_id}/error-log", response_model=SiteErrorLogSchema)
+async def get_website_error_log(
+    website_id: UUID,
+    context: Annotated[RequestContext, Depends(require_permission("websites.read"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limit: int = 100,
+) -> SiteErrorLogSchema:
+    tenant_id = _require_tenant(context)
+    website = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
+    if website is None:
+        raise map_domain_exception(ForbiddenError("Website not found"))
+    reader = SiteLogReader(settings)
+    from controlbox.modules.websites.infrastructure.provisioner import DockerProvisioner
+
+    site_path = DockerProvisioner(settings).get_site_path(website.tenant_id, website.id)
+    cap = 2000 if limit <= 0 else min(max(limit, 1), 2000)
+    source, content = await reader.read_error_log(
+        site_path=site_path,
+        container_name=website.container_name,
+        limit=cap,
+    )
+    return SiteErrorLogSchema(source=source or str(site_path / "logs" / "error.log"), content=content)
 
 
 @router.delete("/{website_id}", status_code=status.HTTP_204_NO_CONTENT)

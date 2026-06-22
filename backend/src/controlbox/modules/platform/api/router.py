@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from controlbox.config.settings import Settings, get_settings
+from controlbox.shared.infrastructure.version_info import resolve_controlbox_version
 from controlbox.modules.identity.api.dependencies import (
     RequestContext,
     get_current_context,
@@ -36,12 +37,17 @@ from controlbox.modules.platform.api.schemas import (
     ServicesOverviewSchema,
     ApplyServicesRequest,
     ApplyServicesResponse,
+    ApplyRuntimesRequest,
+    ApplyRuntimesResponse,
+    RuntimeVersionSchema,
+    RuntimesOverviewSchema,
 )
 from controlbox.modules.platform.domain.entities import DEFAULT_SECRETS_CHECKLIST
 from controlbox.modules.platform.infrastructure.panel_config import PanelConfigService
 from controlbox.modules.platform.infrastructure.panel_operations import PanelOperationsService
 from controlbox.modules.platform.infrastructure.panel_settings import PanelSettingsService
 from controlbox.modules.platform.infrastructure.service_profiles import ServiceProfilesManager
+from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
 from controlbox.shared.application.unit_of_work import UnitOfWork
 
 router = APIRouter(prefix="/platform", tags=["platform"])
@@ -141,7 +147,7 @@ async def get_system_info(
     profile = settings.controlbox_profile.upper()
     edition = "PRO" if profile in {"PROFESSIONAL", "ENTERPRISE", "PRO"} else "PRO"
     return SystemInfoSchema(
-        version=settings.controlbox_version,
+        version=resolve_controlbox_version(settings),
         os_label=settings.controlbox_os_label,
         profile=settings.controlbox_profile,
         edition=edition,
@@ -268,12 +274,8 @@ async def get_platform_overview(
     platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
     active_count = await uow.resource_alerts.count_active(tenant_id)
 
-    checklist_data = dict(platform_settings.setup_checklist)
-    if (settings.controlbox_enabled_profiles or "").strip():
-        checklist_data["configure_services"] = True
-
+    checklist = _checklist_schema(platform_settings.setup_checklist)
     secrets = _secrets_schema(platform_settings.secrets_rotation_status)
-    checklist = _checklist_schema(checklist_data)
     return PlatformOverviewSchema(
         panel=PanelConfigSchema(**panel),
         alert_thresholds=AlertThresholdsSchema(
@@ -473,6 +475,55 @@ async def apply_service_profiles(
         await uow.tenant_platform_settings.save(platform_settings)
         await uow.commit()
     return ApplyServicesResponse(success=ok, message=message, enabled_profiles=profiles)
+
+
+@router.get("/runtimes", response_model=RuntimesOverviewSchema)
+async def get_runtime_profiles(
+    _: Annotated[RequestContext, Depends(require_platform_admin())],
+    __: Annotated[None, Depends(require_permission("platform.read"))],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RuntimesOverviewSchema:
+    overview = await RuntimeCatalogManager(settings).get_overview()
+    return RuntimesOverviewSchema(
+        can_manage=overview.can_manage,
+        enabled_runtimes=overview.enabled_runtimes,
+        message=overview.message,
+        runtimes=[
+            RuntimeVersionSchema(
+                id=r.id,
+                runtime=r.runtime,
+                version=r.version,
+                name=r.name,
+                category=r.category,
+                image=r.image,
+                enabled=r.enabled,
+                installed=r.installed,
+            )
+            for r in overview.runtimes
+        ],
+    )
+
+
+@router.post("/runtimes/apply", response_model=ApplyRuntimesResponse)
+async def apply_runtime_profiles(
+    payload: ApplyRuntimesRequest,
+    context: Annotated[RequestContext, Depends(require_platform_admin())],
+    _: Annotated[None, Depends(require_permission("platform.manage"))],
+    settings: Annotated[Settings, Depends(get_settings)],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> ApplyRuntimesResponse:
+    manager = RuntimeCatalogManager(settings)
+    ok, message, runtimes = await manager.apply_runtimes(payload.runtimes)
+    if ok:
+        tenant_id = _require_tenant(context)
+        platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
+        platform_settings.setup_checklist = {
+            **platform_settings.setup_checklist,
+            "configure_services": True,
+        }
+        await uow.tenant_platform_settings.save(platform_settings)
+        await uow.commit()
+    return ApplyRuntimesResponse(success=ok, message=message, enabled_runtimes=runtimes)
 
 
 @router.patch("/setup-checklist", response_model=SetupChecklistSchema)
