@@ -9,12 +9,12 @@ from controlbox.modules.websites.application.queries import (
 )
 from controlbox.modules.websites.domain.entities import (
     DEFAULT_RUNTIME_VERSIONS,
-    RUNTIME_VERSIONS,
     DatabaseEngine,
     WebsiteRuntime,
 )
 from controlbox.config.settings import Settings
 from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
+from controlbox.shared.application.cqrs import QueryHandler
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import NotFoundError
 

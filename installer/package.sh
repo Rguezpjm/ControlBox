@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-4.11.0}"
+CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-4.11.1}"
 CONTROLBOX_INSTALL_URL="${CONTROLBOX_INSTALL_URL:-https://install.grodtech.com}"
 
 echo "ControlBox Installer Packager v${CONTROLBOX_VERSION}"
@@ -45,6 +45,27 @@ cb_verify_no_crlf() {
     fi
 }
 
+cb_is_binary_asset() {
+    local file="$1"
+    case "${file,,}" in
+        *.png|*.jpg|*.jpeg|*.gif|*.webp|*.ico|*.bmp|*.svg|*.woff|*.woff2|*.ttf|*.eot|*.zip|*.gz|*.br|*.pdf)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+cb_copy_file_to_staging() {
+    local src="$1"
+    local target="$2"
+    mkdir -p "$(dirname "${target}")"
+    if cb_is_binary_asset "${src}"; then
+        cp -f "${src}" "${target}"
+    else
+        tr -d '\r' < "${src}" > "${target}"
+    fi
+}
+
 cb_copy_app_source() {
     local repo_root="$(cd "${SCRIPT_DIR}/.." && pwd)"
     local dest="${STAGING_DIR}/src"
@@ -60,8 +81,7 @@ cb_copy_app_source() {
             -print0 | while IFS= read -r -d '' file; do
             local rel_path="${file#"${src}/"}"
             local target="${dest}/${component}/${rel_path}"
-            mkdir -p "$(dirname "${target}")"
-            tr -d '\r' < "${file}" > "${target}"
+            cb_copy_file_to_staging "${file}" "${target}"
         done
     done
 }
@@ -79,8 +99,7 @@ cb_copy_installer_tree() {
         -print0 | while IFS= read -r -d '' file; do
         local rel_path="${file#"${src_dir}/"}"
         local target="${dest_dir}/${rel_path}"
-        mkdir -p "$(dirname "${target}")"
-        tr -d '\r' < "${file}" > "${target}"
+        cb_copy_file_to_staging "${file}" "${target}"
     done
 }
 
@@ -123,6 +142,20 @@ test -f "${STAGING_DIR}/lib/reinstall.sh"
 test -f "${STAGING_DIR}/src/backend/Dockerfile"
 test -f "${STAGING_DIR}/src/frontend/Dockerfile"
 test -f "${STAGING_DIR}/src/frontend/public/logo.png"
+logo_src="${repo_root}/frontend/public/logo.png"
+logo_staged="${STAGING_DIR}/src/frontend/public/logo.png"
+if [[ -f "${logo_src}" ]] && [[ -f "${logo_staged}" ]]; then
+    src_size="$(wc -c < "${logo_src}" | tr -d ' ')"
+    staged_size="$(wc -c < "${logo_staged}" | tr -d ' ')"
+    if [[ "${src_size}" != "${staged_size}" ]]; then
+        echo "ERROR: logo.png corrupto en el paquete (${staged_size} bytes vs ${src_size} originales)"
+        exit 1
+    fi
+    if ! head -c 8 "${logo_staged}" | grep -q $'PNG'; then
+        echo "ERROR: logo.png no tiene cabecera PNG válida"
+        exit 1
+    fi
+fi
 test -f "${STAGING_DIR}/config/defaults.conf"
 
 if [[ -f "${STAGING_DIR}/src/frontend/src/app/icon.png" ]]; then
