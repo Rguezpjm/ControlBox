@@ -22,8 +22,9 @@ services:
   panel:
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.controlbox-panel-ip.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.controlbox-panel-ip.rule=HostRegexp(`{host:.+}`)"
       - "traefik.http.routers.controlbox-panel-ip.entrypoints=web"
+      - "traefik.http.routers.controlbox-panel-ip.priority=1"
       - "traefik.http.routers.controlbox-panel-ip.service=controlbox-panel-ip"
       - "traefik.http.services.controlbox-panel-ip.loadbalancer.server.port=3000"
 EOF
