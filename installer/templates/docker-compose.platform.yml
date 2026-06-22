@@ -73,6 +73,8 @@ services:
     image: mysql:8.4
     container_name: controlbox-mysql
     restart: unless-stopped
+    profiles:
+      - databases
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ADMIN_PASSWORD:?required}
     volumes:
@@ -90,6 +92,9 @@ services:
     image: minio/minio:${MINIO_VERSION:-latest}
     container_name: controlbox-minio
     restart: unless-stopped
+    profiles:
+      - backups
+      - supabase
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-controlbox}
@@ -133,8 +138,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mysql:
-        condition: service_healthy
     networks:
       - controlbox
     healthcheck:
@@ -169,8 +172,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mysql:
-        condition: service_healthy
       api:
         condition: service_started
     networks:
@@ -199,6 +200,8 @@ services:
     image: prom/prometheus:${PROMETHEUS_VERSION:-v2.55.1}
     container_name: controlbox-prometheus
     restart: unless-stopped
+    profiles:
+      - monitoring
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -214,6 +217,8 @@ services:
     image: grafana/grafana:${GRAFANA_VERSION:-11.4.0}
     container_name: controlbox-grafana
     restart: unless-stopped
+    profiles:
+      - monitoring
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?required}
@@ -232,6 +237,8 @@ services:
     image: grafana/loki:${LOKI_VERSION:-3.3.2}
     container_name: controlbox-loki
     restart: unless-stopped
+    profiles:
+      - monitoring
     command: -config.file=/etc/loki/loki.yml
     volumes:
       - ${CONTROLBOX_CONFIG_DIR}/loki/loki.yml:/etc/loki/loki.yml:ro
@@ -243,6 +250,8 @@ services:
     image: grafana/promtail:${PROMTAIL_VERSION:-3.3.2}
     container_name: controlbox-promtail
     restart: unless-stopped
+    profiles:
+      - monitoring
     command: -config.file=/etc/promtail/promtail.yml
     volumes:
       - ${CONTROLBOX_CONFIG_DIR}/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
@@ -258,6 +267,8 @@ services:
     image: supabase/postgres:15.8.1.060
     container_name: controlbox-supabase-db
     restart: unless-stopped
+    profiles:
+      - supabase
     environment:
       POSTGRES_PASSWORD: ${SUPABASE_DB_PASSWORD:-${POSTGRES_PASSWORD}}
       JWT_SECRET: ${SUPABASE_JWT_SECRET:?required}
@@ -275,6 +286,8 @@ services:
     image: kong:2.8.1
     container_name: controlbox-supabase-kong
     restart: unless-stopped
+    profiles:
+      - supabase
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
@@ -292,6 +305,8 @@ services:
     image: supabase/gotrue:v2.167.0
     container_name: controlbox-supabase-auth
     restart: unless-stopped
+    profiles:
+      - supabase
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
@@ -311,6 +326,8 @@ services:
     image: postgrest/postgrest:v12.2.3
     container_name: controlbox-supabase-rest
     restart: unless-stopped
+    profiles:
+      - supabase
     environment:
       PGRST_DB_URI: postgres://authenticator:${SUPABASE_DB_PASSWORD:-${POSTGRES_PASSWORD}}@supabase-db:5432/postgres
       PGRST_DB_SCHEMAS: public,storage,graphql_public
@@ -326,6 +343,8 @@ services:
     image: supabase/realtime:v2.33.58
     container_name: controlbox-supabase-realtime
     restart: unless-stopped
+    profiles:
+      - supabase
     environment:
       DB_HOST: supabase-db
       DB_PORT: 5432
@@ -344,6 +363,8 @@ services:
     image: supabase/storage-api:v1.14.6
     container_name: controlbox-supabase-storage
     restart: unless-stopped
+    profiles:
+      - supabase
     environment:
       ANON_KEY: ${SUPABASE_ANON_KEY}
       SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
@@ -369,6 +390,8 @@ services:
     image: supabase/studio:20241202-71e5240
     container_name: controlbox-supabase-studio
     restart: unless-stopped
+    profiles:
+      - supabase
     environment:
       STUDIO_PG_META_URL: http://supabase-meta:8080
       SUPABASE_URL: http://supabase-kong:8000
@@ -383,6 +406,8 @@ services:
     image: supabase/postgres-meta:v0.84.2
     container_name: controlbox-supabase-meta
     restart: unless-stopped
+    profiles:
+      - supabase
     environment:
       PG_META_DB_HOST: supabase-db
       PG_META_DB_PORT: 5432

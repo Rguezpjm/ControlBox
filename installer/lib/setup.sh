@@ -31,8 +31,8 @@ cb_setup_slugify() {
 
 cb_setup_validate_password() {
     local password="$1"
-    if [[ ${#password} -lt 12 ]]; then
-        cb_warn "La contraseña debe tener al menos 12 caracteres."
+    if [[ ${#password} -lt 8 ]]; then
+        cb_warn "La contraseña debe tener al menos 8 caracteres."
         return 1
     fi
     return 0
@@ -88,13 +88,16 @@ cb_setup_prompt_install() {
         read -r -p "Slug del tenant (identificador) [$(cb_setup_slugify "${tenant_name}")]: " tenant_slug
         tenant_slug="${tenant_slug:-$(cb_setup_slugify "${tenant_name}")}"
         read -r -p "Email del administrador: " tenant_admin_email
-        while true; do
-            read -r -s -p "Contraseña del administrador (mín. 12 caracteres): " tenant_admin_password
-            echo ""
-            if cb_setup_validate_password "${tenant_admin_password}"; then
-                break
-            fi
-        done
+        read -r -p "Contraseña del administrador (Enter = 8 dígitos numéricos): " tenant_admin_password
+        if [[ -n "${tenant_admin_password}" ]] && ! cb_setup_validate_password "${tenant_admin_password}"; then
+            while true; do
+                read -r -s -p "Contraseña del administrador (mín. 8 caracteres): " tenant_admin_password
+                echo ""
+                if cb_setup_validate_password "${tenant_admin_password}"; then
+                    break
+                fi
+            done
+        fi
         read -r -p "Nombre completo del administrador [Administrador]: " tenant_admin_full_name
         tenant_admin_full_name="${tenant_admin_full_name:-Administrador}"
     fi
@@ -113,16 +116,16 @@ cb_setup_prompt_install() {
         fi
     fi
     if [[ -z "${tenant_admin_password}" ]]; then
-        tenant_admin_password="${CONTROLBOX_TENANT_ADMIN_PASSWORD:-$(cb_generate_admin_password 16)}"
-        cb_info "Contraseña de administrador generada automáticamente"
+        tenant_admin_password="${CONTROLBOX_TENANT_ADMIN_PASSWORD:-$(cb_generate_admin_password 8)}"
+        cb_info "Contraseña numérica de administrador generada (8 dígitos)"
     fi
     tenant_admin_password="$(cb_sanitize_admin_password "${tenant_admin_password}")"
     if [[ -z "${tenant_admin_full_name}" ]]; then
         tenant_admin_full_name="${CONTROLBOX_TENANT_ADMIN_FULL_NAME:-Administrador}"
     fi
 
-    if cb_is_noninteractive_install && [[ ${#tenant_admin_password} -lt 12 ]]; then
-        tenant_admin_password="$(cb_generate_admin_password 16)"
+    if cb_is_noninteractive_install && [[ ${#tenant_admin_password} -lt 8 ]]; then
+        tenant_admin_password="$(cb_generate_admin_password 8)"
         cb_info "Contraseña ajustada para instalación automática"
     fi
 

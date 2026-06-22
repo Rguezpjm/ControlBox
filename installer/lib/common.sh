@@ -112,10 +112,17 @@ cb_generate_secret() {
 }
 
 cb_generate_admin_password() {
-    local length="${1:-16}"
+    local length="${1:-8}"
+    if [[ "${length}" -lt 8 ]]; then
+        length=8
+    fi
+    if command -v shuf >/dev/null 2>&1; then
+        shuf -i 10000000-99999999 -n 1
+        return 0
+    fi
     local password=""
-    while [[ ${#password} -lt 12 ]]; do
-        password="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c "${length}")"
+    while [[ ${#password} -lt 8 ]]; do
+        password="$(openssl rand -hex 8 | tr -dc '0-9' | head -c "${length}")"
     done
     echo "${password}"
 }
@@ -130,8 +137,8 @@ cb_sanitize_admin_password() {
     if [[ ${#value} -gt 64 ]]; then
         value="${value:0:64}"
     fi
-    if [[ ${#value} -lt 12 ]]; then
-        cb_generate_admin_password 16
+    if [[ ${#value} -lt 8 ]]; then
+        cb_generate_admin_password 8
         return 0
     fi
     echo "${value}"

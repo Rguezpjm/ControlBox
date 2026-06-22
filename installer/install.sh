@@ -323,6 +323,7 @@ cb_main_install() {
     cb_os_create_directories
 
     cb_setup_prompt_install
+    cb_services_prompt
 
     cb_config_install_scripts
 
@@ -331,6 +332,7 @@ cb_main_install() {
 
     cb_config_generate
     cb_setup_load_state
+    cb_services_load_state
     cb_firewall_configure
     cb_docker_pull_images
     cb_docker_deploy_stack
@@ -426,6 +428,7 @@ cb_run_installer() {
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/ssl.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/domains.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/setup.sh"
+    source "${CONTROLBOX_INSTALLER_ROOT}/lib/services.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/tenant.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/backup.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/rollback.sh"
@@ -446,7 +449,8 @@ cb_run_installer() {
             echo "  CONTROLBOX_TENANT_NAME        Nombre de la organización"
             echo "  CONTROLBOX_TENANT_SLUG        Slug del tenant"
             echo "  CONTROLBOX_TENANT_ADMIN_EMAIL Email del administrador"
-            echo "  CONTROLBOX_TENANT_ADMIN_PASSWORD Contraseña del administrador"
+            echo "  CONTROLBOX_TENANT_ADMIN_PASSWORD Contraseña del administrador (8+ chars; auto = 8 dígitos)"
+            echo "  CONTROLBOX_ENABLED_PROFILES Perfiles docker: databases,backups,monitoring,supabase"
             echo "  CONTROLBOX_TENANT_ADMIN_FULL_NAME Nombre completo del administrador"
             echo "  CONTROLBOX_PANEL_PORT       Puerto del panel (ej. 8475)"
             echo "  CONTROLBOX_SERVER_IP        IP del VPS (auto-detecta LAN; evita ifconfig.me)"

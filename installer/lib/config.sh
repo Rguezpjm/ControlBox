@@ -34,7 +34,7 @@ cb_config_prepare_variables() {
     CONTROLBOX_TENANT_ADMIN_EMAIL="${CONTROLBOX_TENANT_ADMIN_EMAIL:-admin@controlbox.local}"
     CONTROLBOX_TENANT_ADMIN_FULL_NAME="${CONTROLBOX_TENANT_ADMIN_FULL_NAME:-Administrador}"
     if [[ -z "${CONTROLBOX_TENANT_ADMIN_PASSWORD:-}" ]]; then
-        CONTROLBOX_TENANT_ADMIN_PASSWORD="$(cb_generate_admin_password 16)"
+        CONTROLBOX_TENANT_ADMIN_PASSWORD="$(cb_generate_admin_password 8)"
     fi
     CONTROLBOX_TENANT_ADMIN_PASSWORD="$(cb_sanitize_admin_password "${CONTROLBOX_TENANT_ADMIN_PASSWORD}")"
 
@@ -116,6 +116,11 @@ cb_config_generate() {
     fi
 
     cb_config_prepare_variables
+
+    if declare -f cb_services_load_state >/dev/null 2>&1; then
+        cb_services_load_state 2>/dev/null || true
+    fi
+    export CONTROLBOX_ENABLED_PROFILES="${CONTROLBOX_ENABLED_PROFILES:-databases,backups}"
 
     local server_ip
     server_ip="$(cb_setup_get_server_ip)"
@@ -225,6 +230,10 @@ cb_config_generate() {
         cb_env_emit "COOKIE_SECURE" "${cookie_secure}"
         cb_env_emit "WEBAUTHN_ORIGIN" "${webauthn_origin}"
         cb_env_emit "WEBAUTHN_RP_ID" "${CONTROLBOX_PRIMARY_DOMAIN:-${server_ip}}"
+        cb_env_emit "CONTROLBOX_ENABLED_PROFILES" "${CONTROLBOX_ENABLED_PROFILES:-databases,backups}"
+        cb_env_emit "CONTROLBOX_FEATURE_DNS" "${CONTROLBOX_FEATURE_DNS:-false}"
+        cb_env_emit "CONTROLBOX_FEATURE_MAIL" "${CONTROLBOX_FEATURE_MAIL:-false}"
+        cb_env_emit "CONTROLBOX_FEATURE_FTP" "${CONTROLBOX_FEATURE_FTP:-false}"
         cb_env_emit "LOG_LEVEL" "INFO"
     } > "${env_file}"
 

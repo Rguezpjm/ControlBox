@@ -328,6 +328,22 @@ cb_wait_for_api() {
     return 1
 }
 
+cb_docker_compose_profile_args() {
+    local profiles="${CONTROLBOX_ENABLED_PROFILES:-}"
+    if [[ -z "${profiles}" ]] && [[ -f "${CONTROLBOX_CONFIG_DIR}/platform.env" ]]; then
+        profiles="$(grep '^CONTROLBOX_ENABLED_PROFILES=' "${CONTROLBOX_CONFIG_DIR}/platform.env" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    fi
+    profiles="${profiles:-databases,backups}"
+    profiles="${profiles// /}"
+    local args=()
+    local p
+    IFS=',' read -ra parts <<< "${profiles}"
+    for p in "${parts[@]}"; do
+        [[ -n "${p}" ]] && args+=(--profile "${p}")
+    done
+    echo "${args[@]}"
+}
+
 cb_docker_deploy_stack() {
     cb_step "Desplegando stack ControlBox"
 
@@ -377,9 +393,12 @@ cb_docker_deploy_stack() {
         cb_die "controlbox-api no responde en /health"
     fi
 
-    cb_progress_note "Fase 4/4: Traefik, Panel, Supabase y observabilidad..."
+    cb_progress_note "Fase 4/4: Traefik, Panel y servicios seleccionados..."
+    local -a profile_args=()
+    # shellcheck disable=SC2206
+    profile_args=($(cb_docker_compose_profile_args))
     if ! cb_run_stream "Iniciando resto de contenedores" \
-        cb_docker_compose_run_verbose "${env_file}" up -d --remove-orphans; then
+        cb_docker_compose_run_verbose "${env_file}" "${profile_args[@]}" up -d --remove-orphans; then
         cb_docker_diagnose_api
         cb_die "Iniciando contenedores falló. Revise los logs arriba y ${CB_LOG_FILE}"
     fi
