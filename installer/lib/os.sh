@@ -197,11 +197,48 @@ cb_os_install_prerequisites() {
 }
 
 cb_os_create_user() {
+    # El contenedor Docker usa UID/GID 1000 para el usuario controlbox.
+    # El grupo del host debe tener GID 1000 para que los archivos del volumen
+    # sean legibles por el contenedor con permisos 640.
+    local target_gid=1000
+    local target_uid=1000
+
+    # Crear/ajustar grupo controlbox con GID 1000
+    if getent group controlbox >/dev/null 2>&1; then
+        local current_gid
+        current_gid="$(getent group controlbox | cut -d: -f3)"
+        if [[ "${current_gid}" != "${target_gid}" ]]; then
+            cb_warn "Grupo controlbox tiene GID ${current_gid}; ajustando a ${target_gid}..."
+            groupmod -g "${target_gid}" controlbox 2>/dev/null \
+                || cb_warn "No se pudo cambiar GID de controlbox a ${target_gid}"
+        fi
+    else
+        if getent group "${target_gid}" >/dev/null 2>&1; then
+            groupadd controlbox 2>/dev/null || true
+        else
+            groupadd --gid "${target_gid}" controlbox
+        fi
+    fi
+
+    # Crear/ajustar usuario controlbox
     if id controlbox >/dev/null 2>&1; then
         cb_info "Usuario controlbox ya existe"
+        # Asegurar que pertenece al grupo correcto
+        usermod -g controlbox controlbox 2>/dev/null || true
         return 0
     fi
-    useradd --system --home-dir "${CONTROLBOX_INSTALL_DIR}" --shell /usr/sbin/nologin controlbox
+
+    # Intentar crear con UID 1000; si está ocupado, crear sin UID fijo
+    if ! getent passwd "${target_uid}" >/dev/null 2>&1; then
+        useradd --uid "${target_uid}" --gid controlbox \
+            --no-create-home --shell /usr/sbin/nologin \
+            --home-dir "${CONTROLBOX_INSTALL_DIR}" controlbox
+    else
+        cb_warn "UID ${target_uid} ya en uso; creando controlbox sin UID fijo (los archivos de config serán group-readable)"
+        useradd --gid controlbox \
+            --no-create-home --shell /usr/sbin/nologin \
+            --home-dir "${CONTROLBOX_INSTALL_DIR}" controlbox
+    fi
     cb_success "Usuario controlbox creado"
 }
 

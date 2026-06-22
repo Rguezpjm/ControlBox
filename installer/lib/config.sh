@@ -266,9 +266,9 @@ cb_config_generate() {
     export CONTROLBOX_CONFIG_DIR="${host_config_dir}"
     export CONTROLBOX_DATA_DIR="${host_data_dir}"
 
-    cb_secure_file "${env_file}" 600
+    cb_secure_file "${env_file}" 640
     cp -f "${env_file}" "${host_install_dir}/.env"
-    cb_secure_file "${host_install_dir}/.env" 600
+    cb_secure_file "${host_install_dir}/.env" 640
 
     cb_save_install_state "SERVER_IP" "${server_ip}"
     cb_config_deploy_templates
@@ -304,7 +304,7 @@ cb_config_deploy_templates() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-4.11.3}"
+    local version="${CONTROLBOX_VERSION:-4.11.4}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     [[ -f "${install_dir}/src/backend/Dockerfile" ]] \

@@ -105,6 +105,7 @@ cb_repair_fix() {
 
     if [[ -f "${CONTROLBOX_INSTALL_DIR}/docker-compose.yml" ]]; then
         cb_compose_ensure_docker_proxy
+        cb_fix_platform_env_permissions
         cb_compose_fix_api_letsencrypt_mount
         cb_ssl_fix_acme_permissions 2>/dev/null || true
         cb_services_load_from_platform_env

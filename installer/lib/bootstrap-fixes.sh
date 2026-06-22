@@ -128,6 +128,59 @@ EOF
     fi
 }
 
+cb_fix_platform_env_permissions() {
+    # Asegurar que el grupo controlbox en el host tenga GID 1000 (igual que el contenedor Docker)
+    # y que platform.env sea legible por el grupo (640) para que la API pueda leerlo.
+    local config_dir="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}"
+    local env_file="${config_dir}/platform.env"
+    local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
+    local target_gid=1000
+
+    # Ajustar GID del grupo controlbox si no coincide con el contenedor
+    if getent group controlbox >/dev/null 2>&1; then
+        local current_gid
+        current_gid="$(getent group controlbox | cut -d: -f3)"
+        if [[ "${current_gid}" != "${target_gid}" ]]; then
+            cb_warn "Grupo controlbox tiene GID ${current_gid}; ajustando a ${target_gid} para que el contenedor pueda leer los archivos de config..."
+            groupmod -g "${target_gid}" controlbox 2>/dev/null \
+                && cb_info "GID de controlbox actualizado a ${target_gid}" \
+                || cb_warn "No se pudo ajustar GID (puede requerir reiniciar el contenedor)"
+        fi
+        if id controlbox >/dev/null 2>&1; then
+            usermod -g controlbox controlbox 2>/dev/null || true
+        fi
+    fi
+
+    # Corregir permisos de archivos de configuración sensibles a 640
+    # (propietario rw, grupo r) para que el contenedor con GID 1000 pueda leerlos
+    for f in \
+        "${env_file}" \
+        "${install_dir}/.env" \
+        "${config_dir}/credentials.env" \
+        "${config_dir}/domains.json"; do
+        if [[ -f "${f}" ]]; then
+            local current_mode
+            current_mode="$(stat -c '%a' "${f}" 2>/dev/null || echo 0)"
+            if [[ "${current_mode}" == "600" ]]; then
+                chmod 640 "${f}" 2>/dev/null \
+                    && chown controlbox:controlbox "${f}" 2>/dev/null || true
+                cb_info "Permisos de ${f} actualizados: 600 → 640"
+            fi
+        fi
+    done
+
+    # Asegurar que el directorio de config sea ejecutable/accesible por el grupo
+    if [[ -d "${config_dir}" ]]; then
+        local dir_mode
+        dir_mode="$(stat -c '%a' "${config_dir}" 2>/dev/null || echo 0)"
+        if [[ "${dir_mode}" == "700" ]] || [[ "${dir_mode}" == "600" ]]; then
+            chmod 750 "${config_dir}" 2>/dev/null || true
+            chown controlbox:controlbox "${config_dir}" 2>/dev/null || true
+            cb_info "Permisos de ${config_dir} actualizados a 750"
+        fi
+    fi
+}
+
 cb_compose_ensure_docker_proxy() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
     local compose_file="${install_dir}/docker-compose.yml"
@@ -257,7 +310,7 @@ cb_docker_registry_image_ok() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-4.11.3}"
+    local version="${CONTROLBOX_VERSION:-4.11.4}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     cb_app_source_available || return 1
@@ -461,7 +514,7 @@ cb_compose_validate_env_file() {
 cb_docker_pull_images() {
     cb_step "Descargando imágenes Docker"
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
-    local version="${CONTROLBOX_VERSION:-4.11.3}"
+    local version="${CONTROLBOX_VERSION:-4.11.4}"
     local api_image="ghcr.io/grodtech/controlbox-api:${version}"
 
     if ! cb_compose_validate_env_file "${env_file}"; then
@@ -598,6 +651,7 @@ cb_docker_deploy_stack() {
 
     cb_compose_repair_compose_ports
     cb_compose_ensure_docker_proxy
+    cb_fix_platform_env_permissions
     cb_ssl_fix_acme_permissions 2>/dev/null || true
     cb_progress_note "Validando docker-compose.yml..."
     cb_docker_compose_run "${env_file}" config >/dev/null
