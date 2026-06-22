@@ -53,17 +53,27 @@ if [ "$(id -u)" = "0" ]; then
     chown -R controlbox:controlbox /var/log/pure-ftpd 2>/dev/null || true
   fi
 
-  # Asegurar que platform.env sea legible por el usuario controlbox del contenedor.
-  # El archivo está montado desde el host con permisos del host; si hay mismatch
-  # de UID/GID, lo copiamos en el mismo directorio con un nombre accesible.
+  # Asegurar que platform.env y otros archivos montados sean legibles por controlbox.
+  # El entrypoint corre como root antes del gosu — oportunidad para corregir permisos.
+  _cb_uid="$(id -u controlbox 2>/dev/null || echo 1000)"
+  _cb_gid="$(id -g controlbox 2>/dev/null || echo 1000)"
+
+  # platform.env
   _platform_env="${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}/platform.env"
   if [ -f "${_platform_env}" ]; then
-    # Corregir permisos en el volumen montado directamente (somos root aquí)
     chmod 640 "${_platform_env}" 2>/dev/null || true
-    chown "$(id -u controlbox):$(id -g controlbox)" "${_platform_env}" 2>/dev/null || true
-    # Asegurar que el directorio sea traversable
+    chown "${_cb_uid}:${_cb_gid}" "${_platform_env}" 2>/dev/null || true
     chmod o+x "${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}" 2>/dev/null || true
     chmod g+rx "${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}" 2>/dev/null || true
+  fi
+
+  # install.state — contiene VERSION, PANEL_PORT, etc.; necesario para /health
+  _state_file="/host/root/var/lib/controlbox/state/install.state"
+  if [ -f "${_state_file}" ]; then
+    chmod 640 "${_state_file}" 2>/dev/null || true
+    chown "${_cb_uid}:${_cb_gid}" "${_state_file}" 2>/dev/null || true
+    chmod o+x "/host/root/var/lib/controlbox" 2>/dev/null || true
+    chmod o+x "/host/root/var/lib/controlbox/state" 2>/dev/null || true
   fi
 
   cb_wait_for_docker

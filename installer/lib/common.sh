@@ -406,7 +406,10 @@ cb_save_install_state() {
         mv "${state_file}.tmp" "${state_file}"
     fi
     echo "${key}=${value}" >> "${state_file}"
-    chmod 600 "${state_file}"
+    chmod 640 "${state_file}"
+    if id controlbox >/dev/null 2>&1; then
+        chown controlbox:controlbox "${state_file}" 2>/dev/null || true
+    fi
 }
 
 cb_get_install_state() {

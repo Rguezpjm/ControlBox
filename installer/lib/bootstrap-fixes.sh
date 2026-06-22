@@ -169,6 +169,17 @@ cb_fix_platform_env_permissions() {
     find "${config_dir}" -maxdepth 1 -mindepth 1 -type d \
         -exec chown -R controlbox:controlbox {} \; 2>/dev/null || true
 
+    # 4. State dir: install.state necesario para /health del contenedor
+    local state_dir="${CONTROLBOX_STATE_DIR:-/var/lib/controlbox/state}"
+    if [[ -d "${state_dir}" ]]; then
+        chown controlbox:controlbox "${state_dir}" 2>/dev/null || true
+        chmod 755 "${state_dir}" 2>/dev/null || true
+        if [[ -f "${state_dir}/install.state" ]]; then
+            chown controlbox:controlbox "${state_dir}/install.state" 2>/dev/null || true
+            chmod 640 "${state_dir}/install.state" 2>/dev/null || true
+        fi
+    fi
+
     cb_info "Permisos de configuración ajustados (GID=${target_gid}, archivos env=640)"
 }
 
@@ -301,7 +312,7 @@ cb_docker_registry_image_ok() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-4.11.5}"
+    local version="${CONTROLBOX_VERSION:-4.11.6}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     cb_app_source_available || return 1
@@ -505,7 +516,7 @@ cb_compose_validate_env_file() {
 cb_docker_pull_images() {
     cb_step "Descargando imágenes Docker"
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
-    local version="${CONTROLBOX_VERSION:-4.11.5}"
+    local version="${CONTROLBOX_VERSION:-4.11.6}"
     local api_image="ghcr.io/grodtech/controlbox-api:${version}"
 
     if ! cb_compose_validate_env_file "${env_file}"; then

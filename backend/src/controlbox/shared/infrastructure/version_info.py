@@ -12,11 +12,14 @@ _IMAGE_TAG_RE = re.compile(r":([^:/@]+)$")
 
 
 def _read_env_key(env_file: Path, key: str) -> str:
-    if not env_file.is_file():
-        return ""
-    for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
-        if line.startswith(f"{key}="):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    try:
+        if not env_file.is_file():
+            return ""
+        for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith(f"{key}="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except (PermissionError, OSError):
+        pass
     return ""
 
 
@@ -49,24 +52,27 @@ def _normalize_version(raw: str) -> str:
 
 def resolve_controlbox_version(settings: Settings) -> str:
     """Best-effort version: platform.env → runtime env → install.state → package __version__."""
-    candidates: list[str] = []
+    try:
+        candidates: list[str] = []
 
-    file_version = _normalize_version(_read_env_key(_host_platform_env(settings), "CONTROLBOX_VERSION"))
-    if file_version:
-        candidates.append(file_version)
+        file_version = _normalize_version(_read_env_key(_host_platform_env(settings), "CONTROLBOX_VERSION"))
+        if file_version:
+            candidates.append(file_version)
 
-    env_version = _normalize_version(settings.controlbox_version or "")
-    if env_version and env_version not in candidates:
-        candidates.append(env_version)
+        env_version = _normalize_version(settings.controlbox_version or "")
+        if env_version and env_version not in candidates:
+            candidates.append(env_version)
 
-    state_file = _host_install_state(settings)
-    if state_file.is_file():
-        state_version = _normalize_version(_read_env_key(state_file, "VERSION"))
-        if state_version and state_version not in candidates:
-            candidates.append(state_version)
+        state_file = _host_install_state(settings)
+        if state_file.is_file():
+            state_version = _normalize_version(_read_env_key(state_file, "VERSION"))
+            if state_version and state_version not in candidates:
+                candidates.append(state_version)
 
-    if candidates:
-        return candidates[0]
+        if candidates:
+            return candidates[0]
+    except Exception:
+        pass
 
     return __version__
 
