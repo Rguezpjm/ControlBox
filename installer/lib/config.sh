@@ -398,33 +398,8 @@ cb_config_install_scripts() {
         cp -rf "${CONTROLBOX_INSTALLER_ROOT}/src" "${CONTROLBOX_INSTALL_DIR}/"
     fi
     chmod +x "${CONTROLBOX_INSTALL_DIR}/update.sh" "${CONTROLBOX_INSTALL_DIR}/repair.sh" "${CONTROLBOX_INSTALL_DIR}/uninstall.sh"
+    chmod +x "${CONTROLBOX_INSTALLER_ROOT}/controlbox" 2>/dev/null || true
 
-    cat > /usr/local/bin/controlbox <<'CLI'
-#!/usr/bin/env bash
-set -euo pipefail
-CONTROLBOX_INSTALL_DIR="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-CONTROLBOX_CONFIG_DIR="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}"
-case "${1:-}" in
-    status)   bash "${CONTROLBOX_INSTALL_DIR}/repair.sh" --status ;;
-    update)   bash "${CONTROLBOX_INSTALL_DIR}/update.sh" ;;
-    repair)   bash "${CONTROLBOX_INSTALL_DIR}/repair.sh" ;;
-    reset-password) bash "${CONTROLBOX_INSTALL_DIR}/repair.sh" --reset-panel-password ;;
-    apply-panel) bash "${CONTROLBOX_INSTALL_DIR}/repair.sh" --apply-panel ;;
-    backup)   bash "${CONTROLBOX_INSTALL_DIR}/scripts/backup.sh" ;;
-    logs)     tail -f /var/log/controlbox/installer.log ;;
-    uninstall) bash "${CONTROLBOX_INSTALL_DIR}/uninstall.sh" ;;
-    domains)
-        shift
-        export CONTROLBOX_PRIMARY_DOMAIN="${1:-}"
-        export CONTROLBOX_ADMIN_EMAIL="${2:-}"
-        source "${CONTROLBOX_INSTALL_DIR}/lib/common.sh"
-        source "${CONTROLBOX_INSTALL_DIR}/lib/domains.sh"
-        source "${CONTROLBOX_INSTALL_DIR}/lib/ssl.sh"
-        cb_init_logging
-        cb_domains_set "${1}" "${2}"
-        ;;
-    *) echo "Uso: controlbox {status|update|repair|apply-panel|backup|logs|uninstall|domains <domain> <email>}" ;;
-esac
-CLI
-    chmod +x /usr/local/bin/controlbox
+    install -m 0755 "${CONTROLBOX_INSTALLER_ROOT}/controlbox" /usr/local/bin/controlbox
+    ln -sf /usr/local/bin/controlbox /usr/local/bin/cb
 }

@@ -396,11 +396,10 @@ cb_print_post_install_summary() {
     echo -e "  Logs:                ${CB_LOG_FILE}"
     echo ""
     echo -e "  ${CB_BOLD}Comandos útiles:${CB_NC}"
+    echo "    controlbox          # menú interactivo de recuperación (o: cb)"
     echo "    controlbox status"
-    echo "    controlbox update"
     echo "    controlbox repair"
-    echo "    controlbox backup"
-    echo "    controlbox domains <dominio> <email>"
+    echo "    controlbox credentials"
     echo ""
     if [[ -f "${CONTROLBOX_CONFIG_DIR}/domains.conf" ]]; then
         cb_load_env_file "${CONTROLBOX_CONFIG_DIR}/domains.conf"

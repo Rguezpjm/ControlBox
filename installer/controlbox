@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# ControlBox server CLI — run "controlbox" or "cb" on the VPS for recovery tasks.
+set -euo pipefail
+
+CONTROLBOX_INSTALL_DIR="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
+CONTROLBOX_CONFIG_DIR="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}"
+CONTROLBOX_LOG_DIR="${CONTROLBOX_LOG_DIR:-/var/log/controlbox}"
+
+_cb_dispatch() {
+    case "${1:-menu}" in
+        menu|"")
+            if [[ -f "${CONTROLBOX_INSTALL_DIR}/lib/cli-menu.sh" ]]; then
+                # shellcheck source=lib/cli-menu.sh
+                source "${CONTROLBOX_INSTALL_DIR}/lib/cli-menu.sh"
+                cb_cli_interactive_menu
+            else
+                echo "CLI menu not installed. Run: controlbox repair"
+                exit 1
+            fi
+            ;;
+        status)   bash "${CONTROLBOX_INSTALL_DIR}/repair.sh" --status ;;
+        update)   bash "${CONTROLBOX_INSTALL_DIR}/update.sh" ;;
+        repair)   bash "${CONTROLBOX_INSTALL_DIR}/repair.sh" ;;
+        reset-password) bash "${CONTROLBOX_INSTALL_DIR}/repair.sh" --reset-panel-password ;;
+        apply-panel) bash "${CONTROLBOX_INSTALL_DIR}/repair.sh" --apply-panel ;;
+        backup)   bash "${CONTROLBOX_INSTALL_DIR}/scripts/backup.sh" 2>/dev/null || bash "${CONTROLBOX_INSTALL_DIR}/lib/backup.sh" ;;
+        logs)     tail -f "${CONTROLBOX_LOG_DIR}/installer.log" ;;
+        credentials|info)
+            # shellcheck source=lib/cli-menu.sh
+            source "${CONTROLBOX_INSTALL_DIR}/lib/cli-menu.sh"
+            cb_cli_show_credentials
+            ;;
+        uninstall) bash "${CONTROLBOX_INSTALL_DIR}/uninstall.sh" ;;
+        domains)
+            shift
+            export CONTROLBOX_PRIMARY_DOMAIN="${1:-}"
+            export CONTROLBOX_ADMIN_EMAIL="${2:-}"
+            # shellcheck source=lib/common.sh
+            source "${CONTROLBOX_INSTALL_DIR}/lib/common.sh"
+            # shellcheck source=lib/domains.sh
+            source "${CONTROLBOX_INSTALL_DIR}/lib/domains.sh"
+            # shellcheck source=lib/ssl.sh
+            source "${CONTROLBOX_INSTALL_DIR}/lib/ssl.sh"
+            cb_init_logging
+            cb_domains_set "${1}" "${2}"
+            ;;
+        help|-h|--help)
+            cat <<'HELP'
+ControlBox server CLI
+
+Interactive menu (when the web panel fails):
+  controlbox          Open recovery menu
+  cb                  Short alias for controlbox
+
+Direct commands:
+  controlbox status           Show stack status
+  controlbox repair           Repair and restart services
+  controlbox update           Update platform
+  controlbox reset-password   Sync admin password from platform.env
+  controlbox apply-panel      Apply panel port/path
+  controlbox credentials      Show login URL and credentials
+  controlbox logs             Follow installer log
+  controlbox domains <d> <e>  Configure domain and SSL email
+HELP
+            ;;
+        *)
+            echo "Unknown command: $1"
+            echo "Run: controlbox help"
+            exit 1
+            ;;
+    esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    _cb_dispatch "$@"
+fi
