@@ -48,6 +48,12 @@
       border-bottom: 1px solid var(--border);
       margin-bottom: 1rem;
     }
+    .brand-logo {
+      display: block;
+      width: 112px;
+      height: auto;
+      margin-bottom: 0.75rem;
+    }
     .brand h1 { font-size: 1.35rem; font-weight: 700; }
     .brand p { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
     .brand .version {
@@ -188,7 +194,7 @@
   <div class="layout">
     <nav class="sidebar">
       <div class="brand">
-        <h1>ControlBox</h1>
+        <img src="logo.png" alt="ControlBox" class="brand-logo" />
         <p>Publicar el instalador remoto</p>
         <span class="version">CDN / install.grodtech.com</span>
       </div>
@@ -225,7 +231,7 @@
         <h2>Visión general</h2>
         <p class="lead">
           Esta guía explica cómo publicar ControlBox para que cualquier persona instale la plataforma en su propio VPS
-          con un solo comando <code>curl</code>, igual que aaPanel.
+          con un solo comando <code>curl</code>.
         </p>
 
         <div class="alert alert-info">

@@ -34,7 +34,7 @@ cb_config_prepare_variables() {
     CONTROLBOX_TENANT_ADMIN_EMAIL="${CONTROLBOX_TENANT_ADMIN_EMAIL:-admin@controlbox.local}"
     CONTROLBOX_TENANT_ADMIN_FULL_NAME="${CONTROLBOX_TENANT_ADMIN_FULL_NAME:-Administrador}"
     if [[ -z "${CONTROLBOX_TENANT_ADMIN_PASSWORD:-}" ]]; then
-        CONTROLBOX_TENANT_ADMIN_PASSWORD="$(cb_generate_admin_password 8)"
+        CONTROLBOX_TENANT_ADMIN_PASSWORD="$(cb_generate_admin_password)"
     fi
     CONTROLBOX_TENANT_ADMIN_PASSWORD="$(cb_sanitize_admin_password "${CONTROLBOX_TENANT_ADMIN_PASSWORD}")"
 
@@ -131,16 +131,26 @@ cb_config_generate() {
     panel_base_path="$(cb_setup_normalize_panel_base_path "${CONTROLBOX_PANEL_BASE_PATH:-}")"
     local os_label
     os_label="$(cb_setup_format_os_label)"
-    local cors_origins="http://${server_ip}:${panel_port}"
-    if [[ -n "${panel_base_path}" ]]; then
-        cors_origins="http://${server_ip}:${panel_port}/${panel_base_path}"
+    local cors_origins webauthn_origin
+    if cb_setup_is_ip_only_mode 2>/dev/null; then
+        cors_origins="http://${server_ip}"
+        webauthn_origin="http://${server_ip}"
+        if [[ -n "${panel_base_path}" ]]; then
+            cors_origins="http://${server_ip}/${panel_base_path}"
+            webauthn_origin="http://${server_ip}/${panel_base_path}"
+        fi
+    else
+        cors_origins="http://${server_ip}:${panel_port}"
+        if [[ -n "${panel_base_path}" ]]; then
+            cors_origins="http://${server_ip}:${panel_port}/${panel_base_path}"
+        fi
+        webauthn_origin="http://${server_ip}:${panel_port}"
+        if [[ -n "${panel_base_path}" ]]; then
+            webauthn_origin="http://${server_ip}:${panel_port}/${panel_base_path}"
+        fi
     fi
     if [[ -n "${CONTROLBOX_PRIMARY_DOMAIN:-}" ]]; then
         cors_origins="${cors_origins},https://panel.${CONTROLBOX_PRIMARY_DOMAIN}"
-    fi
-    local webauthn_origin="http://${server_ip}:${panel_port}"
-    if [[ -n "${panel_base_path}" ]]; then
-        webauthn_origin="http://${server_ip}:${panel_port}/${panel_base_path}"
     fi
 
     local cookie_secure="false"
@@ -251,10 +261,14 @@ cb_config_generate() {
 
     cb_save_install_state "SERVER_IP" "${server_ip}"
     cb_config_deploy_templates
+    if cb_setup_is_ip_only_mode 2>/dev/null && declare -f cb_panel_prepare_ip_access_files >/dev/null 2>&1; then
+        cb_panel_prepare_ip_access_files
+    fi
     cb_config_deploy_app_build_override 2>/dev/null || cb_config_deploy_panel_override
     cb_compose_repair_compose_ports 2>/dev/null || cb_compose_write_port_override "${panel_port}" 2>/dev/null || true
     cp -f "${env_file}" "${host_install_dir}/.env"
     cb_config_save_credentials
+    cb_ssl_fix_acme_permissions 2>/dev/null || true
 
     cb_step_done "generate_config"
     cb_success "Configuración generada en ${env_file}"
@@ -399,7 +413,9 @@ cb_config_install_scripts() {
     cp -rf "${CONTROLBOX_INSTALLER_ROOT}/config" "${CONTROLBOX_INSTALL_DIR}/"
     cp -rf "${CONTROLBOX_INSTALLER_ROOT}/templates" "${CONTROLBOX_INSTALL_DIR}/"
     if [[ -d "${CONTROLBOX_INSTALLER_ROOT}/src" ]]; then
-        cp -rf "${CONTROLBOX_INSTALLER_ROOT}/src" "${CONTROLBOX_INSTALL_DIR}/"
+        rm -rf "${CONTROLBOX_INSTALL_DIR}/src"
+        cp -a "${CONTROLBOX_INSTALLER_ROOT}/src" "${CONTROLBOX_INSTALL_DIR}/"
+        rm -f "${CONTROLBOX_INSTALL_DIR}/src/frontend/src/app/icon.png" 2>/dev/null || true
     fi
     chmod +x "${CONTROLBOX_INSTALL_DIR}/update.sh" "${CONTROLBOX_INSTALL_DIR}/repair.sh" "${CONTROLBOX_INSTALL_DIR}/uninstall.sh"
     chmod +x "${CONTROLBOX_INSTALLER_ROOT}/controlbox" 2>/dev/null || true

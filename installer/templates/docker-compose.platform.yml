@@ -168,7 +168,7 @@ services:
       - ${CONTROLBOX_INSTALL_DIR}:/host/opt/controlbox:rw
       - ${CONTROLBOX_DATA_DIR}/sites:/var/lib/controlbox/sites
       - ${CONTROLBOX_DATA_DIR}/backups:/var/lib/controlbox/backups
-      - ${CONTROLBOX_DATA_DIR}/letsencrypt:/var/lib/controlbox/letsencrypt:ro
+      - ${CONTROLBOX_DATA_DIR}/letsencrypt:/etc/controlbox/letsencrypt:ro
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro

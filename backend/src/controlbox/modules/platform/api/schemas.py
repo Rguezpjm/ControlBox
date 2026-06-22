@@ -170,6 +170,7 @@ class PanelSettingsSchema(BaseModel):
     controlbox_version: str = ""
     controlbox_profile: str = ""
     os_label: str = ""
+    sidebar_hidden_items: list[str] = Field(default_factory=list)
 
 
 class UpdatePanelSettingsRequest(BaseModel):
@@ -194,6 +195,7 @@ class UpdatePanelSettingsRequest(BaseModel):
     telegram_alerts_enabled: bool | None = None
     telegram_bot_token: str | None = Field(default=None, min_length=10, max_length=128)
     telegram_chat_id: str | None = Field(default=None, max_length=64)
+    sidebar_hidden_items: list[str] | None = None
 
 
 class TestTelegramRequest(BaseModel):

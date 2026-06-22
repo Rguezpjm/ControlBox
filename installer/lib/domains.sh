@@ -17,7 +17,10 @@ cb_domains_configure() {
     fi
 
     if [[ -z "${primary_domain}" ]]; then
-        cb_info "Modo VPS/IP: panel en http://$(cb_setup_get_server_ip):${CONTROLBOX_PANEL_PORT:-8475} (sin dominio, como aaPanel)"
+        cb_info "Modo VPS/IP: panel en http://$(cb_setup_get_server_ip)/ (puerto 80)"
+        if declare -f cb_panel_apply_ip_access >/dev/null 2>&1; then
+            cb_panel_apply_ip_access || true
+        fi
         cb_step_done "configure_domains"
         return 0
     fi
@@ -125,8 +128,8 @@ cb_domains_set() {
     export CONTROLBOX_ADMIN_EMAIL="${email}"
     cb_domains_configure
     cb_ssl_configure
-    local compose_file="${CONTROLBOX_INSTALL_DIR}/docker-compose.yml"
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
-    cd "${CONTROLBOX_INSTALL_DIR}"
-    docker compose --env-file "${env_file}" -f "${compose_file}" -f docker-compose.override.yml up -d
+    if declare -f cb_docker_compose_run >/dev/null 2>&1; then
+        cb_docker_compose_run "${env_file}" up -d
+    fi
 }

@@ -5,7 +5,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { MiniSparkline } from "@/components/shared/min-sparkline";
+import { MiniSparkline } from "@/components/shared/mini-sparkline";
 import { UptimeBar, formatDownReason, type UptimeTimelinePoint } from "@/components/shared/uptime-bar";
 import type { ResourceStatus } from "@/types";
 

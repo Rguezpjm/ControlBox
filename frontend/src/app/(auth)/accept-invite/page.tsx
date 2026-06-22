@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ControlBoxLogo } from "@/components/layout/controlbox-logo";
 import { teamApi, type TeamInvitation } from "@/lib/team";
 
 function AcceptInviteContent() {
@@ -61,8 +62,11 @@ function AcceptInviteContent() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Users className="h-6 w-6 text-primary" />
+          <div className="mx-auto mb-2 flex justify-center">
+            <ControlBoxLogo size={72} />
+          </div>
+          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+            <Users className="h-5 w-5 text-primary" />
           </div>
           <CardTitle>Accept Invitation</CardTitle>
           <CardDescription>

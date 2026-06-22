@@ -97,6 +97,7 @@ cb_install_clean_for_reinstall() {
     rm -f "${CONTROLBOX_INSTALL_DIR}/docker-compose.panel-build.yml"
     rm -f "${CONTROLBOX_INSTALL_DIR}/docker-compose.build.yml"
     rm -f "${CONTROLBOX_INSTALL_DIR}/docker-compose.yml"
+    rm -rf "${CONTROLBOX_INSTALL_DIR}/src"
 
     cb_install_reset_database_volumes
 

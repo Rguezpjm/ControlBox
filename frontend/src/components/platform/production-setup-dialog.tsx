@@ -194,7 +194,7 @@ export function ProductionSetupDialog({ open, onOpenChange, onComplete }: Produc
             Configuración del servidor
           </DialogTitle>
           <DialogDescription>
-            Elija qué servicios instalar y complete el checklist de producción (estilo aaPanel).
+            Elija qué servicios instalar y complete el checklist de producción.
           </DialogDescription>
         </DialogHeader>
 

@@ -111,3 +111,7 @@ if [[ -f "${BASH_SOURCE[0]%/*}/bootstrap-fixes.sh" ]]; then
     # shellcheck source=lib/bootstrap-fixes.sh
     source "${BASH_SOURCE[0]%/*}/bootstrap-fixes.sh"
 fi
+if [[ -f "${BASH_SOURCE[0]%/*}/credentials-display.sh" ]]; then
+    # shellcheck source=lib/credentials-display.sh
+    source "${BASH_SOURCE[0]%/*}/credentials-display.sh"
+fi

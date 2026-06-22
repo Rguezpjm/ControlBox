@@ -1,4 +1,4 @@
-"""aaPanel-style optional Docker Compose profiles — read/apply from the panel."""
+"""Optional Docker Compose profiles — read/apply from the panel."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""aaPanel-style panel settings — read/write tenant preferences and host paths."""
+"""Panel settings — read/write tenant preferences and host paths."""
 
 from __future__ import annotations
 
@@ -24,13 +24,47 @@ DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "auto_backup_panel": True,
     "auto_backup_retention": 30,
     "server_ip_override": "",
+    "sidebar_hidden_items": [],
 }
+
+SIDEBAR_NAV_IDS = frozenset({
+    "dashboard",
+    "websites",
+    "wordpress",
+    "staging",
+    "domains",
+    "dns",
+    "email",
+    "databases",
+    "files",
+    "ftp",
+    "backups",
+    "monitoring",
+    "security",
+    "team",
+    "settings",
+})
+SIDEBAR_LOCKED_NAV_IDS = frozenset({"dashboard", "settings"})
+
+
+def normalize_sidebar_hidden(raw: object | None) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    hidden: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        nav_id = item.strip()
+        if nav_id in SIDEBAR_NAV_IDS and nav_id not in SIDEBAR_LOCKED_NAV_IDS and nav_id not in hidden:
+            hidden.append(nav_id)
+    return hidden
 
 
 def merge_panel_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
     merged = {**DEFAULT_PANEL_SETTINGS, **(raw or {})}
     merged["session_timeout_hours"] = max(1, min(168, int(merged.get("session_timeout_hours") or 24)))
     merged["auto_backup_retention"] = max(1, min(365, int(merged.get("auto_backup_retention") or 30)))
+    merged["sidebar_hidden_items"] = normalize_sidebar_hidden(merged.get("sidebar_hidden_items"))
     return merged
 
 
@@ -97,6 +131,7 @@ class PanelSettingsService:
             "controlbox_version": self._settings.controlbox_version,
             "controlbox_profile": self._settings.controlbox_profile,
             "os_label": self._settings.controlbox_os_label,
+            "sidebar_hidden_items": prefs["sidebar_hidden_items"],
         }
 
     def _detect_server_ip(self) -> str:
@@ -127,6 +162,7 @@ class PanelSettingsService:
         telegram_alerts_enabled: bool | None = None,
         telegram_bot_token: str | None = None,
         telegram_chat_id: str | None = None,
+        sidebar_hidden_items: list[str] | None = None,
     ) -> None:
         prefs = merge_panel_settings(platform.panel_settings)
         if panel_alias is not None:
@@ -147,6 +183,8 @@ class PanelSettingsService:
             prefs["auto_backup_retention"] = max(1, min(365, auto_backup_retention))
         if server_ip is not None:
             prefs["server_ip_override"] = server_ip.strip()[:64]
+        if sidebar_hidden_items is not None:
+            prefs["sidebar_hidden_items"] = normalize_sidebar_hidden(sidebar_hidden_items)
         platform.panel_settings = prefs
 
         if site_monitor_enabled is not None:

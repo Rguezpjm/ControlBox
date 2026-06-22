@@ -48,6 +48,12 @@
       border-bottom: 1px solid var(--border);
       margin-bottom: 1rem;
     }
+    .brand-logo {
+      display: block;
+      width: 112px;
+      height: auto;
+      margin-bottom: 0.75rem;
+    }
     .brand h1 {
       font-size: 1.35rem;
       font-weight: 700;
@@ -238,7 +244,7 @@
   <div class="layout">
     <nav class="sidebar">
       <div class="brand">
-        <h1>ControlBox</h1>
+        <img src="logo.png" alt="ControlBox" class="brand-logo" />
         <p>Plataforma de hosting multi-tenant</p>
         <span class="version">v1.0.0</span>
       </div>
@@ -396,7 +402,7 @@
 
       <section id="install-production">
         <h2>Instalación en producción</h2>
-        <p class="lead">Método recomendado para servidores dedicados o VPS. Instalador tipo aaPanel con configuración automática de firewall, SSL y servicios.</p>
+        <p class="lead">Método recomendado para servidores dedicados o VPS. Instalador remoto con configuración automática de firewall, SSL y servicios.</p>
 
         <h3>Opción A — Instalación remota (CDN)</h3>
         <pre><code>curl -fsSL https://install.grodtech.com/install.sh | bash</code></pre>
@@ -439,7 +445,7 @@ sudo CONTROLBOX_INSTALLER_ROOT=$(pwd) bash install.sh</code></pre>
           </tbody>
         </table>
 
-        <h3>Asistente interactivo (estilo aaPanel)</h3>
+        <h3>Asistente interactivo</h3>
         <p>Al ejecutar el instalador sin variables, se muestra un asistente que solicita:</p>
         <ol class="steps">
           <li>Dominio principal y email SSL (opcional; puede configurarse después)</li>
@@ -514,15 +520,15 @@ docker compose --profile security up -d</code></pre>
 
       <section id="post-install">
         <h2>Post-instalación</h2>
-        <h3>Credenciales de acceso (aaPanel)</h3>
-        <p>Al finalizar la instalación, el instalador muestra un resumen similar a aaPanel:</p>
+        <h3>Credenciales de acceso</h3>
+        <p>Al finalizar la instalación, el instalador muestra un resumen con la URL del panel, usuario y contraseña:</p>
         <pre><code>URL PANEL:     75.148.75.12:8475/ControlBox_Panel
 USUARIO:       admin@mi-empresa.com
 CONTRASEÑA:    ContraseñaSegura123!</code></pre>
         <p>Las mismas credenciales se guardan en <code>/etc/controlbox/credentials.txt</code> (permisos 600).</p>
         <p>El panel usa la ruta base <code>/ControlBox_Panel</code> y un puerto dedicado en el VPS para acceso directo por IP antes de configurar dominios.</p>
 
-        <h3>Configuración básica desde el panel (estilo aaPanel)</h3>
+        <h3>Configuración básica desde el panel</h3>
         <p>Tras iniciar sesión, el usuario Owner o Administrator solo debe completar la configuración básica en <strong>Settings</strong>:</p>
         <ol class="steps">
           <li><strong>Producción</strong> — checklist y rotación de secretos de instalación</li>

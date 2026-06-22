@@ -105,13 +105,16 @@ cb_repair_fix() {
 
     if [[ -f "${CONTROLBOX_INSTALL_DIR}/docker-compose.yml" ]]; then
         cb_compose_ensure_docker_proxy
+        cb_compose_fix_api_letsencrypt_mount
+        cb_ssl_fix_acme_permissions 2>/dev/null || true
         cb_services_load_from_platform_env
         local -a profile_args=()
         # shellcheck disable=SC2206
         profile_args=($(cb_docker_compose_profile_args))
         cd "${CONTROLBOX_INSTALL_DIR}"
         docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" down --remove-orphans 2>/dev/null || true
-        docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" "${profile_args[@]}" up -d --remove-orphans
+        docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" "${profile_args[@]}" up -d --remove-orphans --force-recreate api worker 2>/dev/null \
+            || docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" "${profile_args[@]}" up -d --remove-orphans
 
         cb_info "Aplicando migraciones de base de datos..."
         docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" run --rm migrate 2>/dev/null \

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# aaPanel-style optional service selection during install.
+# Optional Docker Compose service profiles during install.
 # Profiles map to docker-compose.platform.yml compose profiles.
 
 cb_services_default_profiles() {
@@ -62,7 +62,7 @@ cb_services_prompt() {
     fi
 
     echo ""
-    echo -e "${CB_BOLD}Paquetes de software (estilo aaPanel)${CB_NC}"
+    echo -e "${CB_BOLD}Paquetes de software opcionales${CB_NC}"
     echo "Elija qué servicios instalar en este servidor. El panel core siempre se instala."
     echo "Desmarque servicios que no necesite para ahorrar RAM y CPU."
     echo ""
@@ -123,14 +123,16 @@ cb_services_prompt() {
 }
 
 cb_services_load_state() {
-    export CONTROLBOX_ENABLED_PROFILES="${CONTROLBOX_ENABLED_PROFILES:-$(cb_get_install_state ENABLED_PROFILES)}"
-    export CONTROLBOX_ENABLED_PROFILES="$(cb_services_parse_profiles "${CONTROLBOX_ENABLED_PROFILES}")"
-    export CONTROLBOX_FEATURE_DNS="${CONTROLBOX_FEATURE_DNS:-$(cb_get_install_state FEATURE_DNS)}"
-    export CONTROLBOX_FEATURE_MAIL="${CONTROLBOX_FEATURE_MAIL:-$(cb_get_install_state FEATURE_MAIL)}"
-    export CONTROLBOX_FEATURE_FTP="${CONTROLBOX_FEATURE_FTP:-$(cb_get_install_state FEATURE_FTP)}"
-    [[ -z "${CONTROLBOX_FEATURE_DNS}" ]] && export CONTROLBOX_FEATURE_DNS="false"
-    [[ -z "${CONTROLBOX_FEATURE_MAIL}" ]] && export CONTROLBOX_FEATURE_MAIL="false"
-    [[ -z "${CONTROLBOX_FEATURE_FTP}" ]] && export CONTROLBOX_FEATURE_FTP="false"
+    local profiles="${CONTROLBOX_ENABLED_PROFILES:-$(cb_get_install_state ENABLED_PROFILES 2>/dev/null || true)}"
+    profiles="$(cb_services_parse_profiles "${profiles}")"
+    export CONTROLBOX_ENABLED_PROFILES="${profiles:-$(cb_services_default_profiles)}"
+
+    local feature_dns="${CONTROLBOX_FEATURE_DNS:-$(cb_get_install_state FEATURE_DNS 2>/dev/null || true)}"
+    local feature_mail="${CONTROLBOX_FEATURE_MAIL:-$(cb_get_install_state FEATURE_MAIL 2>/dev/null || true)}"
+    local feature_ftp="${CONTROLBOX_FEATURE_FTP:-$(cb_get_install_state FEATURE_FTP 2>/dev/null || true)}"
+    export CONTROLBOX_FEATURE_DNS="${feature_dns:-false}"
+    export CONTROLBOX_FEATURE_MAIL="${feature_mail:-false}"
+    export CONTROLBOX_FEATURE_FTP="${feature_ftp:-false}"
 }
 
 cb_services_persist_state() {

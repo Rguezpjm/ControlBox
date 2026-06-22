@@ -181,6 +181,7 @@ export interface PanelSettings {
   controlbox_version: string;
   controlbox_profile: string;
   os_label: string;
+  sidebar_hidden_items: string[];
 }
 
 export type UpdatePanelSettingsPayload = Partial<
@@ -206,6 +207,7 @@ export type UpdatePanelSettingsPayload = Partial<
     | "alert_cooldown_minutes"
     | "telegram_alerts_enabled"
     | "telegram_chat_id"
+    | "sidebar_hidden_items"
   > & {
     telegram_bot_token?: string;
   }

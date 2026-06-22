@@ -244,7 +244,11 @@ cb_os_create_directories() {
 
     chown -R controlbox:controlbox "${CONTROLBOX_INSTALL_DIR}" "${CONTROLBOX_DATA_DIR}" "${CONTROLBOX_LOG_DIR}" 2>/dev/null || true
     chmod 750 "${CONTROLBOX_CONFIG_DIR}"
-    chmod 700 "${CONTROLBOX_DATA_DIR}/letsencrypt"
+    cb_ssl_fix_acme_permissions 2>/dev/null || {
+        chmod 755 "${CONTROLBOX_DATA_DIR}/letsencrypt"
+        touch "${CONTROLBOX_DATA_DIR}/letsencrypt/acme.json"
+        chmod 644 "${CONTROLBOX_DATA_DIR}/letsencrypt/acme.json"
+    }
 
     cb_step_done "create_directories"
     cb_success "Directorios creados"

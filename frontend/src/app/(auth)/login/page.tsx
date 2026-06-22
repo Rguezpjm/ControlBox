@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { api, ApiError } from "@/lib/api-client";
 import { primeCsrfAfterLogin, setTokens } from "@/lib/auth";
 import { getDeviceFingerprint } from "@/lib/fingerprint";
+import { ControlBoxLogo } from "@/components/layout/controlbox-logo";
 import { securityApi, loginWithPasskey } from "@/lib/security";
 
 function loginRedirectPath(): string {
@@ -118,8 +119,8 @@ export default function LoginPage() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/5 via-background to-background" />
       <Card className="relative w-full max-w-md glass">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-lg">
-            CB
+          <div className="mx-auto mb-2 flex justify-center">
+            <ControlBoxLogo size={88} priority />
           </div>
           <CardTitle className="text-2xl">{mfaChallenge ? "Verify MFA" : "Welcome back"}</CardTitle>
           <CardDescription>

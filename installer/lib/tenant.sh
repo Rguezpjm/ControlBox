@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
 
+cb_tenant_sync_password_env() {
+    local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
+    local password="${CONTROLBOX_TENANT_ADMIN_PASSWORD:-}"
+    [[ -f "${env_file}" ]] || return 0
+    [[ -n "${password}" ]] || return 0
+
+    for key in TENANT_ADMIN_PASSWORD INSTALLER_TENANT_ADMIN_PASSWORD; do
+        if grep -q "^${key}=" "${env_file}"; then
+            sed -i "s|^${key}=.*|${key}=${password}|" "${env_file}"
+        else
+            echo "${key}=${password}" >> "${env_file}"
+        fi
+    done
+    cp -f "${env_file}" "${CONTROLBOX_INSTALL_DIR}/.env" 2>/dev/null || true
+}
+
+cb_tenant_ensure_admin_password() {
+    CONTROLBOX_TENANT_ADMIN_PASSWORD="$(cb_sanitize_admin_password "${CONTROLBOX_TENANT_ADMIN_PASSWORD:-}")"
+    export CONTROLBOX_TENANT_ADMIN_PASSWORD
+    cb_tenant_sync_password_env
+    cb_save_install_state "TENANT_ADMIN_PASSWORD" "${CONTROLBOX_TENANT_ADMIN_PASSWORD}"
+}
+
 cb_tenant_bootstrap() {
     cb_step "Creando cuenta administradora (primer tenant)"
 
@@ -9,6 +32,7 @@ cb_tenant_bootstrap() {
     fi
 
     cb_setup_load_state
+    cb_tenant_ensure_admin_password
 
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
 
@@ -27,7 +51,7 @@ cb_tenant_bootstrap() {
         echo "${bootstrap_output}" | tail -40
         echo "${bootstrap_output}" >> "${CB_LOG_FILE}"
         cb_error "Detalle completo en ${CB_LOG_FILE}"
-        cb_die "Bootstrap del tenant falló"
+        return 1
     fi
 
     echo "${bootstrap_output}" >> "${CB_LOG_FILE}"
@@ -81,8 +105,14 @@ cb_config_append_panel_credentials() {
 
     if [[ -f "${CONTROLBOX_CONFIG_DIR}/domains.conf" ]]; then
         cb_load_env_file "${CONTROLBOX_CONFIG_DIR}/domains.conf"
+        local panel_path
+        panel_path="$(cb_setup_normalize_panel_base_path "${CONTROLBOX_PANEL_BASE_PATH:-}")"
         if [[ -n "${PANEL_DOMAIN:-}" ]]; then
-            panel_url="https://${PANEL_DOMAIN}/${panel_path}"
+            if [[ -n "${panel_path}" ]]; then
+                panel_url="https://${PANEL_DOMAIN}/${panel_path}"
+            else
+                panel_url="https://${PANEL_DOMAIN}"
+            fi
         fi
     fi
 

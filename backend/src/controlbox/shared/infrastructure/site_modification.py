@@ -1,4 +1,4 @@
-"""Site modification (aaPanel-style) — read/write VHOST, domains, and site settings."""
+"""Site modification — read/write VHOST, domains, and site settings."""
 
 from __future__ import annotations
 

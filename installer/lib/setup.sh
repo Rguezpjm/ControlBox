@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+cb_setup_port_is_free() {
+    local port="$1"
+    ! ss -tln 2>/dev/null | grep -q ":${port} " \
+        && ! netstat -tln 2>/dev/null | grep -q ":${port} "
+}
+
 cb_setup_pick_panel_port() {
     local port="${CONTROLBOX_PANEL_PORT:-}"
     if [[ -n "${port}" ]]; then
@@ -7,16 +13,22 @@ cb_setup_pick_panel_port() {
         return 0
     fi
 
+    local default_port="${DEFAULT_PANEL_PORT:-8475}"
+    if cb_setup_port_is_free "${default_port}"; then
+        echo "${default_port}"
+        return 0
+    fi
+
     local candidate
     for _ in $(seq 1 50); do
         candidate=$((8000 + RANDOM % 2000))
-        if ! ss -tln 2>/dev/null | grep -q ":${candidate} " && ! netstat -tln 2>/dev/null | grep -q ":${candidate} "; then
+        if cb_setup_port_is_free "${candidate}"; then
             echo "${candidate}"
             return 0
         fi
     done
 
-    echo "8475"
+    echo "${default_port}"
 }
 
 cb_setup_slugify() {
@@ -31,8 +43,8 @@ cb_setup_slugify() {
 
 cb_setup_validate_password() {
     local password="$1"
-    if [[ ${#password} -lt 8 ]]; then
-        cb_warn "La contraseña debe tener al menos 8 caracteres."
+    if [[ ${#password} -lt ${CB_ADMIN_PASSWORD_MIN:-12} ]]; then
+        cb_warn "La contraseña debe tener al menos ${CB_ADMIN_PASSWORD_MIN:-12} caracteres."
         return 1
     fi
     return 0
@@ -55,7 +67,7 @@ cb_setup_prompt_install() {
     echo ""
     echo -e "${CB_BOLD}Asistente de instalación ControlBox${CB_NC}"
     echo "Configure el dominio (opcional), la cuenta administradora y el puerto del panel."
-    echo "Sin dominio, el panel queda en http://IP:PUERTO (estilo aaPanel / HPanel)."
+    echo "Sin dominio, el panel queda en http://IP/ (puerto 80)."
     echo ""
 
     local primary_domain="${CONTROLBOX_PRIMARY_DOMAIN:-}"
@@ -88,7 +100,7 @@ cb_setup_prompt_install() {
         read -r -p "Slug del tenant (identificador) [$(cb_setup_slugify "${tenant_name}")]: " tenant_slug
         tenant_slug="${tenant_slug:-$(cb_setup_slugify "${tenant_name}")}"
         read -r -p "Email del administrador: " tenant_admin_email
-        read -r -p "Contraseña del administrador (Enter = 8 dígitos numéricos): " tenant_admin_password
+        read -r -p "Contraseña del administrador (Enter = ${CB_ADMIN_PASSWORD_MIN:-12} dígitos numéricos): " tenant_admin_password
         if [[ -n "${tenant_admin_password}" ]] && ! cb_setup_validate_password "${tenant_admin_password}"; then
             while true; do
                 read -r -s -p "Contraseña del administrador (mín. 8 caracteres): " tenant_admin_password
@@ -116,17 +128,17 @@ cb_setup_prompt_install() {
         fi
     fi
     if [[ -z "${tenant_admin_password}" ]]; then
-        tenant_admin_password="${CONTROLBOX_TENANT_ADMIN_PASSWORD:-$(cb_generate_admin_password 8)}"
-        cb_info "Contraseña numérica de administrador generada (8 dígitos)"
+        tenant_admin_password="${CONTROLBOX_TENANT_ADMIN_PASSWORD:-$(cb_generate_admin_password)}"
+        cb_info "Contraseña numérica de administrador generada (${CB_ADMIN_PASSWORD_MIN:-12} dígitos)"
     fi
     tenant_admin_password="$(cb_sanitize_admin_password "${tenant_admin_password}")"
     if [[ -z "${tenant_admin_full_name}" ]]; then
         tenant_admin_full_name="${CONTROLBOX_TENANT_ADMIN_FULL_NAME:-Administrador}"
     fi
 
-    if cb_is_noninteractive_install && [[ ${#tenant_admin_password} -lt 8 ]]; then
-        tenant_admin_password="$(cb_generate_admin_password 8)"
-        cb_info "Contraseña ajustada para instalación automática"
+    if cb_is_noninteractive_install && [[ ${#tenant_admin_password} -lt ${CB_ADMIN_PASSWORD_MIN:-12} ]]; then
+        tenant_admin_password="$(cb_generate_admin_password)"
+        cb_info "Contraseña ajustada para instalación automática (${CB_ADMIN_PASSWORD_MIN:-12} dígitos)"
     fi
 
     tenant_slug="$(cb_setup_slugify "${tenant_slug}")"
@@ -231,11 +243,28 @@ cb_setup_normalize_panel_base_path() {
     echo "${path}"
 }
 
+cb_setup_is_ip_only_mode() {
+    local domain="${CONTROLBOX_PRIMARY_DOMAIN:-}"
+    if [[ -z "${domain}" ]]; then
+        domain="$(cb_get_install_state PRIMARY_DOMAIN 2>/dev/null || true)"
+    fi
+    [[ -z "${domain}" ]]
+}
+
 cb_setup_panel_url() {
     local server_ip="${1:-$(cb_setup_get_server_ip)}"
     local panel_port="${2:-${CONTROLBOX_PANEL_PORT:-8475}}"
     local panel_path
     panel_path="$(cb_setup_normalize_panel_base_path "${3:-${CONTROLBOX_PANEL_BASE_PATH:-}}")"
+
+    if cb_setup_is_ip_only_mode; then
+        if [[ -n "${panel_path}" ]]; then
+            echo "http://${server_ip}/${panel_path}"
+        else
+            echo "http://${server_ip}"
+        fi
+        return 0
+    fi
 
     if [[ -n "${panel_path}" ]]; then
         echo "http://${server_ip}:${panel_port}/${panel_path}"
@@ -244,41 +273,98 @@ cb_setup_panel_url() {
     fi
 }
 
+cb_setup_panel_direct_url() {
+    local server_ip="${1:-$(cb_setup_get_server_ip)}"
+    local panel_port="${2:-${CONTROLBOX_PANEL_PORT:-8475}}"
+    local panel_path
+    panel_path="$(cb_setup_normalize_panel_base_path "${3:-${CONTROLBOX_PANEL_BASE_PATH:-}}")"
+    if [[ -n "${panel_path}" ]]; then
+        echo "http://${server_ip}:${panel_port}/${panel_path}"
+    else
+        echo "http://${server_ip}:${panel_port}"
+    fi
+}
+
+cb_setup_is_private_ip() {
+    local ip="${1:-}"
+    [[ -z "${ip}" ]] && return 1
+    [[ "${ip}" =~ ^127\. ]] && return 0
+    [[ "${ip}" =~ ^10\. ]] && return 0
+    [[ "${ip}" =~ ^192\.168\. ]] && return 0
+    [[ "${ip}" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] && return 0
+    return 1
+}
+
+cb_setup_detect_route_ip() {
+    if command -v ip >/dev/null 2>&1; then
+        ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}'
+    fi
+}
+
+cb_setup_detect_public_ip() {
+    local ip=""
+    ip="$(curl -fsSL -4 --max-time 5 ifconfig.me 2>/dev/null || curl -fsSL -4 --max-time 5 icanhazip.com 2>/dev/null || true)"
+    ip="${ip//$'\r'/}"
+    ip="${ip//[[:space:]]/}"
+    if [[ -n "${ip}" ]] && ! cb_setup_is_private_ip "${ip}"; then
+        echo "${ip}"
+    fi
+}
+
 cb_setup_detect_local_ip() {
     local ip=""
+    local addr=""
+    local private_fallback=""
+
+    ip="$(cb_setup_detect_route_ip)"
+    ip="${ip//[[:space:]]/}"
+    if [[ -n "${ip}" ]]; then
+        if cb_setup_is_private_ip "${ip}"; then
+            private_fallback="${ip}"
+        else
+            echo "${ip}"
+            return 0
+        fi
+    fi
 
     if command -v ip >/dev/null 2>&1; then
-        ip="$(ip -4 addr show scope global 2>/dev/null | awk '
-            /inet / {
-                split($2, parts, "/")
-                addr = parts[1]
-                if (addr ~ /^127\./) next
-                if (addr ~ /^10\./ || addr ~ /^192\.168\./ || addr ~ /^172\.(1[6-9]|2[0-9]|3[0-1])\./) {
-                    print addr
-                    exit
-                }
-                if (public == "") public = addr
-            }
-            END {
-                if (public != "") print public
-            }
-        ' | head -1)"
+        while IFS= read -r addr; do
+            addr="${addr//[[:space:]]/}"
+            [[ -z "${addr}" ]] && continue
+            if cb_setup_is_private_ip "${addr}"; then
+                [[ -z "${private_fallback}" ]] && private_fallback="${addr}"
+            else
+                echo "${addr}"
+                return 0
+            fi
+        done < <(ip -4 addr show scope global 2>/dev/null | awk '/inet / {split($2, parts, "/"); print parts[1]}')
     fi
 
-    if [[ -z "${ip}" ]] && command -v ip >/dev/null 2>&1; then
-        ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')"
-    fi
-
-    if [[ -z "${ip}" ]]; then
+    if [[ -z "${private_fallback}" ]]; then
         ip="$(hostname -I 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i !~ /^127\./) {print $i; exit}}')"
+        ip="${ip//[[:space:]]/}"
+        if [[ -n "${ip}" ]]; then
+            if cb_setup_is_private_ip "${ip}"; then
+                private_fallback="${ip}"
+            else
+                echo "${ip}"
+                return 0
+            fi
+        fi
     fi
 
-    echo "${ip}"
+    if [[ -n "${private_fallback}" ]]; then
+        echo "${private_fallback}"
+        return 0
+    fi
+
+    echo ""
 }
 
 cb_setup_get_server_ip() {
     local ip="${CONTROLBOX_SERVER_IP:-}"
     local config_dir="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}"
+    local detected=""
 
     ip="${ip//\"/}"
     ip="${ip//\'/}"
@@ -297,23 +383,32 @@ cb_setup_get_server_ip() {
         fi
     fi
 
+    detected="$(cb_setup_detect_public_ip)"
+    detected="${detected//[[:space:]]/}"
+    if [[ -n "${detected}" ]]; then
+        echo "${detected}"
+        return 0
+    fi
+
+    detected="$(cb_setup_detect_local_ip)"
+    detected="${detected//[[:space:]]/}"
+    if [[ -n "${detected}" ]] && ! cb_setup_is_private_ip "${detected}"; then
+        echo "${detected}"
+        return 0
+    fi
+
     ip="$(cb_get_install_state SERVER_IP 2>/dev/null || true)"
     ip="${ip//[[:space:]]/}"
-    if [[ -n "${ip}" ]]; then
+    if [[ -n "${ip}" ]] && ! cb_setup_is_private_ip "${ip}"; then
         echo "${ip}"
         return 0
     fi
 
-    ip="$(cb_setup_detect_local_ip)"
-    ip="${ip//[[:space:]]/}"
-    if [[ -n "${ip}" ]]; then
-        echo "${ip}"
+    if [[ -n "${detected}" ]]; then
+        echo "${detected}"
         return 0
     fi
 
-    ip="$(curl -fsSL -4 --max-time 5 ifconfig.me 2>/dev/null || curl -fsSL -4 --max-time 5 icanhazip.com 2>/dev/null || true)"
-    ip="${ip//$'\r'/}"
-    ip="${ip//[[:space:]]/}"
     if [[ -n "${ip}" ]]; then
         echo "${ip}"
         return 0

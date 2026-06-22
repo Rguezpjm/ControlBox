@@ -111,20 +111,18 @@ cb_generate_secret() {
     openssl rand -hex "$((length + 1))" | head -c "${length}"
 }
 
+CB_ADMIN_PASSWORD_MIN="${CB_ADMIN_PASSWORD_MIN:-12}"
+
 cb_generate_admin_password() {
-    local length="${1:-8}"
-    if [[ "${length}" -lt 8 ]]; then
-        length=8
-    fi
-    if command -v shuf >/dev/null 2>&1; then
-        shuf -i 10000000-99999999 -n 1
-        return 0
+    local length="${1:-${CB_ADMIN_PASSWORD_MIN}}"
+    if [[ "${length}" -lt "${CB_ADMIN_PASSWORD_MIN}" ]]; then
+        length="${CB_ADMIN_PASSWORD_MIN}"
     fi
     local password=""
-    while [[ ${#password} -lt 8 ]]; do
-        password="$(openssl rand -hex 8 | tr -dc '0-9' | head -c "${length}")"
+    while [[ ${#password} -lt ${length} ]]; do
+        password="${password}$(openssl rand -hex 16 | tr -dc '0-9')"
     done
-    echo "${password}"
+    echo "${password:0:${length}}"
 }
 
 cb_sanitize_admin_password() {
@@ -137,8 +135,8 @@ cb_sanitize_admin_password() {
     if [[ ${#value} -gt 64 ]]; then
         value="${value:0:64}"
     fi
-    if [[ ${#value} -lt 8 ]]; then
-        cb_generate_admin_password 8
+    if [[ ${#value} -lt ${CB_ADMIN_PASSWORD_MIN} ]]; then
+        cb_generate_admin_password "${CB_ADMIN_PASSWORD_MIN}"
         return 0
     fi
     echo "${value}"
@@ -278,11 +276,20 @@ cb_on_error() {
     local exit_code=$?
     local line="${BASH_LINENO[0]:-unknown}"
     cb_error "Error en línea ${line} (código: ${exit_code})"
-    if [[ -f "${CONTROLBOX_STATE_DIR}/rollback/active" ]]; then
-        cb_warn "Iniciando rollback automático..."
+    if [[ "${CB_INSTALL_DEPLOYED:-}" == "1" ]] && [[ "${CB_INSTALL_SUMMARY_SHOWN:-}" != "1" ]]; then
+        cb_warn "Mostrando credenciales de acceso al panel..."
+        if [[ -f "${CONTROLBOX_INSTALLER_ROOT:-}/lib/credentials-display.sh" ]]; then
+            # shellcheck source=lib/credentials-display.sh
+            source "${CONTROLBOX_INSTALLER_ROOT}/lib/credentials-display.sh"
+        fi
+        if declare -f cb_print_post_install_summary >/dev/null 2>&1; then
+            cb_print_post_install_summary "${CB_INSTALL_STARTED_AT:-$(date +%s)}" || true
+        fi
+    elif [[ -f "${CONTROLBOX_STATE_DIR}/rollback/active" ]]; then
+        cb_warn "Iniciando restauración del estado anterior..."
         # shellcheck source=lib/rollback.sh
         source "${CONTROLBOX_INSTALLER_ROOT}/lib/rollback.sh"
-        cb_rollback_execute || cb_error "Rollback falló. Revise ${CB_LOG_FILE}"
+        cb_rollback_execute || cb_error "Restauración falló. Revise ${CB_LOG_FILE}"
     fi
     cb_release_lock
     exit "${exit_code}"

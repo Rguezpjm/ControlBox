@@ -192,6 +192,7 @@ async def update_panel_settings(
         telegram_alerts_enabled=payload.telegram_alerts_enabled,
         telegram_bot_token=payload.telegram_bot_token,
         telegram_chat_id=payload.telegram_chat_id,
+        sidebar_hidden_items=payload.sidebar_hidden_items,
     )
 
     if payload.panel_port is not None or payload.panel_base_path is not None:

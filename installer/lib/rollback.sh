@@ -80,11 +80,15 @@ cb_rollback_execute() {
     fi
 
     if [[ -f "${CONTROLBOX_INSTALL_DIR}/docker-compose.yml" ]]; then
-        cb_docker_deploy_stack 2>/dev/null || true
+        if [[ "${CB_INSTALL_DEPLOYED:-}" == "1" ]]; then
+            cb_docker_deploy_stack 2>/dev/null || true
+        else
+            cb_info "Archivos de configuración restaurados (sin redespliegue durante instalación)"
+        fi
     fi
 
     cb_rollback_clear_active
-    cb_success "Rollback completado"
+    cb_success "Estado anterior restaurado"
 }
 
 cb_rollback_list() {

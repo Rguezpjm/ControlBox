@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 
+cb_ssl_fix_acme_permissions() {
+    local le_dir="${CONTROLBOX_DATA_DIR:-/var/lib/controlbox}/letsencrypt"
+    local acme_file="${le_dir}/acme.json"
+    local cb_user="${CONTROLBOX_USER:-controlbox}"
+
+    mkdir -p "${le_dir}"
+    touch "${acme_file}"
+    chmod 755 "${le_dir}"
+    chmod 644 "${acme_file}"
+    chown "${cb_user}:${cb_user}" "${le_dir}" "${acme_file}" 2>/dev/null || true
+}
+
 cb_ssl_configure() {
     cb_step "Configurando SSL/TLS"
 
@@ -51,8 +63,7 @@ SUPABASE_DOMAIN=supabase.${primary_domain}
 EOF
     cb_secure_file "${domains_file}" 600
 
-    touch "${CONTROLBOX_DATA_DIR}/letsencrypt/acme.json"
-    chmod 600 "${CONTROLBOX_DATA_DIR}/letsencrypt/acme.json"
+    cb_ssl_fix_acme_permissions
 
     cb_domains_apply_labels
 

@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { mainNav } from "@/config/navigation";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ControlBoxLogo } from "@/components/layout/controlbox-logo";
+import { SidebarMenuManager } from "@/components/layout/sidebar-menu-manager";
 import { useI18n } from "@/providers/i18n-provider";
+import { useSidebarNav } from "@/providers/sidebar-nav-provider";
 import { websitesApi } from "@/lib/websites";
 import { wordpressApi } from "@/lib/wordpress";
 
@@ -22,6 +24,7 @@ function countRunningSites(sites: { status: string }[]) {
 export function Sidebar({ collapsed = false }: SidebarProps) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { visibleNav } = useSidebarNav();
   const [websiteCount, setWebsiteCount] = useState<number | null>(null);
 
   useEffect(() => {
@@ -48,9 +51,13 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
         collapsed ? "w-16" : "w-[220px]"
       )}
     >
+      <div className={cn("border-b border-sidebar-border px-3 py-3", collapsed && "flex justify-center px-2")}>
+        <ControlBoxLogo href="/" size={collapsed ? 32 : 40} />
+      </div>
+
       <ScrollArea className="flex-1 py-3">
         <nav className="flex flex-col gap-0.5 px-2">
-          {mainNav.map((item) => {
+          {visibleNav.map((item) => {
             const href = item.href;
             const isActive =
               pathname === href || (item.href !== "/" && pathname.startsWith(href));
@@ -62,7 +69,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
 
             return (
               <Link
-                key={item.href}
+                key={item.id}
                 href={href}
                 className={cn(
                   "group flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium transition-all",
@@ -87,15 +94,17 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             );
           })}
         </nav>
+
+        <div className="mt-2 px-2">
+          <SidebarMenuManager collapsed={collapsed} />
+        </div>
       </ScrollArea>
 
       {!collapsed && (
         <div className="border-t border-sidebar-border p-3">
           <div className="rounded-md border border-border/60 bg-white/70 p-3 dark:bg-sidebar-accent/30">
             <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-[10px] font-bold text-primary-foreground">
-                CB
-              </div>
+              <ControlBoxLogo size={32} />
               <div>
                 <p className="text-xs font-semibold text-sidebar-accent-foreground">ControlBox</p>
                 <p className="text-[10px] text-muted-foreground">{t("topbar.serverManagement")}</p>
@@ -107,4 +116,3 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     </aside>
   );
 }
-

@@ -1,6 +1,6 @@
 # ControlBox Installer
 
-Instalador profesional tipo aaPanel para la plataforma ControlBox.
+Instalador profesional para la plataforma ControlBox.
 
 ## Instalación rápida
 

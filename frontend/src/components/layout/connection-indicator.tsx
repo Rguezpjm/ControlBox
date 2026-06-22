@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/tooltip";
 
 interface ConnectionIndicatorProps {
-  /** Compact icon-only mode for the sysadmin topbar (aaPanel style). */
+  /** Compact icon-only mode for the sysadmin topbar. */
   compact?: boolean;
 }
 

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { mapResourceStatus } from "@/lib/resource-status";
 import type { ResourceStatus } from "@/types";
 
 const statusConfig: Record<ResourceStatus, { label: string; className: string }> = {
@@ -10,12 +11,14 @@ const statusConfig: Record<ResourceStatus, { label: string; className: string }>
 };
 
 interface StatusBadgeProps {
-  status: ResourceStatus;
+  status: ResourceStatus | string;
+  isUp?: boolean;
   showDot?: boolean;
 }
 
-export function StatusBadge({ status, showDot = true }: StatusBadgeProps) {
-  const config = statusConfig[status];
+export function StatusBadge({ status, isUp, showDot = true }: StatusBadgeProps) {
+  const resolved = mapResourceStatus(status, { isUp });
+  const config = statusConfig[resolved];
 
   return (
     <span className={cn(
@@ -25,11 +28,11 @@ export function StatusBadge({ status, showDot = true }: StatusBadgeProps) {
       {showDot && (
         <span className={cn(
           "h-1.5 w-1.5 rounded-full",
-          status === "running" && "bg-success animate-pulse",
-          status === "pending" && "bg-warning",
-          status === "error" && "bg-destructive",
-          status === "stopped" && "bg-muted-foreground",
-          status === "degraded" && "bg-warning"
+          resolved === "running" && "bg-success animate-pulse",
+          resolved === "pending" && "bg-warning",
+          resolved === "error" && "bg-destructive",
+          resolved === "stopped" && "bg-muted-foreground",
+          resolved === "degraded" && "bg-warning"
         )} />
       )}
       {config.label}

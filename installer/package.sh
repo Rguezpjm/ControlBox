@@ -28,7 +28,8 @@ cb_verify_no_crlf() {
     local root="$1"
     local bad_files=""
 
-    if [[ "${OSTYPE:-}" == msys* ]] || [[ "${OSTYPE:-}" == mingw* ]]; then
+    if [[ "${OSTYPE:-}" == msys* ]] || [[ "${OSTYPE:-}" == mingw* ]] \
+        || [[ "${MSYSTEM:-}" == MINGW64* ]] || uname -s 2>/dev/null | grep -qi mingw; then
         echo "AVISO: verificación CRLF omitida en Windows (los archivos se normalizan con LF al copiar)"
         return 0
     fi
@@ -114,6 +115,27 @@ test -f "${STAGING_DIR}/lib/reinstall.sh"
 test -f "${STAGING_DIR}/src/backend/Dockerfile"
 test -f "${STAGING_DIR}/src/frontend/Dockerfile"
 test -f "${STAGING_DIR}/config/defaults.conf"
+
+if [[ -f "${STAGING_DIR}/src/frontend/src/app/icon.png" ]]; then
+    echo "ERROR: src/frontend/src/app/icon.png no debe incluirse (usar metadata icons en layout.tsx)"
+    exit 1
+fi
+
+repo_root="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [[ -f "${repo_root}/frontend/package.json" ]] && command -v npm >/dev/null 2>&1; then
+    echo "Verificando TypeScript del panel..."
+    if [[ ! -d "${repo_root}/frontend/node_modules" ]]; then
+        (cd "${repo_root}/frontend" && npm ci --prefer-offline 2>/dev/null) || true
+    fi
+    if [[ -d "${repo_root}/frontend/node_modules" ]]; then
+        (cd "${repo_root}/frontend" && npm run typecheck) || {
+            echo "ERROR: typecheck del panel falló. Corrija errores TypeScript antes de empaquetar."
+            exit 1
+        }
+    else
+        echo "AVISO: node_modules no disponible; omitiendo typecheck del panel"
+    fi
+fi
 
 if grep -q 'PANEL_PORT' "${STAGING_DIR}/templates/docker-compose.platform.yml"; then
     echo "ERROR: docker-compose.platform.yml aún contiene PANEL_PORT (debe usar docker-compose.ports.yml)"

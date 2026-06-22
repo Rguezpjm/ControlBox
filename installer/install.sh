@@ -5,7 +5,7 @@ set -euo pipefail
 CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-1.1.0}"
 CONTROLBOX_INSTALL_URL="${CONTROLBOX_INSTALL_URL:-https://install.grodtech.com}"
 CONTROLBOX_INSTALLER_ROOT="${CONTROLBOX_INSTALLER_ROOT:-}"
-CONTROLBOX_BOOTSTRAP_BUILD="20250621-41"
+CONTROLBOX_BOOTSTRAP_BUILD="20250622-53"
 
 cb_resolve_installer_root() {
     local tmp_dir="$1"
@@ -310,6 +310,7 @@ cb_main_install() {
 
     cb_info "Iniciando instalación ControlBox v${CONTROLBOX_VERSION} (build ${CONTROLBOX_BOOTSTRAP_BUILD})"
     cb_info "Log: ${CB_LOG_FILE}"
+    export CB_INSTALL_STARTED_AT="${install_started_at}"
     cb_progress_init 16
 
     cb_rollback_create_snapshot "pre-install"
@@ -332,89 +333,29 @@ cb_main_install() {
 
     cb_config_generate
     cb_setup_load_state
-    cb_services_load_state
+    cb_services_load_state || true
     cb_firewall_configure
     cb_docker_pull_images
     cb_docker_deploy_stack
-    cb_domains_configure
-    cb_ssl_configure
-    cb_tenant_bootstrap
-    cb_backup_configure
-
+    export CB_INSTALL_DEPLOYED=1
     cb_rollback_clear_active
+
+    cb_domains_configure || cb_warn "Configuración de dominios incompleta (continúe con: controlbox domains)"
+    cb_ssl_configure || cb_warn "SSL no configurado (acceso por IP/puerto del panel)"
+    if ! cb_tenant_bootstrap; then
+        cb_warn "Cuenta administradora no confirmada — ejecute: controlbox repair"
+    fi
+    cb_backup_configure || cb_warn "Backups automáticos no configurados"
+
     touch "${CONTROLBOX_STATE_DIR}/installed"
     echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "${CONTROLBOX_STATE_DIR}/installed"
 
-    cb_print_post_install_summary "${install_started_at}"
+    if declare -f cb_panel_verify_access >/dev/null 2>&1; then
+        cb_panel_verify_access 90 || cb_warn "Si el navegador no carga, abra puertos 80 y ${CONTROLBOX_PANEL_PORT:-8475} en el firewall del proveedor cloud"
+    fi
+    cb_print_post_install_summary "${install_started_at}" || true
     cb_progress_render "Instalación completada"
     echo ""
-}
-
-cb_print_post_install_summary() {
-    local install_started_at="${1:-$(date +%s)}"
-    cb_setup_load_state
-
-    local server_ip
-    server_ip="$(cb_setup_get_server_ip)"
-    local panel_url
-    panel_url="$(cb_setup_panel_url "${server_ip}" "${CONTROLBOX_PANEL_PORT}")"
-
-    if [[ -f "${CONTROLBOX_CONFIG_DIR}/domains.conf" ]]; then
-        cb_load_env_file "${CONTROLBOX_CONFIG_DIR}/domains.conf"
-        if [[ -n "${PANEL_DOMAIN:-}" ]]; then
-            panel_url="https://${PANEL_DOMAIN}/${panel_path}"
-        fi
-    fi
-
-    local elapsed=$(( $(date +%s) - install_started_at ))
-    local elapsed_min=$(( elapsed / 60 ))
-    local firewall_ports="${CONTROLBOX_PANEL_PORT}|80|443"
-
-    echo ""
-    echo "=================================================================="
-    echo -e "${CB_GREEN}${CB_BOLD}Congratulations! ControlBox installed successfully!${CB_NC}"
-    echo "=================================================================="
-    echo ""
-    echo -e "${CB_BOLD}Panel:${CB_NC}     ${panel_url}"
-    echo -e "${CB_BOLD}Username:${CB_NC}  ${CONTROLBOX_TENANT_ADMIN_EMAIL}"
-    echo -e "${CB_BOLD}Password:${CB_NC}  ${CONTROLBOX_TENANT_ADMIN_PASSWORD}"
-    echo ""
-    echo -e "${CB_YELLOW}${CB_BOLD}Warning:${CB_NC}"
-    echo "If you cannot access the panel, release the following ports"
-    echo "in your security group / firewall: ${firewall_ports}"
-    echo ""
-    echo "=================================================================="
-    echo -e "${CB_BOLD}Time consumed:${CB_NC} ${elapsed_min} Minute(s)!"
-    echo "=================================================================="
-    echo ""
-    echo -e "  ${CB_BOLD}Detalles adicionales:${CB_NC}"
-    echo -e "  IP del servidor:     ${server_ip}"
-    echo -e "  Puerto del panel:    ${CONTROLBOX_PANEL_PORT}"
-    echo -e "  Directorio:          ${CONTROLBOX_INSTALL_DIR}"
-    echo -e "  Configuración:       ${CONTROLBOX_CONFIG_DIR}"
-    echo -e "  Credenciales:        ${CONTROLBOX_CONFIG_DIR}/credentials.txt"
-    echo -e "  Logs:                ${CB_LOG_FILE}"
-    echo ""
-    echo -e "  ${CB_BOLD}Comandos útiles:${CB_NC}"
-    echo "    controlbox          # menú interactivo de recuperación (o: cb)"
-    echo "    controlbox status"
-    echo "    controlbox repair"
-    echo "    controlbox credentials"
-    echo ""
-    if [[ -f "${CONTROLBOX_CONFIG_DIR}/domains.conf" ]]; then
-        cb_load_env_file "${CONTROLBOX_CONFIG_DIR}/domains.conf"
-        echo -e "  ${CB_BOLD}URLs por dominio:${CB_NC}"
-        echo "    Panel:    https://${PANEL_DOMAIN:-panel.example.com}"
-        echo "    API:      https://${API_DOMAIN:-api.example.com}"
-        echo "    Grafana:  https://${GRAFANA_DOMAIN:-grafana.example.com}"
-        echo "    MinIO:    https://${MINIO_DOMAIN:-minio.example.com}"
-        echo "    Supabase: https://${SUPABASE_DOMAIN:-supabase.example.com}"
-    fi
-    echo ""
-    cb_warn "Guarde estas credenciales. También están en ${CONTROLBOX_CONFIG_DIR}/credentials.txt"
-    echo ""
-    echo -e "  ${CB_BOLD}Siguiente paso:${CB_NC} Inicie sesión y complete Settings → Producción (secretos, TOTP, alertas)"
-    cb_success "Instalación completada"
 }
 
 cb_run_installer() {
@@ -427,6 +368,8 @@ cb_run_installer() {
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/ssl.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/domains.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/setup.sh"
+    source "${CONTROLBOX_INSTALLER_ROOT}/lib/panel.sh"
+    source "${CONTROLBOX_INSTALLER_ROOT}/lib/credentials-display.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/services.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/tenant.sh"
     source "${CONTROLBOX_INSTALLER_ROOT}/lib/backup.sh"
@@ -448,11 +391,11 @@ cb_run_installer() {
             echo "  CONTROLBOX_TENANT_NAME        Nombre de la organización"
             echo "  CONTROLBOX_TENANT_SLUG        Slug del tenant"
             echo "  CONTROLBOX_TENANT_ADMIN_EMAIL Email del administrador"
-            echo "  CONTROLBOX_TENANT_ADMIN_PASSWORD Contraseña del administrador (8+ chars; auto = 8 dígitos)"
+            echo "  CONTROLBOX_TENANT_ADMIN_PASSWORD Contraseña del administrador (mín. 12; auto = 12 dígitos)"
             echo "  CONTROLBOX_ENABLED_PROFILES Perfiles docker: databases,backups,monitoring,supabase"
             echo "  CONTROLBOX_TENANT_ADMIN_FULL_NAME Nombre completo del administrador"
-            echo "  CONTROLBOX_PANEL_PORT       Puerto del panel (ej. 8475)"
-            echo "  CONTROLBOX_SERVER_IP        IP del VPS (auto-detecta LAN; evita ifconfig.me)"
+            echo "  CONTROLBOX_PANEL_PORT       Puerto del panel (default: 8475)"
+            echo "  CONTROLBOX_SERVER_IP        IP pública del VPS (auto-detecta vía ifconfig.me)"
             echo "  CONTROLBOX_ASSUME_YES=true  Sin confirmaciones interactivas"
             echo "  CONTROLBOX_FORCE_INSTALL    Omitir confirmaciones de recursos bajos"
             echo "  CONTROLBOX_REINSTALL=true   Reinstalar si ya existe"

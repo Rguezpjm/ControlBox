@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { APP_BASE_PATH, withBasePath } from "@/lib/base-path";
 
 const PUBLIC_PATHS = ["/login", "/register", "/accept-invite"];
-/** Old default path; redirect to root when panel runs without basePath (aaPanel style). */
+/** Legacy default path; redirect to root when panel runs without basePath. */
 const LEGACY_PANEL_PREFIX = "/ControlBox_Panel";
 
 function stripBasePath(pathname: string): string {

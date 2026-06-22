@@ -17,8 +17,16 @@ from controlbox.config.settings import Settings
 logger = logging.getLogger("controlbox.ssl")
 
 
+def _path_is_readable_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def _acme_file(settings: Settings) -> Path:
     candidates = [
+        Path("/etc/controlbox/letsencrypt/acme.json"),
         Path("/host/var/lib/controlbox/letsencrypt/acme.json"),
         Path("/var/lib/controlbox/letsencrypt/acme.json"),
     ]
@@ -27,7 +35,7 @@ def _acme_file(settings: Settings) -> Path:
         base = Path(raw.replace("/host", "") if raw.startswith("/host/") else raw)
         candidates.insert(0, base / "letsencrypt" / "acme.json")
     for path in candidates:
-        if path.is_file():
+        if _path_is_readable_file(path):
             return path
     return candidates[0]
 

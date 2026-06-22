@@ -110,34 +110,60 @@ cb_cli_show_credentials() {
     local cred="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}/credentials.txt"
     local env_file
     env_file="$(cb_cli_env_file)"
-    if [[ -f "${cred}" ]]; then
-        echo ""
-        cat "${cred}"
-        echo ""
-        return 0
+
+    if [[ -f "${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}/lib/setup.sh" ]]; then
+        # shellcheck source=lib/setup.sh
+        source "${CONTROLBOX_INSTALL_DIR}/lib/setup.sh"
     fi
+
+    local panel_url=""
+    local email=""
+    local password=""
+
+    if declare -f cb_setup_load_state >/dev/null 2>&1; then
+        cb_setup_load_state 2>/dev/null || true
+        email="${CONTROLBOX_TENANT_ADMIN_EMAIL:-}"
+        password="${CONTROLBOX_TENANT_ADMIN_PASSWORD:-}"
+        if declare -f cb_setup_get_server_ip >/dev/null 2>&1; then
+            panel_url="$(cb_setup_panel_url "$(cb_setup_get_server_ip)" "${CONTROLBOX_PANEL_PORT:-8475}")"
+        fi
+    fi
+
     if [[ -f "${env_file}" ]]; then
-        local email port ip
-        email="$(grep '^TENANT_ADMIN_EMAIL=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
-        port="$(grep '^PANEL_PORT=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
-        ip="$(grep '^CONTROLBOX_SERVER_IP=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
-        port="${port:-8475}"
-        ip="${ip:-127.0.0.1}"
-        echo ""
-        echo "  Panel URL:  http://${ip}:${port}/"
-        echo "  Email:      ${email:-admin@controlbox.local}"
-        echo "  Password:   (see TENANT_ADMIN_PASSWORD in ${env_file})"
-        echo ""
-        return 0
+        [[ -z "${email}" ]] && email="$(grep '^TENANT_ADMIN_EMAIL=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+        [[ -z "${password}" ]] && password="$(grep '^TENANT_ADMIN_PASSWORD=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+        if [[ -z "${panel_url}" ]]; then
+            local port ip
+            port="$(grep '^PANEL_PORT=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+            ip="$(grep '^CONTROLBOX_SERVER_IP=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+            port="${port:-8475}"
+            ip="${ip:-127.0.0.1}"
+            panel_url="http://${ip}:${port}/"
+        fi
     fi
-    echo "[WARN] No credentials file found"
+
+    email="${email:-admin@controlbox.local}"
+
+    echo ""
+    echo "=================================================================="
+    echo "ControlBox — credenciales de acceso"
+    echo "=================================================================="
+    echo ""
+    echo "  URL del panel:  ${panel_url:-desconocida}"
+    echo "  Usuario:        ${email}"
+    echo "  Contraseña:     ${password:-(ver platform.env)}"
+    echo ""
+    if [[ -f "${cred}" ]]; then
+        echo "  Archivo completo: ${cred}"
+        echo ""
+    fi
 }
 
 cb_cli_set_password() {
     local env_file
     env_file="$(cb_cli_env_file)"
     local pwd1 pwd2
-    read -r -s -p "New admin password (min 8 chars): " pwd1
+    read -r -s -p "New admin password (min 12 chars): " pwd1
     echo ""
     read -r -s -p "Confirm password: " pwd2
     echo ""
@@ -145,8 +171,8 @@ cb_cli_set_password() {
         echo "[ERROR] Passwords do not match"
         return 1
     fi
-    if [[ ${#pwd1} -lt 8 ]]; then
-        echo "[ERROR] Password must be at least 8 characters"
+    if [[ ${#pwd1} -lt 12 ]]; then
+        echo "[ERROR] Password must be at least 12 characters"
         return 1
     fi
     cb_cli_set_env_key "TENANT_ADMIN_PASSWORD" "${pwd1}"

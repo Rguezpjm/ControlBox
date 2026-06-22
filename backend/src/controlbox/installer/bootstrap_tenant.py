@@ -120,7 +120,7 @@ def _normalize_password(value: str) -> str:
 
             "Admin password too long for bcrypt (%s bytes, max 72). "
 
-            "Fix TENANT_ADMIN_PASSWORD in platform.env (8-64 characters).",
+            "Fix TENANT_ADMIN_PASSWORD in platform.env (12-64 characters).",
 
             byte_len,
 
@@ -128,9 +128,9 @@ def _normalize_password(value: str) -> str:
 
         raise ValueError("admin password exceeds bcrypt limit")
 
-    if len(cleaned) < 8:
+    if len(cleaned) < 12:
 
-        raise ValueError("admin password must be at least 8 characters")
+        raise ValueError("admin password must be at least 12 characters")
 
     return cleaned
 

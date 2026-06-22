@@ -74,6 +74,58 @@ cb_compose_repair_compose_ports() {
     fi
 
     cb_compose_write_port_override "${panel_port}"
+    cb_compose_fix_api_letsencrypt_mount
+    cb_ssl_fix_acme_permissions 2>/dev/null || true
+}
+
+cb_compose_fix_api_letsencrypt_mount() {
+    local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
+    local compose_file="${install_dir}/docker-compose.yml"
+    local template_file="${install_dir}/templates/docker-compose.platform.yml"
+    local entrypoint="${install_dir}/src/backend/docker-entrypoint.sh"
+    local needs_api_rebuild=0
+
+    for file in "${compose_file}" "${template_file}"; do
+        [[ -f "${file}" ]] || continue
+        if grep -q '/var/lib/controlbox/letsencrypt' "${file}" 2>/dev/null; then
+            sed -i \
+                's|${CONTROLBOX_DATA_DIR}/letsencrypt:/var/lib/controlbox/letsencrypt:ro|${CONTROLBOX_DATA_DIR}/letsencrypt:/etc/controlbox/letsencrypt:ro|g' \
+                "${file}" 2>/dev/null || true
+            cb_info "Montaje letsencrypt corregido en $(basename "${file}")"
+        fi
+    done
+
+    if [[ -f "${entrypoint}" ]] && grep -q 'chown -R controlbox:controlbox /var/lib/controlbox' "${entrypoint}" 2>/dev/null; then
+        cat > "${entrypoint}" << 'EOF'
+#!/bin/sh
+set -e
+
+writable_dirs="/var/lib/controlbox/sites /var/lib/controlbox/backups /var/lib/controlbox/backups/databases"
+
+for dir in $writable_dirs; do
+  mkdir -p "$dir"
+done
+
+if [ "$(id -u)" = "0" ]; then
+  for dir in $writable_dirs; do
+    chown -R controlbox:controlbox "$dir" 2>/dev/null || true
+  done
+  if [ -d /var/log/pure-ftpd ]; then
+    chown -R controlbox:controlbox /var/log/pure-ftpd 2>/dev/null || true
+  fi
+  exec gosu controlbox "$@"
+fi
+
+exec "$@"
+EOF
+        chmod +x "${entrypoint}"
+        cb_info "docker-entrypoint.sh del API actualizado"
+        needs_api_rebuild=1
+    fi
+
+    if [[ "${needs_api_rebuild}" -eq 1 ]]; then
+        export CB_API_ENTRYPOINT_PATCHED=1
+    fi
 }
 
 cb_compose_ensure_docker_proxy() {
@@ -289,7 +341,7 @@ cb_compose_write_port_override() {
 services:
   panel:
     ports:
-      - "${panel_port}:3000"
+      - "0.0.0.0:${panel_port}:3000"
 EOF
     cb_info "Puerto del panel en Docker: ${panel_port}"
 }
@@ -332,16 +384,29 @@ cb_docker_pull_images() {
     if cb_config_deploy_app_build_override 2>/dev/null || cb_app_source_available; then
         cb_info "Código fuente incluido: construyendo API y Panel en el servidor"
         cb_progress_note "Fase 1/2: descargando imágenes base (postgres, redis, traefik...)"
-        cb_docker_compose_run "${env_file}" pull --ignore-buildable --progress=plain 2>/dev/null \
-            || cb_docker_compose_run_verbose "${env_file}" pull --ignore-buildable \
-            || cb_docker_compose_run_verbose "${env_file}" pull \
+        local -a pull_services=(postgres redis traefik docker-socket-proxy)
+        local profiles="${CONTROLBOX_ENABLED_PROFILES:-databases,backups}"
+        [[ "${profiles}" == *databases* ]] && pull_services+=(mysql)
+        [[ "${profiles}" == *backups* ]] && pull_services+=(minio)
+        cb_docker_compose_run "${env_file}" pull "${pull_services[@]}" --progress=plain 2>/dev/null \
+            || cb_docker_compose_run_verbose "${env_file}" pull "${pull_services[@]}" \
             || true
+        rm -f "${CONTROLBOX_INSTALL_DIR}/src/frontend/src/app/icon.png" 2>/dev/null || true
         cb_progress_note "Fase 2/2: compilando API (backend Python)..."
+        local api_build_args=(build --progress=plain api)
+        if [[ "${CB_API_ENTRYPOINT_PATCHED:-}" == "1" ]]; then
+            api_build_args=(build --no-cache --progress=plain api)
+            cb_info "Recompilando API sin caché (entrypoint corregido)"
+        fi
         cb_run_stream "Build Docker: API" \
-            cb_docker_compose_run_verbose "${env_file}" build --progress=plain api
+            cb_docker_compose_run_verbose "${env_file}" "${api_build_args[@]}"
         cb_progress_note "Compilando Panel (frontend Next.js) — suele ser la fase más lenta..."
+        local -a panel_build_args=(build --progress=plain panel)
+        if [[ "${CONTROLBOX_REINSTALL:-}" == "true" ]]; then
+            panel_build_args=(build --no-cache --progress=plain panel)
+        fi
         cb_run_stream "Build Docker: Panel" \
-            cb_docker_compose_run_verbose "${env_file}" build --progress=plain panel
+            cb_docker_compose_run_verbose "${env_file}" "${panel_build_args[@]}"
         cb_success "Imágenes base descargadas y API/Panel construidos"
         return 0
     fi
@@ -437,6 +502,7 @@ cb_docker_deploy_stack() {
 
     cb_compose_repair_compose_ports
     cb_compose_ensure_docker_proxy
+    cb_ssl_fix_acme_permissions 2>/dev/null || true
     cb_progress_note "Validando docker-compose.yml..."
     cb_docker_compose_run "${env_file}" config >/dev/null
 
