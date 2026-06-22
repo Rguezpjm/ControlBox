@@ -5,7 +5,7 @@ set -euo pipefail
 CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-1.1.0}"
 CONTROLBOX_INSTALL_URL="${CONTROLBOX_INSTALL_URL:-https://install.grodtech.com}"
 CONTROLBOX_INSTALLER_ROOT="${CONTROLBOX_INSTALLER_ROOT:-}"
-CONTROLBOX_BOOTSTRAP_BUILD="20250622-53"
+CONTROLBOX_BOOTSTRAP_BUILD="20250622-54"
 
 cb_resolve_installer_root() {
     local tmp_dir="$1"
@@ -395,7 +395,8 @@ cb_run_installer() {
             echo "  CONTROLBOX_ENABLED_PROFILES Perfiles docker: databases,backups,monitoring,supabase"
             echo "  CONTROLBOX_TENANT_ADMIN_FULL_NAME Nombre completo del administrador"
             echo "  CONTROLBOX_PANEL_PORT       Puerto del panel (default: 8475)"
-            echo "  CONTROLBOX_SERVER_IP        IP pública del VPS (auto-detecta vía ifconfig.me)"
+            echo "  CONTROLBOX_SERVER_IP        IP del VPS (sobrescribe autodetección)"
+            echo "  CONTROLBOX_PREFER_PUBLIC_IP true para priorizar IP pública"
             echo "  CONTROLBOX_ASSUME_YES=true  Sin confirmaciones interactivas"
             echo "  CONTROLBOX_FORCE_INSTALL    Omitir confirmaciones de recursos bajos"
             echo "  CONTROLBOX_REINSTALL=true   Reinstalar si ya existe"

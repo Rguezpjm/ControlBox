@@ -105,6 +105,8 @@ controlbox uninstall
 | `CONTROLBOX_TENANT_ADMIN_PASSWORD` | Contraseña (mín. 12 caracteres) |
 | `CONTROLBOX_TENANT_ADMIN_FULL_NAME` | Nombre completo del administrador |
 | `CONTROLBOX_PANEL_PORT` | Puerto del panel en el VPS |
+| `CONTROLBOX_SERVER_IP` | IP del VPS (sobrescribe autodetección) |
+| `CONTROLBOX_PREFER_PUBLIC_IP` | `true` para priorizar IP pública detectada |
 | `CONTROLBOX_ASSUME_YES` | Omitir confirmaciones |
 | `CONTROLBOX_FORCE_INSTALL` | Forzar en OS no certificado |
 | `CONTROLBOX_REINSTALL` | Reinstalar si ya existe |

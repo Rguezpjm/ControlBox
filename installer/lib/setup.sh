@@ -103,7 +103,7 @@ cb_setup_prompt_install() {
         read -r -p "Contraseña del administrador (Enter = ${CB_ADMIN_PASSWORD_MIN:-12} dígitos numéricos): " tenant_admin_password
         if [[ -n "${tenant_admin_password}" ]] && ! cb_setup_validate_password "${tenant_admin_password}"; then
             while true; do
-                read -r -s -p "Contraseña del administrador (mín. 8 caracteres): " tenant_admin_password
+                read -r -s -p "Contraseña del administrador (mín. ${CB_ADMIN_PASSWORD_MIN:-12} caracteres): " tenant_admin_password
                 echo ""
                 if cb_setup_validate_password "${tenant_admin_password}"; then
                     break
@@ -311,6 +311,13 @@ cb_setup_detect_public_ip() {
     fi
 }
 
+cb_setup_should_prefer_public_ip() {
+    case "${CONTROLBOX_PREFER_PUBLIC_IP:-false}" in
+        1|true|TRUE|yes|YES|y|Y) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 cb_setup_detect_local_ip() {
     local ip=""
     local addr=""
@@ -364,7 +371,9 @@ cb_setup_detect_local_ip() {
 cb_setup_get_server_ip() {
     local ip="${CONTROLBOX_SERVER_IP:-}"
     local config_dir="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}"
-    local detected=""
+    local detected_local=""
+    local detected_public=""
+    local state_ip=""
 
     ip="${ip//\"/}"
     ip="${ip//\'/}"
@@ -383,34 +392,35 @@ cb_setup_get_server_ip() {
         fi
     fi
 
-    detected="$(cb_setup_detect_public_ip)"
-    detected="${detected//[[:space:]]/}"
-    if [[ -n "${detected}" ]]; then
-        echo "${detected}"
-        return 0
+    detected_local="$(cb_setup_detect_local_ip)"
+    detected_local="${detected_local//[[:space:]]/}"
+    detected_public="$(cb_setup_detect_public_ip)"
+    detected_public="${detected_public//[[:space:]]/}"
+    state_ip="$(cb_get_install_state SERVER_IP 2>/dev/null || true)"
+    state_ip="${state_ip//[[:space:]]/}"
+
+    if cb_setup_should_prefer_public_ip; then
+        if [[ -n "${detected_public}" ]]; then
+            echo "${detected_public}"
+            return 0
+        fi
+        if [[ -n "${detected_local}" ]]; then
+            echo "${detected_local}"
+            return 0
+        fi
+    else
+        if [[ -n "${detected_local}" ]]; then
+            echo "${detected_local}"
+            return 0
+        fi
+        if [[ -n "${detected_public}" ]]; then
+            echo "${detected_public}"
+            return 0
+        fi
     fi
 
-    detected="$(cb_setup_detect_local_ip)"
-    detected="${detected//[[:space:]]/}"
-    if [[ -n "${detected}" ]] && ! cb_setup_is_private_ip "${detected}"; then
-        echo "${detected}"
-        return 0
-    fi
-
-    ip="$(cb_get_install_state SERVER_IP 2>/dev/null || true)"
-    ip="${ip//[[:space:]]/}"
-    if [[ -n "${ip}" ]] && ! cb_setup_is_private_ip "${ip}"; then
-        echo "${ip}"
-        return 0
-    fi
-
-    if [[ -n "${detected}" ]]; then
-        echo "${detected}"
-        return 0
-    fi
-
-    if [[ -n "${ip}" ]]; then
-        echo "${ip}"
+    if [[ -n "${state_ip}" ]]; then
+        echo "${state_ip}"
         return 0
     fi
 
