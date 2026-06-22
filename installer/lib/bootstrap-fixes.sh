@@ -162,6 +162,21 @@ cb_compose_ensure_docker_proxy() {
         cb_compose_repair_compose_ports
     fi
 
+    # Asegurar que el tmpfs de docker-socket-proxy incluya /run (necesario para haproxy.pid).
+    # Si el compose existente no tiene /run en tmpfs, actualizamos desde el template.
+    if [[ -f "${compose_file}" ]] && [[ -f "${template_file}" ]]; then
+        if ! awk '
+            /container_name: controlbox-docker-proxy/{proxy=1}
+            proxy && /- \/run/{found=1; exit}
+            /^  [a-z]/ && !/controlbox-docker-proxy/ && proxy{exit}
+            END{exit (found ? 0 : 1)}
+        ' "${compose_file}" 2>/dev/null; then
+            cb_warn "Actualizando docker-compose.yml: falta /run en tmpfs de docker-socket-proxy (haproxy.pid)"
+            cp -f "${template_file}" "${compose_file}"
+            cb_compose_repair_compose_ports
+        fi
+    fi
+
     if [[ -f "${env_file}" ]] && grep -q '^REDIS_PASSWORD=' "${env_file}" 2>/dev/null; then
         local redis_pass
         redis_pass="$(grep '^REDIS_PASSWORD=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
@@ -242,7 +257,7 @@ cb_docker_registry_image_ok() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-4.11.2}"
+    local version="${CONTROLBOX_VERSION:-4.11.3}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     cb_app_source_available || return 1
@@ -446,7 +461,7 @@ cb_compose_validate_env_file() {
 cb_docker_pull_images() {
     cb_step "Descargando imágenes Docker"
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
-    local version="${CONTROLBOX_VERSION:-4.11.2}"
+    local version="${CONTROLBOX_VERSION:-4.11.3}"
     local api_image="ghcr.io/grodtech/controlbox-api:${version}"
 
     if ! cb_compose_validate_env_file "${env_file}"; then

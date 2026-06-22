@@ -39,8 +39,8 @@ else
 fi
 
 echo ""
-echo "==> controlbox-installer-4.11.2.tar.gz"
-if ! curl -fsSL "${CDN_URL}/controlbox-installer-4.11.2.tar.gz" -o "${tar_file}"; then
+echo "==> controlbox-installer-4.11.3.tar.gz"
+if ! curl -fsSL "${CDN_URL}/controlbox-installer-4.11.3.tar.gz" -o "${tar_file}"; then
     echo "FALLO: tar.gz no accesible"
     exit 1
 fi

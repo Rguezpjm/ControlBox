@@ -304,7 +304,7 @@ cb_config_deploy_templates() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-4.11.2}"
+    local version="${CONTROLBOX_VERSION:-4.11.3}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     [[ -f "${install_dir}/src/backend/Dockerfile" ]] \
