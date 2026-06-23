@@ -367,13 +367,12 @@ class FtpServiceManager:
             await self._run_compose(["--profile", "ftp", "stop", "pureftpd", "sftp"], optional=True)
             return True, "Servicio FTP deshabilitado", await self.get_config()
 
-        profile_cmd = self._compose_base_cmd() + ["--profile", "ftp"]
         if protocol == "sftp":
             await self._run_compose(["--profile", "ftp", "stop", "pureftpd"], optional=True)
-            ok, msg = await self._run_compose(profile_cmd + ["up", "-d", "--remove-orphans", "sftp"])
+            ok, msg = await self._run_compose(["--profile", "ftp", "up", "-d", "--remove-orphans", "sftp"])
         else:
             await self._run_compose(["--profile", "ftp", "stop", "sftp"], optional=True)
-            ok, msg = await self._run_compose(profile_cmd + ["up", "-d", "--remove-orphans", "pureftpd"])
+            ok, msg = await self._run_compose(["--profile", "ftp", "up", "-d", "--remove-orphans", "pureftpd"])
 
         if not ok:
             return False, msg, await self.get_config()
@@ -402,8 +401,7 @@ class FtpServiceManager:
         if config.protocol != "sftp":
             return True, "skipped"
         self._write_sftp_compose(accounts)
-        profile_cmd = self._compose_base_cmd() + ["--profile", "ftp"]
-        return await self._run_compose(profile_cmd + ["up", "-d", "--force-recreate", "sftp"])
+        return await self._run_compose(["--profile", "ftp", "up", "-d", "--force-recreate", "sftp"])
 
     async def sync_sftp_user(self, account: FtpAccount, plain_password: str, all_accounts: list[FtpAccount]) -> None:
         config = await self.get_config()

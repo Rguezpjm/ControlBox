@@ -208,6 +208,7 @@ async def mysql_resync_root_password(settings: Settings | None = None) -> None:
     sql_pass = _sql_escape_password(password)
     reset_sql = "\n".join(
         [
+            "FLUSH PRIVILEGES;",
             f"ALTER USER 'root'@'localhost' IDENTIFIED BY '{sql_pass}';",
             "GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;",
             f"CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '{sql_pass}';",

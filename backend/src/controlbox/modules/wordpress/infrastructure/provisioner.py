@@ -99,6 +99,8 @@ def _render_compose(
     domain: str,
     router_name: str,
     ssl_enabled: bool,
+    site_uid: int,
+    site_gid: int,
 ) -> str:
     label_map = traefik_router_labels(
         router_name,
@@ -139,7 +141,7 @@ def _render_compose(
     networks:
       - controlbox
       - wp_internal
-    user: "33:33"
+    user: "{site_uid}:{site_gid}"
 
   wp-cli:
     image: wordpress:cli-php{php_version}
@@ -149,7 +151,7 @@ def _render_compose(
     networks:
       - controlbox
       - wp_internal
-    user: "33:33"
+    user: "{site_uid}:{site_gid}"
     working_dir: /var/www/html
 
 networks:
@@ -224,6 +226,11 @@ class WordPressProvisioner:
 
         router_name = f"wp-{str(site.id).split('-')[0]}"
         php_image = f"wordpress:php{site.php_version}-fpm"
+        try:
+            wp_stat = (site_path / "wordpress").stat()
+            site_uid, site_gid = wp_stat.st_uid, wp_stat.st_gid
+        except OSError:
+            site_uid, site_gid = os.getuid(), os.getgid()
         compose = _render_compose(
             nginx_name=nginx_name,
             php_name=php_name,
@@ -232,6 +239,8 @@ class WordPressProvisioner:
             domain=site.domain,
             router_name=router_name,
             ssl_enabled=site.ssl_enabled,
+            site_uid=site_uid,
+            site_gid=site_gid,
         )
         (site_path / "docker-compose.yml").write_text(compose, encoding="utf-8")
 

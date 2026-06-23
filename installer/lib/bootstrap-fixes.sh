@@ -863,6 +863,7 @@ if [ \"\$ready\" != \"1\" ]; then
   exit 1
 fi
 mysql -uroot --protocol=socket <<EOSQL
+FLUSH PRIVILEGES;
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${sql_pass}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
 CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${sql_pass}';
