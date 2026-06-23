@@ -266,6 +266,7 @@ cb_os_create_directories() {
         "${CONTROLBOX_CONFIG_DIR}/minio"
         "${CONTROLBOX_DATA_DIR}/postgres"
         "${CONTROLBOX_DATA_DIR}/mysql"
+        "${CONTROLBOX_DATA_DIR}/mssql"
         "${CONTROLBOX_DATA_DIR}/redis"
         "${CONTROLBOX_DATA_DIR}/minio"
         "${CONTROLBOX_DATA_DIR}/grafana"

@@ -131,6 +131,26 @@ services:
       retries: 5
       start_period: 30s
 
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: controlbox-mssql
+    restart: unless-stopped
+    profiles:
+      - databases
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_ADMIN_PASSWORD:?required}
+    volumes:
+      - ${CONTROLBOX_DATA_DIR}/mssql:/var/opt/mssql
+    networks:
+      - controlbox
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 90s
+
   minio:
     image: minio/minio:${MINIO_VERSION:-latest}
     container_name: controlbox-minio
@@ -162,6 +182,7 @@ services:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
       MYSQL_HOST: mysql
+      MSSQL_HOST: mssql
       DOCKER_HOST: tcp://docker-socket-proxy:2375
       HOST_PROC: /host/proc
       HOST_ROOT: /host/root
@@ -210,6 +231,7 @@ services:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
       MYSQL_HOST: mysql
+      MSSQL_HOST: mssql
       DOCKER_HOST: tcp://docker-socket-proxy:2375
       SITES_BASE_PATH: /var/lib/controlbox/sites
       BACKUPS_BASE_PATH: /var/lib/controlbox/backups

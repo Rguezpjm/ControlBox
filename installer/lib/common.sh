@@ -208,7 +208,7 @@ cb_platform_env_dedupe_keys() {
     [[ -f "${env_file}" ]] || return 0
 
     local key value count
-    for key in MYSQL_ADMIN_PASSWORD REDIS_PASSWORD POSTGRES_PASSWORD SUPABASE_DB_PASSWORD SUPABASE_DB_ADMIN_PASSWORD; do
+    for key in MYSQL_ADMIN_PASSWORD MSSQL_ADMIN_PASSWORD REDIS_PASSWORD POSTGRES_PASSWORD SUPABASE_DB_PASSWORD SUPABASE_DB_ADMIN_PASSWORD; do
         count="$(grep -c "^${key}=" "${env_file}" 2>/dev/null || echo 0)"
         if [[ "${count}" -gt 1 ]]; then
             value="$(cb_env_read_key "${env_file}" "${key}" 2>/dev/null || true)"

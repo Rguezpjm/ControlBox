@@ -754,6 +754,8 @@ cb_docker_deploy_stack() {
         "cb_compose_service_is_running '${env_file}' panel" 180
 
     cb_mysql_ensure_remote_root "${env_file}" || true
+    cb_mssql_ensure_env_keys "${env_file}" || true
+    cb_mssql_ensure_running "${env_file}" || true
     cb_supabase_ensure_running "${env_file}" || true
     cb_ftp_ensure_running "${env_file}" || true
 
@@ -848,19 +850,29 @@ cb_mysql_resync_root_password() {
 set -e
 mysqld --user=mysql --skip-grant-tables --skip-networking &
 pid=\$!
+ready=0
 for i in \$(seq 1 90); do
-  mysqladmin ping --silent 2>/dev/null && break
+  if mysqladmin ping --silent 2>/dev/null; then
+    ready=1
+    break
+  fi
   sleep 1
 done
-mysql -e \"FLUSH PRIVILEGES;\"
-mysql -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '${sql_pass}';\"
-mysql -e \"CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${sql_pass}';\"
-mysql -e \"ALTER USER 'root'@'%' IDENTIFIED BY '${sql_pass}';\"
-mysql -e \"CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '${sql_pass}';\"
-mysql -e \"ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY '${sql_pass}';\"
-mysql -e \"GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;\"
-mysql -e \"GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;\"
-mysql -e \"FLUSH PRIVILEGES;\"
+if [ \"\$ready\" != \"1\" ]; then
+  echo 'MySQL no arrancó en modo skip-grant-tables' >&2
+  exit 1
+fi
+mysql -uroot --protocol=socket <<EOSQL
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${sql_pass}';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${sql_pass}';
+ALTER USER 'root'@'%' IDENTIFIED BY '${sql_pass}';
+CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '${sql_pass}';
+ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY '${sql_pass}';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+EOSQL
 kill \"\$pid\" 2>/dev/null || true
 wait \"\$pid\" 2>/dev/null || true
 "; then
@@ -881,6 +893,80 @@ wait \"\$pid\" 2>/dev/null || true
     done
 
     cb_error "MySQL no respondió tras resincronizar la contraseña root"
+    return 1
+}
+
+cb_mssql_ensure_env_keys() {
+    local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
+    [[ -f "${env_file}" ]] || return 0
+
+    if ! grep -q '^MSSQL_ADMIN_PASSWORD=' "${env_file}" 2>/dev/null; then
+        local mssql_pass="Cb$(cb_generate_secret 16)!9"
+        cb_env_patch_key "${env_file}" "MSSQL_ADMIN_PASSWORD" "${mssql_pass}"
+        cb_info "MSSQL_ADMIN_PASSWORD generado en platform.env"
+    fi
+    grep -q '^MSSQL_HOST=' "${env_file}" 2>/dev/null \
+        || echo "MSSQL_HOST=mssql" >> "${env_file}"
+    grep -q '^MSSQL_PORT=' "${env_file}" 2>/dev/null \
+        || echo "MSSQL_PORT=1433" >> "${env_file}"
+    grep -q '^MSSQL_ADMIN_USER=' "${env_file}" 2>/dev/null \
+        || echo "MSSQL_ADMIN_USER=sa" >> "${env_file}"
+}
+
+cb_mssql_ensure_running() {
+    local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
+    [[ -f "${env_file}" ]] || return 0
+
+    local profiles
+    profiles="$(grep '^CONTROLBOX_ENABLED_PROFILES=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    profiles="${profiles:-databases,backups}"
+    [[ ",${profiles}," == *",databases,"* ]] || return 0
+
+    if ! grep -q '^  mssql:' "${CONTROLBOX_INSTALL_DIR}/docker-compose.yml" 2>/dev/null; then
+        cb_warn "SQL Server no está en docker-compose.yml. Ejecute: controlbox update"
+        return 1
+    fi
+
+    cb_mssql_ensure_env_keys "${env_file}"
+
+    local mssql_pass
+    mssql_pass="$(cb_env_read_key "${env_file}" "MSSQL_ADMIN_PASSWORD" 2>/dev/null || true)"
+    [[ -n "${mssql_pass}" ]] || return 1
+
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-mssql'; then
+        if docker exec controlbox-mssql \
+            /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${mssql_pass}" -C -Q "SELECT 1" >/dev/null 2>&1; then
+            cb_success "SQL Server: servicio en ejecución"
+            return 0
+        fi
+    fi
+
+    local data_dir="${CONTROLBOX_DATA_DIR:-/var/lib/controlbox}/mssql"
+    mkdir -p "${data_dir}" 2>/dev/null || true
+    chmod 755 "${data_dir}" 2>/dev/null || true
+
+    cb_info "Iniciando SQL Server (Microsoft SQL)..."
+    cd "${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
+    local -a compose_args=(--env-file "${env_file}" -f docker-compose.yml --profile databases)
+    [[ -f docker-compose.override.yml ]] && compose_args+=(-f docker-compose.override.yml)
+    [[ -f docker-compose.ports.yml ]] && compose_args+=(-f docker-compose.ports.yml)
+    [[ -f docker-compose.build.yml ]] && compose_args+=(-f docker-compose.build.yml)
+    [[ -f "${CONTROLBOX_CONFIG_DIR}/docker-compose.ftp.yml" ]] && compose_args+=(-f "${CONTROLBOX_CONFIG_DIR}/docker-compose.ftp.yml")
+
+    docker compose "${compose_args[@]}" up -d --remove-orphans mssql 2>/dev/null \
+        || cb_warn "No se pudo levantar SQL Server automáticamente"
+
+    local i
+    for i in $(seq 1 60); do
+        if docker exec controlbox-mssql \
+            /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${mssql_pass}" -C -Q "SELECT 1" >/dev/null 2>&1; then
+            cb_success "SQL Server: servicio en ejecución"
+            return 0
+        fi
+        sleep 3
+    done
+
+    cb_warn "SQL Server no respondió a tiempo. Revise: docker logs controlbox-mssql"
     return 1
 }
 

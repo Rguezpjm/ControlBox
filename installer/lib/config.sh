@@ -16,6 +16,7 @@ cb_config_prepare_variables() {
     if [[ -z "${DASHBOARD_AUTH_PASSWORD:-}" ]]; then DASHBOARD_AUTH_PASSWORD="$(cb_generate_secret 16)"; fi
     if [[ -z "${INSTALLER_BOOTSTRAP_TOKEN:-}" ]]; then INSTALLER_BOOTSTRAP_TOKEN="$(cb_generate_secret 48)"; fi
     if [[ -z "${MYSQL_ADMIN_PASSWORD:-}" ]]; then MYSQL_ADMIN_PASSWORD="$(cb_generate_secret 24)"; fi
+    if [[ -z "${MSSQL_ADMIN_PASSWORD:-}" ]]; then MSSQL_ADMIN_PASSWORD="Cb$(cb_generate_secret 16)!9"; fi
 
     POSTGRES_PASSWORD="$(cb_sanitize_env_secret "${POSTGRES_PASSWORD}" 128 32)"
     REDIS_PASSWORD="$(cb_sanitize_env_secret "${REDIS_PASSWORD}" 128 32)"
@@ -28,6 +29,7 @@ cb_config_prepare_variables() {
     DASHBOARD_AUTH_PASSWORD="$(cb_sanitize_env_secret "${DASHBOARD_AUTH_PASSWORD}" 128 16)"
     INSTALLER_BOOTSTRAP_TOKEN="$(cb_sanitize_env_secret "${INSTALLER_BOOTSTRAP_TOKEN}" 256 48)"
     MYSQL_ADMIN_PASSWORD="$(cb_sanitize_env_secret "${MYSQL_ADMIN_PASSWORD}" 128 24)"
+    MSSQL_ADMIN_PASSWORD="$(cb_sanitize_env_secret "${MSSQL_ADMIN_PASSWORD}" 128 16)"
 
     CONTROLBOX_TENANT_NAME="${CONTROLBOX_TENANT_NAME:-Mi Organización}"
     CONTROLBOX_TENANT_SLUG="${CONTROLBOX_TENANT_SLUG:-main}"
@@ -42,7 +44,7 @@ cb_config_prepare_variables() {
     export POSTGRES_PASSWORD REDIS_PASSWORD APP_SECRET_KEY MINIO_ROOT_PASSWORD
     export GRAFANA_ADMIN_PASSWORD SUPABASE_JWT_SECRET SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY
     export INSTALLER_BOOTSTRAP_TOKEN
-    export MYSQL_ADMIN_PASSWORD
+    export MYSQL_ADMIN_PASSWORD MSSQL_ADMIN_PASSWORD
     export CONTROLBOX_TENANT_NAME CONTROLBOX_TENANT_SLUG CONTROLBOX_TENANT_ADMIN_EMAIL
     export CONTROLBOX_TENANT_ADMIN_PASSWORD CONTROLBOX_TENANT_ADMIN_FULL_NAME
 }
@@ -223,6 +225,10 @@ cb_config_generate() {
         cb_env_emit "MYSQL_PORT" "3306"
         cb_env_emit "MYSQL_ADMIN_USER" "root"
         cb_env_emit "MYSQL_ADMIN_PASSWORD" "${MYSQL_ADMIN_PASSWORD}"
+        cb_env_emit "MSSQL_HOST" "mssql"
+        cb_env_emit "MSSQL_PORT" "1433"
+        cb_env_emit "MSSQL_ADMIN_USER" "sa"
+        cb_env_emit "MSSQL_ADMIN_PASSWORD" "${MSSQL_ADMIN_PASSWORD}"
         cb_env_emit "SITES_BASE_PATH" "/var/lib/controlbox/sites"
         cb_env_emit "BACKUPS_BASE_PATH" "/var/lib/controlbox/backups"
         cb_env_emit "DATABASE_BACKUPS_PATH" "/var/lib/controlbox/backups/databases"

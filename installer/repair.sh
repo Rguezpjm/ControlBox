@@ -124,6 +124,8 @@ cb_repair_fix() {
             || true
 
         cb_mysql_ensure_remote_root "${CONTROLBOX_CONFIG_DIR}/platform.env" || true
+        cb_mssql_ensure_env_keys "${CONTROLBOX_CONFIG_DIR}/platform.env" || true
+        cb_mssql_ensure_running "${CONTROLBOX_CONFIG_DIR}/platform.env" || true
         cb_supabase_ensure_running "${CONTROLBOX_CONFIG_DIR}/platform.env" || true
         cb_ftp_ensure_running "${CONTROLBOX_CONFIG_DIR}/platform.env" || true
 

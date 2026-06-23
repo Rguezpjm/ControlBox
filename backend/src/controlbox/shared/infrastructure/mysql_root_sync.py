@@ -208,8 +208,8 @@ async def mysql_resync_root_password(settings: Settings | None = None) -> None:
     sql_pass = _sql_escape_password(password)
     reset_sql = "\n".join(
         [
-            "FLUSH PRIVILEGES;",
             f"ALTER USER 'root'@'localhost' IDENTIFIED BY '{sql_pass}';",
+            "GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;",
             f"CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '{sql_pass}';",
             f"ALTER USER 'root'@'%' IDENTIFIED BY '{sql_pass}';",
             "GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;",
@@ -224,12 +224,19 @@ async def mysql_resync_root_password(settings: Settings | None = None) -> None:
     reset_script = f"""set -e
 mysqld --user=mysql --skip-grant-tables --skip-networking &
 pid=$!
+ready=0
 for i in $(seq 1 90); do
-  if mysqladmin ping --silent 2>/dev/null; then break; fi
+  if mysqladmin ping --silent 2>/dev/null; then
+    ready=1
+    break
+  fi
   sleep 1
 done
-mysql -e "FLUSH PRIVILEGES;"
-echo {sql_b64} | base64 -d | mysql
+if [ "$ready" != "1" ]; then
+  echo "MySQL no arrancó en modo skip-grant-tables" >&2
+  exit 1
+fi
+echo {sql_b64} | base64 -d | mysql -uroot --protocol=socket
 kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 """

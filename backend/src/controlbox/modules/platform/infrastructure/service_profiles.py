@@ -24,10 +24,10 @@ SERVICE_CATALOG: tuple[dict[str, object], ...] = (
     {
         "id": "databases",
         "profile": "databases",
-        "name": "MySQL",
+        "name": "MySQL / SQL Server",
         "category": "lnmp",
-        "description": "Motor MySQL para Websites, WordPress y bases de datos gestionadas.",
-        "containers": ("controlbox-mysql",),
+        "description": "MySQL y Microsoft SQL Server para Websites, WordPress y bases de datos gestionadas.",
+        "containers": ("controlbox-mysql", "controlbox-mssql"),
         "requires": (),
     },
     {
@@ -74,7 +74,7 @@ SERVICE_CATALOG: tuple[dict[str, object], ...] = (
 )
 
 PROFILE_CONTAINER_CHECKS: dict[str, tuple[str, ...]] = {
-    "databases": ("controlbox-mysql",),
+    "databases": ("controlbox-mysql", "controlbox-mssql"),
     "backups": ("controlbox-minio",),
     "supabase": ("controlbox-supabase-db",),
     "monitoring": ("controlbox-prometheus",),
@@ -295,7 +295,13 @@ class ServiceProfilesManager:
             return True
         for profile in profiles:
             expected = PROFILE_CONTAINER_CHECKS.get(profile)
-            if expected and not any(name in running for name in expected):
+            if not expected:
+                continue
+            if profile == "databases":
+                missing = not all(name in running for name in expected)
+            else:
+                missing = not any(name in running for name in expected)
+            if missing:
                 logger.info("Profile %s enabled but containers not running: %s", profile, expected)
                 return True
         return False

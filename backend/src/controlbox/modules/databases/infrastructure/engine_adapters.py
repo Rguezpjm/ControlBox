@@ -491,7 +491,7 @@ class MsSqlAdapter(DatabaseEngineAdapter):
                 if "no such container" in lowered or "is not running" in lowered:
                     raise RuntimeError(
                         f"Contenedor {self._CONTAINER} no está en ejecución. "
-                        "Active el perfil databases con SQL Server o use MySQL."
+                        "Active el perfil «databases» en Configuración del servidor y ejecute controlbox update && controlbox repair."
                     )
                 raise RuntimeError(message or "Error ejecutando SQL en SQL Server")
             return
