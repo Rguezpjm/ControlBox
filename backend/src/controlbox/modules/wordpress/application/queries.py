@@ -51,9 +51,9 @@ class WordPressSiteResponse:
     parent_site_id: UUID | None
     error_message: str | None
     task_id: str | None
-    access_info: "WordPressSiteAccessInfo | None" = None
     created_at: datetime
     updated_at: datetime
+    access_info: "WordPressSiteAccessInfo | None" = None
 
 
 @dataclass(frozen=True)

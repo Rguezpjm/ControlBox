@@ -284,7 +284,7 @@ cb_os_create_directories() {
     cb_ssl_fix_acme_permissions 2>/dev/null || {
         chmod 755 "${CONTROLBOX_DATA_DIR}/letsencrypt"
         touch "${CONTROLBOX_DATA_DIR}/letsencrypt/acme.json"
-        chmod 644 "${CONTROLBOX_DATA_DIR}/letsencrypt/acme.json"
+        chmod 600 "${CONTROLBOX_DATA_DIR}/letsencrypt/acme.json"
     }
 
     cb_step_done "create_directories"

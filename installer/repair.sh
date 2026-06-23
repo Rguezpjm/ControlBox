@@ -107,7 +107,9 @@ cb_repair_fix() {
         cb_compose_ensure_docker_proxy
         cb_fix_platform_env_permissions
         cb_compose_fix_api_letsencrypt_mount
+        cb_platform_env_repair "${CONTROLBOX_CONFIG_DIR}/platform.env" 2>/dev/null || true
         cb_ssl_fix_acme_permissions 2>/dev/null || true
+        cb_traefik_fix_letsencrypt 2>/dev/null || true
         cb_services_load_from_platform_env
         local -a profile_args=()
         # shellcheck disable=SC2206

@@ -556,17 +556,23 @@ async def apply_runtime_profiles(
     settings: Annotated[Settings, Depends(get_settings)],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> ApplyRuntimesResponse:
-    manager = RuntimeCatalogManager(settings)
-    ok, message, runtimes = await manager.apply_runtimes(payload.runtimes)
-    if ok:
-        tenant_id = _require_tenant(context)
-        platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
-        platform_settings.setup_checklist = _patch_setup_checklist(
-            platform_settings.setup_checklist, configure_services=True
-        )
-        await uow.tenant_platform_settings.save(platform_settings)
-        await uow.commit()
-    return ApplyRuntimesResponse(success=ok, message=message, enabled_runtimes=runtimes)
+    try:
+        manager = RuntimeCatalogManager(settings)
+        ok, message, runtimes = await manager.apply_runtimes(payload.runtimes)
+        if ok:
+            tenant_id = _require_tenant(context)
+            platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
+            platform_settings.setup_checklist = _patch_setup_checklist(
+                platform_settings.setup_checklist, configure_services=True
+            )
+            await uow.tenant_platform_settings.save(platform_settings)
+            await uow.commit()
+        return ApplyRuntimesResponse(success=ok, message=message, enabled_runtimes=runtimes)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("apply_runtime_profiles failed")
+        return ApplyRuntimesResponse(success=False, message=str(exc), enabled_runtimes=[])
 
 
 @router.patch("/setup-checklist", response_model=SetupChecklistSchema)

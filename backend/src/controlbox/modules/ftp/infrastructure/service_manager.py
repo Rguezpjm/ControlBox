@@ -8,16 +8,23 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from controlbox.config.settings import Settings
-from controlbox.modules.files.infrastructure.filesystem_service import PathResolver
 from controlbox.modules.ftp.domain.entities import FtpAccount, FtpAccountStatus
-from controlbox.modules.ftp.infrastructure.provisioner import PureFtpdProvisioner
 from controlbox.modules.ftp.infrastructure.platform_env import read_platform_env_value
+from controlbox.modules.ftp.infrastructure.provisioner import PureFtpdProvisioner
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
+from controlbox.shared.infrastructure.platform_env_file import patch_env_keys, repair_celery_redis_urls
 
 logger = logging.getLogger("controlbox.ftp.service")
 
 FTP_PROTOCOLS = frozenset({"ftp", "ftps", "sftp"})
 SFTP_CHROOT_NAME = "files"
+
+
+def _safe_int(raw: str, default: int) -> int:
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
 
 
 @dataclass(frozen=True)
@@ -87,19 +94,13 @@ class FtpServiceManager:
         env_file = self._env_file()
         if not env_file.is_file():
             raise FileNotFoundError("platform.env not found on host")
-        lines = env_file.read_text(encoding="utf-8").splitlines()
-        remaining_keys = set(values.keys())
-        updated: list[str] = []
-        for line in lines:
-            key = line.split("=", 1)[0] if "=" in line else ""
-            if key in values:
-                updated.append(f"{key}={values[key]}")
-                remaining_keys.discard(key)
-            else:
-                updated.append(line)
-        for key in sorted(remaining_keys):
-            updated.append(f"{key}={values[key]}")
-        env_file.write_text("\n".join(updated) + "\n", encoding="utf-8")
+        try:
+            repair_celery_redis_urls(env_file)
+            patch_env_keys(env_file, values)
+        except OSError as exc:
+            raise OSError(
+                "No se pudo escribir platform.env. En el VPS ejecute: controlbox repair"
+            ) from exc
 
     def _ensure_ftp_profile(self, enabled: bool) -> None:
         env_file = self._env_file()
@@ -134,7 +135,27 @@ class FtpServiceManager:
       - "{port}:21"
       - "{passive_min}-{passive_max}:{passive_min}-{passive_max}"
 """
-        override.write_text(content, encoding="utf-8")
+        try:
+            override.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            raise OSError(
+                f"No se pudo escribir {override.name}. En el VPS ejecute: controlbox repair"
+            ) from exc
+
+    def ensure_compose_override_from_env(self) -> None:
+        """Ensure docker-compose.ftp.yml exists (host port mappings for Pure-FTPd/SFTP)."""
+        if self._ftp_override_file().is_file():
+            return
+        protocol = self._read_env_value("PUREFTPD_PROTOCOL", "ftp").lower()
+        if protocol not in FTP_PROTOCOLS:
+            protocol = "ftp"
+        port = _safe_int(
+            self._read_env_value("PUREFTPD_PORT", "22" if protocol == "sftp" else "21"),
+            22 if protocol == "sftp" else 21,
+        )
+        passive_min = _safe_int(self._read_env_value("PUREFTPD_PASSIVE_MIN", "30000"), 30000)
+        passive_max = _safe_int(self._read_env_value("PUREFTPD_PASSIVE_MAX", "30009"), 30009)
+        self._write_compose_override(protocol, port, passive_min, passive_max)
 
     def _sftp_passwd_file(self) -> Path:
         path = self._config_dir() / "ftp" / "sftp.passwd"
@@ -180,7 +201,7 @@ class FtpServiceManager:
 
     def _write_sftp_compose(self, accounts: list[FtpAccount]) -> None:
         override = self._ftp_override_file()
-        port = int(self._read_env_value("PUREFTPD_PORT", "22"))
+        port = _safe_int(self._read_env_value("PUREFTPD_PORT", "22"), 22)
         passwords = self._read_sftp_passwords()
         uid = self._settings.pureftpd_virtual_uid
         gid = self._settings.pureftpd_virtual_gid
@@ -240,9 +261,12 @@ class FtpServiceManager:
         protocol = self._read_env_value("PUREFTPD_PROTOCOL", "ftp").lower()
         if protocol not in FTP_PROTOCOLS:
             protocol = "ftp"
-        port = int(self._read_env_value("PUREFTPD_PORT", "21" if protocol != "sftp" else "22"))
-        passive_min = int(self._read_env_value("PUREFTPD_PASSIVE_MIN", "30000"))
-        passive_max = int(self._read_env_value("PUREFTPD_PASSIVE_MAX", "30009"))
+        port = _safe_int(
+            self._read_env_value("PUREFTPD_PORT", "21" if protocol != "sftp" else "22"),
+            21 if protocol != "sftp" else 22,
+        )
+        passive_min = _safe_int(self._read_env_value("PUREFTPD_PASSIVE_MIN", "30000"), 30000)
+        passive_max = _safe_int(self._read_env_value("PUREFTPD_PASSIVE_MAX", "30009"), 30009)
         public_host = self._read_env_value("PUREFTPD_PUBLIC_HOST", self._settings.pureftpd_host)
 
         status_raw = await self._provisioner.service_status()
@@ -273,6 +297,37 @@ class FtpServiceManager:
         )
 
     async def apply_config(
+        self,
+        *,
+        enabled: bool,
+        protocol: str,
+        port: int,
+        passive_port_min: int,
+        passive_port_max: int,
+        public_host: str,
+        sftp_accounts: list[FtpAccount] | None = None,
+    ) -> tuple[bool, str, FtpServiceConfigView]:
+        try:
+            return await self._apply_config_impl(
+                enabled=enabled,
+                protocol=protocol,
+                port=port,
+                passive_port_min=passive_port_min,
+                passive_port_max=passive_port_max,
+                public_host=public_host,
+                sftp_accounts=sftp_accounts,
+            )
+        except FileNotFoundError as exc:
+            logger.error("FTP apply_config: %s", exc)
+            return False, str(exc), await self.get_config()
+        except OSError as exc:
+            logger.error("FTP apply_config I/O error: %s", exc)
+            return False, str(exc), await self.get_config()
+        except Exception as exc:
+            logger.exception("FTP apply_config failed")
+            return False, f"Error al configurar FTP: {exc}", await self.get_config()
+
+    async def _apply_config_impl(
         self,
         *,
         enabled: bool,

@@ -11,6 +11,7 @@ from controlbox.config.settings import Settings
 from controlbox.modules.databases.infrastructure.engine_adapters import compute_checksum
 from controlbox.modules.supabase.infrastructure.crypto import SecretEncryptor
 from controlbox.modules.wordpress.domain.entities import WordPressBackup, WordPressSite
+from controlbox.shared.infrastructure.traefik_labels import compose_label_lines, traefik_router_labels
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env, validate_container_name
 from controlbox.shared.infrastructure.mysql_cli import mysql_connection_args
 from controlbox.shared.infrastructure.site_directory_config import (
@@ -99,12 +100,17 @@ def _render_compose(
     router_name: str,
     ssl_enabled: bool,
 ) -> str:
-    tls_labels = ""
-    if ssl_enabled:
-        tls_labels = f"""
-      - "traefik.http.routers.{router_name}.tls=true"
-      - "traefik.http.routers.{router_name}.tls.certresolver=letsencrypt"
-"""
+    label_map = traefik_router_labels(
+        router_name,
+        domain,
+        80,
+        ssl_enabled=ssl_enabled,
+        extra={
+            "controlbox.wordpress": "true",
+            "controlbox.logs.enabled": "true",
+        },
+    )
+    tls_labels = "\n" + "\n".join(compose_label_lines(label_map)) + "\n"
     return f"""services:
   nginx:
     image: nginx:1.27-alpine
@@ -122,11 +128,6 @@ def _render_compose(
       - wp_internal
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.{router_name}.rule=Host(`{domain}`)"
-      - "traefik.http.routers.{router_name}.entrypoints=websecure"
-      - "traefik.http.services.{router_name}.loadbalancer.server.port=80"
-      - "controlbox.wordpress=true"
-      - "controlbox.logs.enabled=true"
 {tls_labels}
   php:
     image: {php_image}

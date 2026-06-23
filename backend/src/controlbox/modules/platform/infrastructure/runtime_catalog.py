@@ -10,6 +10,7 @@ from pathlib import Path
 
 from controlbox.config.settings import Settings
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
+from controlbox.shared.infrastructure.platform_env_file import patch_env_key, repair_celery_redis_urls
 
 logger = logging.getLogger("controlbox.platform.runtimes")
 
@@ -116,19 +117,9 @@ class RuntimeCatalogManager:
         env_file = self._env_file()
         if not env_file.is_file():
             raise FileNotFoundError("platform.env not found on host")
+        repair_celery_redis_urls(env_file)
         joined = ",".join(keys) if keys else ",".join(DEFAULT_ENABLED_RUNTIMES)
-        lines = env_file.read_text(encoding="utf-8").splitlines()
-        found = False
-        updated: list[str] = []
-        for line in lines:
-            if line.startswith("CONTROLBOX_ENABLED_RUNTIMES="):
-                updated.append(f"CONTROLBOX_ENABLED_RUNTIMES={joined}")
-                found = True
-            else:
-                updated.append(line)
-        if not found:
-            updated.append(f"CONTROLBOX_ENABLED_RUNTIMES={joined}")
-        env_file.write_text("\n".join(updated) + "\n", encoding="utf-8")
+        patch_env_key(env_file, "CONTROLBOX_ENABLED_RUNTIMES", joined)
 
     async def _image_installed(self, image: str) -> bool:
         proc = await asyncio.create_subprocess_exec(

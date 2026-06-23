@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from controlbox.config.settings import Settings
 from controlbox.modules.databases.domain.entities import DatabaseEngineType
+from controlbox.shared.infrastructure.mysql_root_sync import resolve_mysql_admin_password
 
 
 @dataclass(frozen=True)
@@ -22,7 +23,7 @@ class EngineConfigResolver:
                 host=self._settings.mysql_host,
                 port=self._settings.mysql_port,
                 admin_user=self._settings.mysql_admin_user,
-                admin_password=self._settings.mysql_admin_password,
+                admin_password=resolve_mysql_admin_password(self._settings),
             )
         if engine == DatabaseEngineType.MARIADB:
             return EngineConnection(

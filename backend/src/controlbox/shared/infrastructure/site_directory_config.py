@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from controlbox.shared.infrastructure.traefik_labels import HTTPS_REDIRECT_MIDDLEWARE
+
 MAX_SUBDIR_SCAN = 64
 
 
@@ -264,6 +266,10 @@ def patch_wordpress_compose_bindings(compose_text: str, bindings: list[dict[str,
             f'      - "traefik.http.routers.{router}.tls=true"',
             f'      - "traefik.http.routers.{router}.tls.certresolver=letsencrypt"',
             f'      - "traefik.http.routers.{router}.service={router_prefix}"',
+            f'      - "traefik.http.routers.{router}-http.rule=Host(`{domain}`)"',
+            f'      - "traefik.http.routers.{router}-http.entrypoints=web"',
+            f'      - "traefik.http.routers.{router}-http.middlewares={HTTPS_REDIRECT_MIDDLEWARE}"',
+            f'      - "traefik.http.routers.{router}-http.service={router_prefix}"',
         ])
 
     if extra and insert_at is not None:

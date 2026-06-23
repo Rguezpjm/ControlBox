@@ -152,108 +152,112 @@ function WordPressDetailContent() {
         </Card>
       </div>
 
-      <WordPressSiteAccessPanel
-        siteId={siteId}
-        access={site.access_info}
-        siteStatus={site.status}
-        onUpdated={load}
-      />
+      <Card>
+        <CardContent className="grid gap-8 p-6 lg:grid-cols-2 lg:gap-10">
+          <div className="space-y-8">
+            <section className="space-y-4">
+              <h3 className="text-lg font-semibold tracking-tight">Configuration</h3>
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge>PHP {site.php_version}</Badge>
+                  <Badge variant="outline">WordPress {site.wordpress_version}</Badge>
+                  <Badge variant={site.ssl_status === "active" ? "default" : "secondary"}>
+                    SSL: {site.ssl_status}
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  <Label>PHP Version</Label>
+                  <div className="flex gap-2">
+                    <Select value={phpVersion} onValueChange={setPhpVersion}>
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="8.2">PHP 8.2</SelectItem>
+                        <SelectItem value="8.3">PHP 8.3</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      disabled={actionLoading || phpVersion === site.php_version}
+                      onClick={() => runAction(() => wordpressApi.changePhp(siteId, phpVersion))}
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <Label>Maintenance Mode</Label>
+                    <p className="text-xs text-muted-foreground">Show maintenance page to visitors</p>
+                  </div>
+                  <Switch
+                    checked={site.maintenance_mode}
+                    onCheckedChange={(enabled) =>
+                      runAction(() => wordpressApi.maintenance(siteId, enabled))
+                    }
+                  />
+                </div>
+              </div>
+            </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Configuration</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Badge>PHP {site.php_version}</Badge>
-              <Badge variant="outline">WordPress {site.wordpress_version}</Badge>
-              <Badge variant={site.ssl_status === "active" ? "default" : "secondary"}>
-                SSL: {site.ssl_status}
-              </Badge>
-            </div>
-            <div className="space-y-2">
-              <Label>PHP Version</Label>
-              <div className="flex gap-2">
-                <Select value={phpVersion} onValueChange={setPhpVersion}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="8.2">PHP 8.2</SelectItem>
-                    <SelectItem value="8.3">PHP 8.3</SelectItem>
-                  </SelectContent>
-                </Select>
+            <section className="space-y-4 border-t pt-8">
+              <h3 className="text-lg font-semibold tracking-tight">Actions</h3>
+              <div className="grid gap-2 sm:grid-cols-2">
                 <Button
-                  size="sm"
-                  disabled={actionLoading || phpVersion === site.php_version}
-                  onClick={() => runAction(() => wordpressApi.changePhp(siteId, phpVersion))}
+                  variant="outline"
+                  disabled={actionLoading}
+                  onClick={() => runAction(() => wordpressApi.restart(siteId))}
                 >
-                  Apply
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Restart
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={actionLoading}
+                  onClick={() => runAction(() => wordpressApi.staging(siteId))}
+                >
+                  <Layers className="mr-2 h-4 w-4" />
+                  Create Staging
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={actionLoading}
+                  onClick={() => runAction(() => wordpressApi.createBackup(siteId))}
+                >
+                  <Archive className="mr-2 h-4 w-4" />
+                  Create Backup
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={actionLoading}
+                  onClick={() => {
+                    const domain = prompt("Clone domain:");
+                    const name = prompt("Clone name:");
+                    if (domain && name) {
+                      runAction(() => wordpressApi.clone(siteId, domain, name));
+                    }
+                  }}
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Clone Site
                 </Button>
               </div>
-            </div>
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <div>
-                <Label>Maintenance Mode</Label>
-                <p className="text-xs text-muted-foreground">Show maintenance page to visitors</p>
-              </div>
-              <Switch
-                checked={site.maintenance_mode}
-                onCheckedChange={(enabled) =>
-                  runAction(() => wordpressApi.maintenance(siteId, enabled))
-                }
-              />
-            </div>
-          </CardContent>
-        </Card>
+            </section>
+          </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Actions</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-2 sm:grid-cols-2">
-            <Button
-              variant="outline"
-              disabled={actionLoading}
-              onClick={() => runAction(() => wordpressApi.restart(siteId))}
-            >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Restart
-            </Button>
-            <Button
-              variant="outline"
-              disabled={actionLoading}
-              onClick={() => runAction(() => wordpressApi.staging(siteId))}
-            >
-              <Layers className="mr-2 h-4 w-4" />
-              Create Staging
-            </Button>
-            <Button
-              variant="outline"
-              disabled={actionLoading}
-              onClick={() => runAction(() => wordpressApi.createBackup(siteId))}
-            >
-              <Archive className="mr-2 h-4 w-4" />
-              Create Backup
-            </Button>
-            <Button
-              variant="outline"
-              disabled={actionLoading}
-              onClick={() => {
-                const domain = prompt("Clone domain:");
-                const name = prompt("Clone name:");
-                if (domain && name) {
-                  runAction(() => wordpressApi.clone(siteId, domain, name));
-                }
-              }}
-            >
-              <Copy className="mr-2 h-4 w-4" />
-              Clone Site
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+          <section className="space-y-4 lg:border-l lg:pl-10">
+            <h3 className="text-lg font-semibold tracking-tight">Acceso al sitio</h3>
+            <WordPressSiteAccessPanel
+              embedded
+              siteId={siteId}
+              access={site.access_info}
+              siteStatus={site.status}
+              onUpdated={load}
+            />
+          </section>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

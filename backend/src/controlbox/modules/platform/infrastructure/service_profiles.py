@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +13,9 @@ from controlbox.config.settings import Settings
 from controlbox.modules.databases.domain.entities import DatabaseEngineType
 from controlbox.modules.databases.infrastructure.engine_adapters import MySqlMariaAdapter
 from controlbox.modules.databases.infrastructure.engine_config import EngineConfigResolver
+from controlbox.modules.ftp.infrastructure.service_manager import FtpServiceManager
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
+from controlbox.shared.infrastructure.platform_env_file import patch_env_key, repair_celery_redis_urls
 
 logger = logging.getLogger("controlbox.platform.services")
 
@@ -128,11 +129,23 @@ class ServiceProfilesManager:
             return Path(raw)
         return Path("/host/etc/controlbox")
 
-    def _data_dir(self) -> Path:
-        raw = self._settings.controlbox_data_dir
+    def _host_data_dir(self) -> Path:
+        """Data directory path on the Docker host (for compose bind mounts)."""
+        env_file = self._env_file()
+        if env_file.is_file():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith("CONTROLBOX_DATA_DIR="):
+                    raw = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if raw.startswith("/host/root"):
+                        return Path(raw.removeprefix("/host/root") or "/")
+                    if raw and not raw.startswith("/host/"):
+                        return Path(raw)
+        raw = (self._settings.controlbox_data_dir or "/var/lib/controlbox").strip()
+        if raw.startswith("/host/root"):
+            return Path(raw.removeprefix("/host/root") or "/")
         if raw.startswith("/host/"):
-            return Path(raw)
-        return Path("/host/var/lib/controlbox") if raw == "/var/lib/controlbox" else Path(raw)
+            return Path("/var/lib/controlbox")
+        return Path(raw)
 
     def _env_file(self) -> Path:
         return self._config_dir() / "platform.env"
@@ -181,19 +194,15 @@ class ServiceProfilesManager:
         env_file = self._env_file()
         if not env_file.is_file():
             raise FileNotFoundError("platform.env not found on host")
+        repair_celery_redis_urls(env_file)
         joined = ",".join(profiles) if profiles else "databases"
-        lines = env_file.read_text(encoding="utf-8").splitlines()
-        found = False
-        updated: list[str] = []
-        for line in lines:
-            if line.startswith("CONTROLBOX_ENABLED_PROFILES="):
-                updated.append(f"CONTROLBOX_ENABLED_PROFILES={joined}")
-                found = True
-            else:
-                updated.append(line)
-        if not found:
-            updated.append(f"CONTROLBOX_ENABLED_PROFILES={joined}")
-        env_file.write_text("\n".join(updated) + "\n", encoding="utf-8")
+        patch_env_key(env_file, "CONTROLBOX_ENABLED_PROFILES", joined)
+
+    def _prepare_env_for_compose(self) -> None:
+        try:
+            repair_celery_redis_urls(self._env_file())
+        except OSError as exc:
+            logger.warning("Could not repair platform.env before compose: %s", exc)
 
     async def _running_containers(self) -> set[str]:
         cmd = self._compose_base_cmd() + ["ps", "--format", "json"]
@@ -301,8 +310,9 @@ class ServiceProfilesManager:
         if "supabase" not in profiles:
             return True, ""
 
+        self._prepare_env_for_compose()
         self._ensure_supabase_config()
-        self._ensure_supabase_runtime_dirs()
+        await self._ensure_supabase_runtime_dirs_async()
 
         kong = self._config_dir() / "supabase" / "kong.yml"
         if not kong.is_file():
@@ -345,15 +355,42 @@ class ServiceProfilesManager:
             "Revise en unos minutos o ejecute: docker logs controlbox-supabase-db"
         )
 
-    def _ensure_supabase_runtime_dirs(self) -> None:
-        # Some hosts create bind dirs as root:root and Supabase Postgres cannot write.
-        # Keep permissive mode to maximize compatibility across VPS distros.
-        db_dir = self._data_dir() / "supabase" / "db"
-        db_dir.mkdir(parents=True, exist_ok=True)
+    async def _run_docker(self, cmd: list[str], *, timeout: float = 120) -> tuple[int, str]:
         try:
-            os.chmod(db_dir, 0o777)
-        except OSError:
-            pass
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=docker_subprocess_env(self._settings),
+            )
+        except (FileNotFoundError, OSError) as exc:
+            logger.error("Could not run docker: %s", exc)
+            return 127, str(exc)
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return -1, ""
+        output = (stdout or b"").decode("utf-8", errors="replace")
+        return proc.returncode or 0, output
+
+    async def _ensure_supabase_runtime_dirs_async(self) -> None:
+        host_data = self._host_data_dir()
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{host_data}:/data",
+            "alpine:3.20",
+            "sh",
+            "-c",
+            "mkdir -p /data/supabase/db && chmod 777 /data/supabase/db",
+        ]
+        code, output = await self._run_docker(cmd, timeout=120)
+        if code not in (0, -1):
+            logger.warning("Supabase data dir prep via docker returned %s: %s", code, output[-300:])
 
     def _compose_up_cmd(self, profiles: list[str], *, extra: list[str] | None = None) -> list[str]:
         cmd = self._compose_base_cmd()
@@ -428,32 +465,23 @@ class ServiceProfilesManager:
             if "ftp" in profiles:
                 try:
                     env_file = self._env_file()
-                    lines = env_file.read_text(encoding="utf-8").splitlines()
-                    updated: list[str] = []
-                    found_enabled = found_feature = False
-                    for line in lines:
-                        if line.startswith("PUREFTPD_ENABLED="):
-                            updated.append("PUREFTPD_ENABLED=true")
-                            found_enabled = True
-                        elif line.startswith("CONTROLBOX_FEATURE_FTP="):
-                            updated.append("CONTROLBOX_FEATURE_FTP=true")
-                            found_feature = True
-                        else:
-                            updated.append(line)
-                    if not found_enabled:
-                        updated.append("PUREFTPD_ENABLED=true")
-                    if not found_feature:
-                        updated.append("CONTROLBOX_FEATURE_FTP=true")
-                    env_file.write_text("\n".join(updated) + "\n", encoding="utf-8")
+                    patch_env_key(env_file, "PUREFTPD_ENABLED", "true")
+                    patch_env_key(env_file, "CONTROLBOX_FEATURE_FTP", "true")
                 except OSError as exc:
                     logger.warning("Could not enable FTP in platform.env: %s", exc)
+                try:
+                    FtpServiceManager(self._settings).ensure_compose_override_from_env()
+                except OSError as exc:
+                    logger.warning("Could not create docker-compose.ftp.yml: %s", exc)
 
             if "supabase" in profiles:
                 self._ensure_supabase_config()
-                self._ensure_supabase_runtime_dirs()
+                await self._ensure_supabase_runtime_dirs_async()
 
             if "databases" in profiles:
                 await self._ensure_mysql_remote_root()
+
+            self._prepare_env_for_compose()
 
             profiles_changed = previous != profiles_set
             needs_compose = profiles_changed or await self._profiles_missing_containers(profiles)

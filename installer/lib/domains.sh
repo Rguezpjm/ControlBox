@@ -1,5 +1,59 @@
 #!/usr/bin/env bash
 
+cb_domains_http_redirect_labels() {
+    local service="$1"
+    local router="$2"
+    local domain="$3"
+    local port="$4"
+    cat <<EOF
+      - "traefik.http.routers.${router}.rule=Host(\`${domain}\`)"
+      - "traefik.http.routers.${router}.entrypoints=websecure"
+      - "traefik.http.routers.${router}.tls=true"
+      - "traefik.http.routers.${router}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.${router}.loadbalancer.server.port=${port}"
+      - "traefik.http.routers.${router}-http.rule=Host(\`${domain}\`)"
+      - "traefik.http.routers.${router}-http.entrypoints=web"
+      - "traefik.http.routers.${router}-http.middlewares=https-redirect@file"
+      - "traefik.http.routers.${router}-http.service=${router}"
+EOF
+}
+
+cb_domains_apply_labels() {
+    local domains_file="${CONTROLBOX_CONFIG_DIR}/domains.conf"
+    if [[ ! -f "${domains_file}" ]]; then
+        return 0
+    fi
+    cb_load_env_file "${domains_file}"
+
+    local compose_override="${CONTROLBOX_INSTALL_DIR}/docker-compose.override.yml"
+    cat > "${compose_override}" <<EOF
+services:
+  traefik:
+    labels:
+      - "traefik.enable=true"
+  api:
+    labels:
+      - "traefik.enable=true"
+$(cb_domains_http_redirect_labels api controlbox-api "${API_DOMAIN}" 8000)
+  panel:
+    labels:
+      - "traefik.enable=true"
+$(cb_domains_http_redirect_labels panel controlbox-panel "${PANEL_DOMAIN}" 3000)
+  grafana:
+    labels:
+      - "traefik.enable=true"
+$(cb_domains_http_redirect_labels grafana grafana "${GRAFANA_DOMAIN}" 3000)
+  minio:
+    labels:
+      - "traefik.enable=true"
+$(cb_domains_http_redirect_labels minio minio "${MINIO_DOMAIN}" 9001)
+  supabase-kong:
+    labels:
+      - "traefik.enable=true"
+$(cb_domains_http_redirect_labels supabase-kong supabase "${SUPABASE_DOMAIN}" 8000)
+EOF
+}
+
 cb_domains_configure() {
     cb_step "Configurando dominios"
 
@@ -68,57 +122,6 @@ cb_domains_print_dns_records() {
     echo "  A      supabase.${CONTROLBOX_PRIMARY_DOMAIN}              ${server_ip}"
     echo "  A      studio.${CONTROLBOX_PRIMARY_DOMAIN}                ${server_ip}"
     echo ""
-}
-
-cb_domains_apply_labels() {
-    local domains_file="${CONTROLBOX_CONFIG_DIR}/domains.conf"
-    if [[ ! -f "${domains_file}" ]]; then
-        return 0
-    fi
-    cb_load_env_file "${domains_file}"
-
-    local compose_override="${CONTROLBOX_INSTALL_DIR}/docker-compose.override.yml"
-    cat > "${compose_override}" <<EOF
-services:
-  traefik:
-    labels:
-      - "traefik.enable=true"
-  api:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.controlbox-api.rule=Host(\`${API_DOMAIN}\`)"
-      - "traefik.http.routers.controlbox-api.entrypoints=websecure"
-      - "traefik.http.routers.controlbox-api.tls.certresolver=letsencrypt"
-      - "traefik.http.services.controlbox-api.loadbalancer.server.port=8000"
-  panel:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.controlbox-panel.rule=Host(\`${PANEL_DOMAIN}\`)"
-      - "traefik.http.routers.controlbox-panel.entrypoints=websecure"
-      - "traefik.http.routers.controlbox-panel.tls.certresolver=letsencrypt"
-      - "traefik.http.services.controlbox-panel.loadbalancer.server.port=3000"
-  grafana:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.grafana.rule=Host(\`${GRAFANA_DOMAIN}\`)"
-      - "traefik.http.routers.grafana.entrypoints=websecure"
-      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
-      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
-  minio:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.minio.rule=Host(\`${MINIO_DOMAIN}\`)"
-      - "traefik.http.routers.minio.entrypoints=websecure"
-      - "traefik.http.routers.minio.tls.certresolver=letsencrypt"
-      - "traefik.http.services.minio.loadbalancer.server.port=9001"
-  supabase-kong:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.supabase.rule=Host(\`${SUPABASE_DOMAIN}\`)"
-      - "traefik.http.routers.supabase.entrypoints=websecure"
-      - "traefik.http.routers.supabase.tls.certresolver=letsencrypt"
-      - "traefik.http.services.supabase.loadbalancer.server.port=8000"
-EOF
 }
 
 cb_domains_set() {

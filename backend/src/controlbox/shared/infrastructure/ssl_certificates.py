@@ -28,7 +28,7 @@ def _path_is_readable_file(path: Path) -> bool:
 def _acme_file(settings: Settings) -> Path:
     candidates = [
         Path("/etc/controlbox/letsencrypt/acme.json"),
-        Path("/host/var/lib/controlbox/letsencrypt/acme.json"),
+        Path("/host/root/var/lib/controlbox/letsencrypt/acme.json"),
         Path("/var/lib/controlbox/letsencrypt/acme.json"),
     ]
     raw = getattr(settings, "controlbox_data_dir", "") or ""

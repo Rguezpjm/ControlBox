@@ -174,15 +174,61 @@ cb_env_patch_key() {
     local value="$3"
     value="${value//\\/\\\\}"
     value="${value//\"/\\\"}"
+    value="${value//$'\r'/}"
+    value="${value//$'\n'/\\n}"
     if [[ ! -f "${file}" ]]; then
         cb_env_emit "${key}" "${value}" >> "${file}"
         return 0
     fi
-    if grep -q "^${key}=" "${file}"; then
-        sed -i "s|^${key}=.*|${key}=\"${value}\"|" "${file}"
-    else
-        cb_env_emit "${key}" "${value}" >> "${file}"
+    local tmp
+    tmp="$(mktemp)"
+    grep -v "^${key}=" "${file}" > "${tmp}" 2>/dev/null || true
+    cb_env_emit "${key}" "${value}" >> "${tmp}"
+    mv -f "${tmp}" "${file}"
+}
+
+cb_env_read_key() {
+    local file="$1"
+    local key="$2"
+    local line raw
+    [[ -f "${file}" ]] || return 1
+    line="$(grep "^${key}=" "${file}" 2>/dev/null | tail -1)" || return 1
+    raw="${line#*=}"
+    raw="${raw//$'\r'/}"
+    if [[ "${raw}" =~ ^\"(.*)\"$ ]]; then
+        raw="${BASH_REMATCH[1]}"
+        raw="${raw//\\\"/\"}"
+        raw="${raw//\\\\/\\}"
     fi
+    printf '%s' "${raw}"
+}
+
+cb_platform_env_repair() {
+    local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
+    [[ -f "${env_file}" ]] || return 0
+
+    local tmp changed=0
+    tmp="$(mktemp)"
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        if [[ "${line}" =~ ^[^=]*@redis:6379/[0-9]+$ ]]; then
+            changed=1
+            continue
+        fi
+        printf '%s\n' "${line}"
+    done < "${env_file}" > "${tmp}"
+    if [[ "${changed}" -eq 1 ]]; then
+        mv -f "${tmp}" "${env_file}"
+        cb_info "platform.env: eliminadas líneas corruptas (CELERY/Redis sin comillas)"
+    else
+        rm -f "${tmp}"
+    fi
+
+    local redis_pass
+    redis_pass="$(cb_env_read_key "${env_file}" "REDIS_PASSWORD" 2>/dev/null || true)"
+    [[ -n "${redis_pass}" ]] || return 0
+
+    cb_env_patch_key "${env_file}" "CELERY_BROKER_URL" "redis://:${redis_pass}@redis:6379/1"
+    cb_env_patch_key "${env_file}" "CELERY_RESULT_BACKEND" "redis://:${redis_pass}@redis:6379/2"
 }
 
 cb_sanitize_port() {

@@ -1,7 +1,8 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import SQLAlchemyError
 
 from controlbox.config.settings import get_settings
 from controlbox.modules.ftp.api.schemas import (
@@ -59,11 +60,22 @@ from controlbox.modules.identity.api.dependencies import (
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import ForbiddenError
+from controlbox.modules.ftp.domain.entities import FtpAccount
 from controlbox.modules.ftp.infrastructure.service_manager import FtpServiceManager
 from controlbox.shared.infrastructure.resource_isolation import can_manage_all_resources
 
 
 router = APIRouter(prefix="/ftp", tags=["ftp"])
+
+
+def _ftp_db_error_message(exc: Exception) -> str:
+    text = str(exc).lower()
+    if "owner_user_id" in text or "does not exist" in text or "undefinedcolumn" in text:
+        return (
+            "La base de datos necesita migraciones pendientes. "
+            "En el VPS ejecute: controlbox repair"
+        )
+    return f"Error de base de datos: {exc}"
 
 
 def _require_tenant(context: RequestContext) -> UUID:
@@ -133,8 +145,17 @@ async def configure_ftp_service(
 ) -> FtpServiceActionResponse:
     _require_tenant(context)
     manager = FtpServiceManager(get_settings())
-    async with uow:
-        active_accounts = await uow.ftp_accounts.list_active()
+    active_accounts: list[FtpAccount] = []
+    if body.protocol == "sftp":
+        try:
+            async with uow:
+                active_accounts = await uow.ftp_accounts.list_active()
+        except SQLAlchemyError as exc:
+            return FtpServiceActionResponse(
+                success=False,
+                message=_ftp_db_error_message(exc),
+                service=_to_service_schema(await manager.get_config()),
+            )
     ok, message, config = await manager.apply_config(
         enabled=body.enabled,
         protocol=body.protocol,
@@ -178,13 +199,19 @@ async def list_ftp_accounts(
     _: Annotated[None, Depends(require_permission("ftp.read"))],
 ) -> list[FtpAccountSchema]:
     tenant_id = _require_tenant(context)
-    accounts = await ListFtpAccountsHandler(uow).handle(
-        ListFtpAccountsQuery(
-            tenant_id=tenant_id,
-            requester_user_id=context.user_id,
-            can_manage_all=can_manage_all_resources(context),
+    try:
+        accounts = await ListFtpAccountsHandler(uow).handle(
+            ListFtpAccountsQuery(
+                tenant_id=tenant_id,
+                requester_user_id=context.user_id,
+                can_manage_all=can_manage_all_resources(context),
+            )
         )
-    )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_ftp_db_error_message(exc),
+        ) from exc
     return [_to_schema(account) for account in accounts]
 
 
@@ -399,13 +426,19 @@ async def get_ftp_logs(
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[FtpLogSchema]:
     tenant_id = _require_tenant(context)
-    logs = await ListFtpLogsHandler(uow).handle(
-        ListFtpLogsQuery(
-            tenant_id=tenant_id,
-            account_id=None,
-            limit=limit,
-            requester_user_id=context.user_id,
-            can_manage_all=can_manage_all_resources(context),
+    try:
+        logs = await ListFtpLogsHandler(uow).handle(
+            ListFtpLogsQuery(
+                tenant_id=tenant_id,
+                account_id=None,
+                limit=limit,
+                requester_user_id=context.user_id,
+                can_manage_all=can_manage_all_resources(context),
+            )
         )
-    )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_ftp_db_error_message(exc),
+        ) from exc
     return [FtpLogSchema(**log.__dict__) for log in logs]

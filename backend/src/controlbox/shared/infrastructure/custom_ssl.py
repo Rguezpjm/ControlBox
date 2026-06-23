@@ -6,7 +6,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -17,6 +17,11 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, ec, ed25519, dsa
 
 from controlbox.config.settings import Settings
+from controlbox.shared.infrastructure.ssl_certificates import SslCertificateService
+from controlbox.shared.infrastructure.traefik_labels import (
+    append_https_redirect_labels,
+    parse_compose_router_domains,
+)
 
 logger = logging.getLogger("controlbox.ssl.custom")
 
@@ -166,6 +171,16 @@ class CustomSslManager:
                 cert_domains = [primary_domain]
         elif provider == "letsencrypt":
             cert_domains = [primary_domain]
+            try:
+                ssl_svc = SslCertificateService(self._settings)
+                days = ssl_svc.days_remaining(primary_domain)
+                if days is not None:
+                    days_remaining = days
+                    expires_at = (
+                        datetime.now(timezone.utc) + timedelta(days=days)
+                    ).date().isoformat()
+            except Exception:
+                logger.debug("Could not read Let's Encrypt expiry", exc_info=True)
 
         return CustomSslInfo(
             provider=provider,
@@ -255,10 +270,14 @@ class CustomSslManager:
                 continue
             match = re.search(rf"traefik\.http\.routers\.({re.escape(router_prefix)}[^.\"]+)", line)
             if match:
-                router_names.add(match.group(1))
+                name = match.group(1)
+                if not name.endswith("-http"):
+                    router_names.add(name)
 
         out: list[str] = []
         for line in lines:
+            if "-http." in line and "traefik.http.routers." in line:
+                continue
             if router_prefix in line and "tls.certresolver" in line:
                 if provider == "custom" or not ssl_enabled:
                     continue
@@ -276,6 +295,8 @@ class CustomSslManager:
                             insert_idx = idx + 1
                             break
                     out.insert(insert_idx, resolver_line)
+            router_domains = {r: d for r, d in parse_compose_router_domains("\n".join(out)).items() if r in router_names}
+            out = append_https_redirect_labels(out, router_domains)
 
         if ssl_enabled and provider == "custom" and router_names:
             for router in sorted(router_names):

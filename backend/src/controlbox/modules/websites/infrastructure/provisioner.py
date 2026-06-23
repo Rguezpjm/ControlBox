@@ -13,6 +13,7 @@ from controlbox.modules.websites.domain.entities import (
     WebsiteRuntime,
 )
 from controlbox.shared.infrastructure.docker.env import docker_connectivity_hint, docker_subprocess_env, validate_container_name
+from controlbox.shared.infrastructure.traefik_labels import traefik_router_labels
 
 
 from controlbox.modules.platform.infrastructure.runtime_catalog import RUNTIME_IMAGE_MAP
@@ -210,16 +211,16 @@ networks:
 
     def _build_traefik_labels(self, website: Website, port: int) -> dict[str, str]:
         router_name = f"site-{str(website.id).split('-')[0]}"
-        labels = {
-            "traefik.enable": "true",
-            f"traefik.http.routers.{router_name}.rule": f"Host(`{website.domain}`)",
-            f"traefik.http.routers.{router_name}.entrypoints": "websecure",
-            f"traefik.http.routers.{router_name}.tls.certresolver": "letsencrypt",
-            f"traefik.http.services.{router_name}.loadbalancer.server.port": str(port),
-        }
-        if website.ssl_enabled:
-            labels[f"traefik.http.routers.{router_name}.tls"] = "true"
-        return labels
+        return traefik_router_labels(
+            router_name,
+            website.domain,
+            port,
+            ssl_enabled=website.ssl_enabled,
+            extra={
+                "controlbox.website": "true",
+                "controlbox.logs.enabled": "true",
+            },
+        )
 
     def _format_env(self, database_config: dict) -> str:
         lines = []

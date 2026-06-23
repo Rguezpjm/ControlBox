@@ -76,6 +76,9 @@ cb_compose_repair_compose_ports() {
     cb_compose_write_port_override "${panel_port}"
     cb_compose_fix_api_letsencrypt_mount
     cb_ssl_fix_acme_permissions 2>/dev/null || true
+    if declare -f cb_traefik_fix_letsencrypt >/dev/null 2>&1; then
+        cb_traefik_fix_letsencrypt 2>/dev/null || true
+    fi
 }
 
 cb_compose_fix_api_letsencrypt_mount() {
@@ -234,15 +237,21 @@ cb_compose_ensure_docker_proxy() {
 
     if [[ -f "${env_file}" ]] && grep -q '^REDIS_PASSWORD=' "${env_file}" 2>/dev/null; then
         local redis_pass
-        redis_pass="$(grep '^REDIS_PASSWORD=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
-        if [[ -n "${redis_pass}" ]] && ! grep -q "^CELERY_BROKER_URL=redis://:${redis_pass}@" "${env_file}" 2>/dev/null; then
-            cb_warn "Actualizando CELERY_BROKER_URL con contraseña de Redis"
-            sed -i '/^CELERY_BROKER_URL=/d' "${env_file}" 2>/dev/null || true
-            sed -i '/^CELERY_RESULT_BACKEND=/d' "${env_file}" 2>/dev/null || true
-            echo "CELERY_BROKER_URL=redis://:${redis_pass}@redis:6379/1" >> "${env_file}"
-            echo "CELERY_RESULT_BACKEND=redis://:${redis_pass}@redis:6379/2" >> "${env_file}"
+        redis_pass="$(cb_env_read_key "${env_file}" "REDIS_PASSWORD" 2>/dev/null || true)"
+        if [[ -n "${redis_pass}" ]]; then
+            local broker backend
+            broker="$(cb_env_read_key "${env_file}" "CELERY_BROKER_URL" 2>/dev/null || true)"
+            backend="$(cb_env_read_key "${env_file}" "CELERY_RESULT_BACKEND" 2>/dev/null || true)"
+            if [[ "${broker}" != "redis://:${redis_pass}@redis:6379/1" ]] \
+                || [[ "${backend}" != "redis://:${redis_pass}@redis:6379/2" ]]; then
+                cb_warn "Actualizando CELERY_BROKER_URL con contraseña de Redis (comillas)"
+                cb_env_patch_key "${env_file}" "CELERY_BROKER_URL" "redis://:${redis_pass}@redis:6379/1"
+                cb_env_patch_key "${env_file}" "CELERY_RESULT_BACKEND" "redis://:${redis_pass}@redis:6379/2"
+            fi
         fi
     fi
+
+    cb_platform_env_repair "${env_file}" 2>/dev/null || true
 
     cb_compose_ensure_host_metrics
 }
@@ -659,7 +668,11 @@ cb_docker_deploy_stack() {
     cb_compose_repair_compose_ports
     cb_compose_ensure_docker_proxy
     cb_fix_platform_env_permissions
+    cb_platform_env_repair "${CONTROLBOX_CONFIG_DIR}/platform.env" 2>/dev/null || true
     cb_ssl_fix_acme_permissions 2>/dev/null || true
+    if declare -f cb_traefik_fix_letsencrypt >/dev/null 2>&1; then
+        cb_traefik_fix_letsencrypt 2>/dev/null || true
+    fi
     cb_progress_note "Validando docker-compose.yml..."
     cb_docker_compose_run "${env_file}" config >/dev/null
 
@@ -739,7 +752,7 @@ cb_mysql_ensure_remote_root() {
     docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-mysql' || return 0
 
     local mysql_pass
-    mysql_pass="$(grep '^MYSQL_ADMIN_PASSWORD=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    mysql_pass="$(cb_env_read_key "${env_file}" "MYSQL_ADMIN_PASSWORD" 2>/dev/null || true)"
     [[ -n "${mysql_pass}" ]] || return 0
 
     cb_info "Verificando acceso MySQL remoto (root@'%')..."
@@ -755,12 +768,85 @@ GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 "
 
-    if docker exec controlbox-mysql mysql -uroot -p"${mysql_pass}" --skip-ssl -h127.0.0.1 -e "${sql}" >/dev/null 2>&1; then
+    if MYSQL_PWD="${mysql_pass}" docker exec -e MYSQL_PWD controlbox-mysql \
+        mysql -h 127.0.0.1 -uroot -e "${sql}" >/dev/null 2>&1; then
         cb_success "MySQL: root@'%' listo para el panel y WordPress"
         return 0
     fi
 
+    cb_warn "MySQL rechazó root; resincronizando contraseña con platform.env..."
+    if cb_mysql_resync_root_password "${env_file}"; then
+        if MYSQL_PWD="${mysql_pass}" docker exec -e MYSQL_PWD controlbox-mysql \
+            mysql -h127.0.0.1 -uroot -e "${sql}" >/dev/null 2>&1; then
+            cb_success "MySQL: contraseña resincronizada y root@'%' listo"
+            return 0
+        fi
+    fi
+
     cb_warn "No se pudo configurar root@'%' en MySQL (revise MYSQL_ADMIN_PASSWORD en platform.env)"
+    return 1
+}
+
+cb_mysql_resync_root_password() {
+    local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
+    [[ -f "${env_file}" ]] || return 1
+
+    docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-mysql' || return 1
+
+    local mysql_pass data_dir
+    mysql_pass="$(cb_env_read_key "${env_file}" "MYSQL_ADMIN_PASSWORD" 2>/dev/null || true)"
+    [[ -n "${mysql_pass}" ]] || return 1
+
+    data_dir="$(cb_env_read_key "${env_file}" "CONTROLBOX_DATA_DIR" 2>/dev/null || true)"
+    data_dir="${data_dir:-${CONTROLBOX_DATA_DIR:-/var/lib/controlbox}}"
+    data_dir="${data_dir}/mysql"
+    [[ -d "${data_dir}" ]] || return 1
+
+    local sql_pass="${mysql_pass//\'/\'\'}"
+    local mysql_image="mysql:8.4"
+
+    cb_warn "Resincronizando contraseña root de MySQL (volumen ${data_dir})..."
+
+    docker stop controlbox-mysql >/dev/null 2>&1 || true
+
+    if ! docker run --rm \
+        -v "${data_dir}:/var/lib/mysql:rw" \
+        --entrypoint bash \
+        "${mysql_image}" \
+        -c "
+set -e
+mysqld --user=mysql --skip-grant-tables --skip-networking &
+pid=\$!
+for i in \$(seq 1 90); do
+  mysqladmin ping --silent 2>/dev/null && break
+  sleep 1
+done
+mysql -e \"FLUSH PRIVILEGES;\"
+mysql -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '${sql_pass}';\"
+mysql -e \"CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${sql_pass}';\"
+mysql -e \"ALTER USER 'root'@'%' IDENTIFIED BY '${sql_pass}';\"
+mysql -e \"GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;\"
+mysql -e \"FLUSH PRIVILEGES;\"
+kill \"\$pid\" 2>/dev/null || true
+wait \"\$pid\" 2>/dev/null || true
+"; then
+        cb_error "No se pudo resincronizar la contraseña root de MySQL"
+        docker start controlbox-mysql >/dev/null 2>&1 || true
+        return 1
+    fi
+
+    docker start controlbox-mysql >/dev/null 2>&1 || true
+
+    local i
+    for i in $(seq 1 45); do
+        if docker exec controlbox-mysql mysqladmin ping -h127.0.0.1 --silent >/dev/null 2>&1; then
+            cb_success "MySQL: contraseña root alineada con platform.env"
+            return 0
+        fi
+        sleep 2
+    done
+
+    cb_error "MySQL no respondió tras resincronizar la contraseña root"
     return 1
 }
 

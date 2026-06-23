@@ -10,7 +10,15 @@ from controlbox.modules.databases.domain.entities import DatabaseEngineType, Man
 from controlbox.modules.databases.infrastructure.engine_config import EngineConfigResolver, EngineConnection
 from controlbox.shared.infrastructure.db_engine_cli import docker_enabled, docker_exec, spawn
 from controlbox.shared.infrastructure.docker.env import validate_container_name
-from controlbox.shared.infrastructure.mysql_cli import mysql_connection_args
+from controlbox.shared.infrastructure.mysql_cli import (
+    mysql_connection_args,
+    mysql_container_connection_args,
+    mysql_exec_password_env,
+)
+from controlbox.shared.infrastructure.mysql_root_sync import (
+    mysql_resync_root_password_if_needed,
+    resolve_mysql_admin_password,
+)
 from passlib.context import CryptContext
 
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -97,7 +105,19 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
         host = conn.host.strip().lower().split(":")[0]
         return host in _PLATFORM_MYSQL_HOSTS
 
+    def _conn_with_platform_password(self, conn: EngineConnection) -> EngineConnection:
+        password = resolve_mysql_admin_password()
+        if password == conn.admin_password:
+            return conn
+        return EngineConnection(
+            host=conn.host,
+            port=conn.port,
+            admin_user=conn.admin_user,
+            admin_password=password,
+        )
+
     async def ensure_admin_access(self, conn: EngineConnection) -> None:
+        conn = self._conn_with_platform_password(conn)
         key = self._container_name(conn)
         async with _MYSQL_PREP_LOCK:
             if key in _MYSQL_PREPARED:
@@ -110,6 +130,7 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
         return value.replace("\\", "\\\\").replace("'", "''")
 
     async def create_database(self, conn: EngineConnection, database_name: str, charset: str) -> None:
+        conn = self._conn_with_platform_password(conn)
         await self.ensure_admin_access(conn)
         sql = f"CREATE DATABASE IF NOT EXISTS `{database_name}` CHARACTER SET {charset} COLLATE {charset}_unicode_ci"
         await self._execute(conn, sql)
@@ -161,9 +182,10 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
                 container,
                 [
                     "mysql",
-                    *mysql_connection_args("localhost", conn.port, conn.admin_user, conn.admin_password),
+                    *mysql_container_connection_args(conn.port, conn.admin_user, conn.admin_password),
                     database_name,
                 ],
+                env=mysql_exec_password_env(conn.admin_password),
                 input_data=data,
             )
             if code != 0:
@@ -226,15 +248,17 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
         return None
 
     async def _execute_via_container(self, conn: EngineConnection, sql: str) -> None:
+        conn = self._conn_with_platform_password(conn)
         container = validate_container_name(self._container_name(conn))
         code, _, stderr = await docker_exec(
             container,
             [
                 "mysql",
-                *mysql_connection_args("localhost", conn.port, conn.admin_user, conn.admin_password),
+                *mysql_container_connection_args(conn.port, conn.admin_user, conn.admin_password),
                 "-e",
                 sql,
             ],
+            env=mysql_exec_password_env(conn.admin_password),
         )
         if code != 0:
             message = stderr.decode().strip()
@@ -249,11 +273,36 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
     async def _ensure_remote_root(self, conn: EngineConnection) -> None:
         if conn.admin_user != "root":
             return
+        conn = self._conn_with_platform_password(conn)
+        message = await self._run_remote_root_sql(conn)
+        if message is None:
+            return
+        if not self._is_access_denied(message):
+            raise RuntimeError(message)
+
+        logger.warning("MySQL root access denied; resyncing password from platform.env")
+        key = self._container_name(conn)
+        if await mysql_resync_root_password_if_needed():
+            _MYSQL_PREPARED.discard(key)
+
+        message = await self._run_remote_root_sql(conn)
+        if message is None:
+            return
+        if self._is_access_denied(message):
+            raise RuntimeError(
+                f"MySQL rechazó root (revise MYSQL_ADMIN_PASSWORD en platform.env). {message}"
+            )
+        raise RuntimeError(message)
+
+    async def _run_remote_root_sql(self, conn: EngineConnection) -> str | None:
         escaped = self._sql_escape(conn.admin_password)
         sql = (
             f"CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '{escaped}'; "
             f"ALTER USER 'root'@'%' IDENTIFIED BY '{escaped}'; "
             "GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION; "
+            f"CREATE USER IF NOT EXISTS 'root'@'localhost' IDENTIFIED BY '{escaped}'; "
+            f"ALTER USER 'root'@'localhost' IDENTIFIED BY '{escaped}'; "
+            "GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION; "
             "FLUSH PRIVILEGES;"
         )
         container = validate_container_name(self._container_name(conn))
@@ -261,19 +310,17 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
             container,
             [
                 "mysql",
-                *mysql_connection_args("localhost", conn.port, conn.admin_user, conn.admin_password),
+                *mysql_container_connection_args(conn.port, conn.admin_user, conn.admin_password),
                 "-e",
                 sql,
             ],
+            env=mysql_exec_password_env(conn.admin_password),
         )
-        if code != 0:
-            message = stderr.decode().strip()
-            logger.warning("Could not ensure root@%% on %s: %s", container, message)
-            if self._is_access_denied(message):
-                raise RuntimeError(
-                    f"MySQL rechazó root (revise MYSQL_ADMIN_PASSWORD en platform.env). {message}"
-                )
-            raise RuntimeError(message or f"Error configurando root@'%' en {container}")
+        if code == 0:
+            return None
+        message = stderr.decode().strip()
+        logger.warning("Could not ensure root@%% on %s: %s", container, message)
+        return message
 
     async def _run_dump(self, cmd: list[str], output_path: Path) -> None:
         code, stdout, stderr = await spawn(cmd)
