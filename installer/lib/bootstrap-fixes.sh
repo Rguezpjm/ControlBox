@@ -312,7 +312,7 @@ cb_docker_registry_image_ok() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-4.11.6}"
+    local version="${CONTROLBOX_VERSION:-4.11.7}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     cb_app_source_available || return 1
@@ -516,7 +516,7 @@ cb_compose_validate_env_file() {
 cb_docker_pull_images() {
     cb_step "Descargando imágenes Docker"
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
-    local version="${CONTROLBOX_VERSION:-4.11.6}"
+    local version="${CONTROLBOX_VERSION:-4.11.7}"
     local api_image="ghcr.io/grodtech/controlbox-api:${version}"
 
     if ! cb_compose_validate_env_file "${env_file}"; then
@@ -717,7 +717,7 @@ cb_docker_deploy_stack() {
         "cb_compose_service_is_healthy '${env_file}' traefik || cb_compose_service_is_running '${env_file}' traefik" 90
 
     cb_wait_for_service "panel" \
-        "cb_compose_service_is_running '${env_file}' panel" 120
+        "cb_compose_service_is_running '${env_file}' panel" 180
 
     cb_step_done "deploy_stack"
     cb_success "Stack desplegado correctamente"

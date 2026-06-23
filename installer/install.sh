@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-4.11.6}"
+CONTROLBOX_VERSION="${CONTROLBOX_VERSION:-4.11.7}"
 CONTROLBOX_INSTALL_URL="${CONTROLBOX_INSTALL_URL:-https://install.grodtech.com}"
 CONTROLBOX_INSTALLER_ROOT="${CONTROLBOX_INSTALLER_ROOT:-}"
 CONTROLBOX_BOOTSTRAP_BUILD="20250622-55"
@@ -351,7 +351,7 @@ cb_main_install() {
     echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "${CONTROLBOX_STATE_DIR}/installed"
 
     if declare -f cb_panel_verify_access >/dev/null 2>&1; then
-        cb_panel_verify_access 90 || cb_warn "Si el navegador no carga, abra puertos 80 y ${CONTROLBOX_PANEL_PORT:-8475} en el firewall del proveedor cloud"
+        cb_panel_verify_access 180 || cb_warn "Si el navegador no carga, abra puertos 80 y ${CONTROLBOX_PANEL_PORT:-8475} en el firewall del proveedor cloud"
     fi
     cb_print_post_install_summary "${install_started_at}" || true
     cb_progress_render "Instalación completada"
