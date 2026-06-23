@@ -312,7 +312,7 @@ cb_docker_registry_image_ok() {
 
 cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
-    local version="${CONTROLBOX_VERSION:-4.11.7}"
+    local version="${CONTROLBOX_VERSION:-4.11.8}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
 
     cb_app_source_available || return 1
@@ -516,7 +516,7 @@ cb_compose_validate_env_file() {
 cb_docker_pull_images() {
     cb_step "Descargando imágenes Docker"
     local env_file="${CONTROLBOX_CONFIG_DIR}/platform.env"
-    local version="${CONTROLBOX_VERSION:-4.11.7}"
+    local version="${CONTROLBOX_VERSION:-4.11.8}"
     local api_image="ghcr.io/grodtech/controlbox-api:${version}"
 
     if ! cb_compose_validate_env_file "${env_file}"; then

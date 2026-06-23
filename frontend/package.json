@@ -1,6 +1,6 @@
 {
   "name": "controlbox-panel",
-  "version": "4.11.7",
+  "version": "4.11.8",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
