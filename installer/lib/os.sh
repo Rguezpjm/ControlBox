@@ -208,9 +208,9 @@ cb_os_create_user() {
         local current_gid
         current_gid="$(getent group controlbox | cut -d: -f3)"
         if [[ "${current_gid}" != "${target_gid}" ]]; then
-            cb_warn "Grupo controlbox tiene GID ${current_gid}; ajustando a ${target_gid}..."
+            cb_info "Grupo controlbox tiene GID ${current_gid}; intentando ajuste a ${target_gid}..."
             groupmod -g "${target_gid}" controlbox 2>/dev/null \
-                || cb_warn "No se pudo cambiar GID de controlbox a ${target_gid}"
+                || cb_info "No se pudo cambiar GID de controlbox a ${target_gid}; se continuará con permisos compatibles"
         fi
     else
         if getent group "${target_gid}" >/dev/null 2>&1; then
@@ -234,7 +234,7 @@ cb_os_create_user() {
             --no-create-home --shell /usr/sbin/nologin \
             --home-dir "${CONTROLBOX_INSTALL_DIR}" controlbox
     else
-        cb_warn "UID ${target_uid} ya en uso; creando controlbox sin UID fijo (los archivos de config serán group-readable)"
+        cb_info "UID ${target_uid} ya en uso; creando controlbox sin UID fijo (archivos de config quedarán group-readable)"
         useradd --gid controlbox \
             --no-create-home --shell /usr/sbin/nologin \
             --home-dir "${CONTROLBOX_INSTALL_DIR}" controlbox

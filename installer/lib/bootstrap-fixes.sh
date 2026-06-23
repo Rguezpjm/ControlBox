@@ -142,9 +142,9 @@ cb_fix_platform_env_permissions() {
         local current_gid
         current_gid="$(getent group controlbox | cut -d: -f3)"
         if [[ "${current_gid}" != "${target_gid}" ]]; then
-            cb_warn "Ajustando GID grupo controlbox: ${current_gid} → ${target_gid}..."
+            cb_info "Ajustando GID grupo controlbox: ${current_gid} → ${target_gid}..."
             if ! groupmod -g "${target_gid}" controlbox 2>/dev/null; then
-                cb_warn "No se pudo ajustar GID del grupo controlbox a ${target_gid}"
+                cb_info "No se pudo ajustar GID del grupo controlbox a ${target_gid}; continuando con permisos compatibles"
             fi
         fi
     fi
@@ -314,6 +314,11 @@ cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
     local version="${CONTROLBOX_VERSION:-4.11.9}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
+    panel_base="$(cb_setup_normalize_panel_base_path "${panel_base}")"
+    local panel_base_arg=""
+    if [[ -n "${panel_base}" ]]; then
+        panel_base_arg="/${panel_base}"
+    fi
 
     cb_app_source_available || return 1
 
@@ -329,7 +334,7 @@ services:
       context: ${install_dir}/src/frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_BASE_PATH: ${panel_base}
+        NEXT_PUBLIC_BASE_PATH: ${panel_base_arg}
         API_PROXY_URL: http://api:8000
     image: controlbox-panel:${version}
   migrate:

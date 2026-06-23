@@ -9,6 +9,7 @@ done
 
 cb_wait_for_docker() {
   [ -n "${DOCKER_HOST:-}" ] || return 0
+  [ "${REQUIRE_DOCKER_API:-0}" = "1" ] || return 0
 
   echo "Esperando API Docker en ${DOCKER_HOST}..."
   attempt=0

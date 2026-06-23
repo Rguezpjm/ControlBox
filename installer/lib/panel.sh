@@ -11,22 +11,36 @@ cb_panel_prepare_ip_access_files() {
     local templates_dir="${CONTROLBOX_INSTALLER_ROOT}/templates"
     local config_dir="${CONTROLBOX_CONFIG_DIR}/traefik"
     local compose_override="${CONTROLBOX_INSTALL_DIR}/docker-compose.override.yml"
+    local dynamic_panel="${config_dir}/dynamic/panel-ip.yml"
+    local panel_path=""
+    local panel_prefix="/"
+    panel_path="$(cb_setup_normalize_panel_base_path "${CONTROLBOX_PANEL_BASE_PATH:-}")"
+    if [[ -n "${panel_path}" ]]; then
+        panel_prefix="/${panel_path}"
+    fi
 
     mkdir -p "${config_dir}/dynamic"
     if [[ -f "${templates_dir}/traefik/traefik.ip-only.yml" ]]; then
         cp -f "${templates_dir}/traefik/traefik.ip-only.yml" "${config_dir}/traefik.yml"
     fi
 
-    cat > "${compose_override}" <<'EOF'
-services:
-  panel:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.controlbox-panel-ip.rule=HostRegexp(`{host:.+}`)"
-      - "traefik.http.routers.controlbox-panel-ip.entrypoints=web"
-      - "traefik.http.routers.controlbox-panel-ip.priority=1"
-      - "traefik.http.routers.controlbox-panel-ip.service=controlbox-panel-ip"
-      - "traefik.http.services.controlbox-panel-ip.loadbalancer.server.port=3000"
+    # En modo IP-only usamos provider "file" para evitar problemas de parseo de labels
+    # y asegurar routing estable a /ControlBox_Panel.
+    rm -f "${compose_override}" 2>/dev/null || true
+    cat > "${dynamic_panel}" <<EOF
+http:
+  routers:
+    controlbox-panel-ip:
+      rule: "PathPrefix(\`${panel_prefix}\`)"
+      entryPoints:
+        - web
+      service: controlbox-panel-ip
+      priority: 100
+  services:
+    controlbox-panel-ip:
+      loadBalancer:
+        servers:
+          - url: "http://panel:3000"
 EOF
 }
 
@@ -41,14 +55,17 @@ cb_panel_apply_ip_access() {
         return 0
     fi
 
+    local panel_url
+    panel_url="$(cb_setup_panel_url "${server_ip}" "${CONTROLBOX_PANEL_PORT:-8475}" "${CONTROLBOX_PANEL_BASE_PATH:-}")"
+
     if [[ "$(cb_get_install_state IP_PANEL_ROUTING 2>/dev/null)" == "1" ]] \
         && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^controlbox-panel$' \
         && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^controlbox-traefik$'; then
-        cb_info "Panel accesible en http://${server_ip}/ (puerto 80)"
+        cb_info "Panel accesible en ${panel_url} (puerto 80)"
         return 0
     fi
 
-    cb_info "Publicando panel en http://${server_ip}/ (Traefik puerto 80)"
+    cb_info "Publicando panel en ${panel_url} (Traefik puerto 80)"
     cb_docker_compose_run "${env_file}" up -d traefik panel || {
         cb_warn "No se pudo aplicar routing IP; ejecute: controlbox apply-panel"
         return 1
@@ -97,7 +114,7 @@ cb_panel_verify_access() {
 
     if ss -tln 2>/dev/null | grep -qE ':80 |:8475 '; then
         cb_warn "Puertos 80/8475 en escucha pero el panel aún no responde HTTP; reintente en 1 minuto"
-        cb_warn "URL: http://$(cb_setup_get_server_ip)/"
+        cb_warn "URL: $(cb_setup_panel_url "$(cb_setup_get_server_ip)" "${panel_port}" "${CONTROLBOX_PANEL_BASE_PATH:-}")"
         return 0
     fi
 

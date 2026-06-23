@@ -17,7 +17,7 @@ cb_domains_configure() {
     fi
 
     if [[ -z "${primary_domain}" ]]; then
-        cb_info "Modo VPS/IP: panel en http://$(cb_setup_get_server_ip)/ (puerto 80)"
+        cb_info "Modo VPS/IP: panel en $(cb_setup_panel_url "$(cb_setup_get_server_ip)" "${CONTROLBOX_PANEL_PORT:-8475}" "${CONTROLBOX_PANEL_BASE_PATH:-}") (puerto 80)"
         if declare -f cb_panel_apply_ip_access >/dev/null 2>&1; then
             cb_panel_apply_ip_access || true
         fi

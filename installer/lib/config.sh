@@ -129,6 +129,10 @@ cb_config_generate() {
     export CONTROLBOX_PANEL_PORT="${panel_port}"
     local panel_base_path
     panel_base_path="$(cb_setup_normalize_panel_base_path "${CONTROLBOX_PANEL_BASE_PATH:-}")"
+    local panel_base_arg=""
+    if [[ -n "${panel_base_path}" ]]; then
+        panel_base_arg="/${panel_base_path}"
+    fi
     local os_label
     os_label="$(cb_setup_format_os_label)"
     local cors_origins webauthn_origin
@@ -235,7 +239,7 @@ cb_config_generate() {
         cb_env_emit "TENANT_ADMIN_PASSWORD" "${CONTROLBOX_TENANT_ADMIN_PASSWORD}"
         cb_env_emit "TENANT_ADMIN_FULL_NAME" "${CONTROLBOX_TENANT_ADMIN_FULL_NAME}"
         cb_env_emit "PANEL_PORT" "${panel_port}"
-        cb_env_emit "PANEL_BASE_PATH" "${panel_base_path}"
+        cb_env_emit "PANEL_BASE_PATH" "${panel_base_arg}"
         cb_env_emit "CONTROLBOX_SERVER_IP" "${server_ip}"
         cb_env_emit "INSTALLER_TENANT_NAME" "${CONTROLBOX_TENANT_NAME}"
         cb_env_emit "INSTALLER_TENANT_SLUG" "${CONTROLBOX_TENANT_SLUG}"
@@ -306,6 +310,11 @@ cb_config_deploy_app_build_override() {
     local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
     local version="${CONTROLBOX_VERSION:-4.11.9}"
     local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
+    panel_base="$(cb_setup_normalize_panel_base_path "${panel_base}")"
+    local panel_base_arg=""
+    if [[ -n "${panel_base}" ]]; then
+        panel_base_arg="/${panel_base}"
+    fi
 
     [[ -f "${install_dir}/src/backend/Dockerfile" ]] \
         && [[ -f "${install_dir}/src/frontend/Dockerfile" ]] || return 1
@@ -322,7 +331,7 @@ services:
       context: ${install_dir}/src/frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_BASE_PATH: ${panel_base}
+        NEXT_PUBLIC_BASE_PATH: ${panel_base_arg}
         API_PROXY_URL: http://api:8000
     image: controlbox-panel:${version}
   migrate:
@@ -338,6 +347,12 @@ EOF
 
 cb_config_deploy_panel_override() {
     local frontend_dir="${CONTROLBOX_INSTALLER_ROOT}/../frontend"
+    local panel_base="${CONTROLBOX_PANEL_BASE_PATH:-}"
+    panel_base="$(cb_setup_normalize_panel_base_path "${panel_base}")"
+    local panel_base_arg=""
+    if [[ -n "${panel_base}" ]]; then
+        panel_base_arg="/${panel_base}"
+    fi
     if [[ ! -f "${frontend_dir}/Dockerfile" ]]; then
         return 0
     fi
@@ -351,7 +366,7 @@ services:
       context: ${frontend_dir}
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_BASE_PATH: ${CONTROLBOX_PANEL_BASE_PATH:-}
+        NEXT_PUBLIC_BASE_PATH: ${panel_base_arg}
         API_PROXY_URL: http://api:8000
     image: controlbox-panel:local
 EOF
