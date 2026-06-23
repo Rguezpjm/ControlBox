@@ -14,19 +14,32 @@ const apiBase = (process.env.API_PROXY_URL || "http://127.0.0.1:8000").replace(/
 const wsBase = apiBase.replace(/^http/i, "ws");
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "");
 
-const proxy = httpProxy.createProxyServer({
-  ws: true,
+// Proxy para la API: changeOrigin=true porque el target es un contenedor distinto
+const apiProxy = httpProxy.createProxyServer({
   changeOrigin: true,
   xfwd: true,
 });
 
-proxy.on("error", (err, _req, res) => {
-  if (res && !res.headersSent && typeof res.writeHead === "function") {
-    res.writeHead(502, { "Content-Type": "text/plain" });
-    res.end("Bad gateway");
-  }
-  console.error("[proxy]", err.message);
+// Proxy para Next.js: changeOrigin=false para que Next.js vea el Host original
+// del cliente y genere redirects con la IP/dominio real en lugar de localhost:3001
+const nextProxy = httpProxy.createProxyServer({
+  ws: true,
+  changeOrigin: false,
+  xfwd: true,
 });
+
+function onProxyError(label) {
+  return (err, _req, res) => {
+    if (res && !res.headersSent && typeof res.writeHead === "function") {
+      res.writeHead(502, { "Content-Type": "text/plain" });
+      res.end("Bad gateway");
+    }
+    console.error(`[${label}]`, err.message);
+  };
+}
+
+apiProxy.on("error", onProxyError("api-proxy"));
+nextProxy.on("error", onProxyError("next-proxy"));
 
 function normalizePath(pathname) {
   if (!pathname) return "/";
@@ -61,11 +74,11 @@ const server = createServer((req, res) => {
 
   if (isApiPath(pathname)) {
     req.url = normalizePath(pathname) + (parsed.search || "");
-    proxy.web(req, res, { target: apiBase });
+    apiProxy.web(req, res, { target: apiBase });
     return;
   }
 
-  proxy.web(req, res, { target: `http://127.0.0.1:${nextPort}` });
+  nextProxy.web(req, res, { target: `http://127.0.0.1:${nextPort}` });
 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -73,11 +86,11 @@ server.on("upgrade", (req, socket, head) => {
 
   if (isWsPath(pathname)) {
     req.url = "/ws";
-    proxy.ws(req, socket, head, { target: wsBase });
+    apiProxy.ws(req, socket, head, { target: wsBase });
     return;
   }
 
-  proxy.ws(req, socket, head, { target: `http://127.0.0.1:${nextPort}` });
+  nextProxy.ws(req, socket, head, { target: `http://127.0.0.1:${nextPort}` });
 });
 
 server.listen(port, hostname, () => {
