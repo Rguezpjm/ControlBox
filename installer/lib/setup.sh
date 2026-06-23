@@ -67,7 +67,7 @@ cb_setup_prompt_install() {
     echo ""
     echo -e "${CB_BOLD}Asistente de instalación ControlBox${CB_NC}"
     echo "Configure el dominio (opcional), la cuenta administradora y el puerto del panel."
-    echo "Sin dominio, el panel queda en http://IP/ (puerto 80)."
+    echo "Sin dominio, el panel queda en http://IP/ControlBox_Panel (puerto 80)."
     echo ""
 
     local primary_domain="${CONTROLBOX_PRIMARY_DOMAIN:-}"
@@ -161,7 +161,7 @@ cb_setup_prompt_install() {
     export CONTROLBOX_TENANT_ADMIN_PASSWORD="${tenant_admin_password}"
     export CONTROLBOX_TENANT_ADMIN_FULL_NAME="${tenant_admin_full_name}"
     export CONTROLBOX_PANEL_PORT="${panel_port}"
-    export CONTROLBOX_PANEL_BASE_PATH="${CONTROLBOX_PANEL_BASE_PATH:-}"
+    export CONTROLBOX_PANEL_BASE_PATH="${CONTROLBOX_PANEL_BASE_PATH:-${PANEL_BASE_PATH:-ControlBox_Panel}}"
     export INSTALLER_BOOTSTRAP_TOKEN="${INSTALLER_BOOTSTRAP_TOKEN:-$(cb_generate_secret 48)}"
 
     cb_setup_persist_state
@@ -182,6 +182,9 @@ cb_setup_load_state() {
         export CONTROLBOX_PANEL_PORT="$(cb_sanitize_port "$(cb_setup_pick_panel_port)" "8475")"
     fi
     export CONTROLBOX_PANEL_BASE_PATH="${CONTROLBOX_PANEL_BASE_PATH:-$(cb_get_install_state PANEL_BASE_PATH)}"
+    if [[ -z "${CONTROLBOX_PANEL_BASE_PATH}" ]]; then
+        export CONTROLBOX_PANEL_BASE_PATH="${PANEL_BASE_PATH:-ControlBox_Panel}"
+    fi
     export CONTROLBOX_SERVER_IP="${CONTROLBOX_SERVER_IP:-$(cb_get_install_state SERVER_IP)}"
     export INSTALLER_BOOTSTRAP_TOKEN="${INSTALLER_BOOTSTRAP_TOKEN:-$(cb_get_install_state INSTALLER_BOOTSTRAP_TOKEN)}"
 }

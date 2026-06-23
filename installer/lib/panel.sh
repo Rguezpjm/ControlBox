@@ -60,17 +60,23 @@ cb_panel_apply_ip_access() {
 cb_panel_verify_access() {
     local panel_port="${CONTROLBOX_PANEL_PORT:-8475}"
     local timeout="${1:-90}"
+    local panel_path=""
     panel_port="$(cb_sanitize_port "${panel_port}" "8475")"
+    panel_path="$(cb_setup_normalize_panel_base_path "${CONTROLBOX_PANEL_BASE_PATH:-}")"
+    local base_path=""
+    if [[ -n "${panel_path}" ]]; then
+        base_path="/${panel_path}"
+    fi
     local elapsed=0
     local ok_traefik=false ok_direct=false
 
     while [[ ${elapsed} -lt ${timeout} ]]; do
-        if cb_panel_curl_ok "http://127.0.0.1/login" || cb_panel_curl_ok "http://127.0.0.1/"; then
+        if cb_panel_curl_ok "http://127.0.0.1${base_path}/login" || cb_panel_curl_ok "http://127.0.0.1${base_path}/"; then
             ok_traefik=true
             break
         fi
-        if cb_panel_curl_ok "http://127.0.0.1:${panel_port}/login" \
-            || cb_panel_curl_ok "http://127.0.0.1:${panel_port}/"; then
+        if cb_panel_curl_ok "http://127.0.0.1:${panel_port}${base_path}/login" \
+            || cb_panel_curl_ok "http://127.0.0.1:${panel_port}${base_path}/"; then
             ok_direct=true
             break
         fi
@@ -79,13 +85,13 @@ cb_panel_verify_access() {
     done
 
     if [[ "${ok_traefik}" == "true" ]]; then
-        cb_success "Panel responde en puerto 80 (http://$(cb_setup_get_server_ip)/)"
+        cb_success "Panel responde en puerto 80 (http://$(cb_setup_get_server_ip)${base_path}/)"
         return 0
     fi
 
     if [[ "${ok_direct}" == "true" ]]; then
         cb_success "Panel responde en puerto ${panel_port} (acceso directo)"
-        cb_warn "Use http://$(cb_setup_get_server_ip):${panel_port} o abra el puerto ${panel_port} en el firewall cloud"
+        cb_warn "Use http://$(cb_setup_get_server_ip):${panel_port}${base_path}/ o abra el puerto ${panel_port} en el firewall cloud"
         return 0
     fi
 
