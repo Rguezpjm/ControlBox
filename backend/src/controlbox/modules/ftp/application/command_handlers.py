@@ -42,6 +42,7 @@ async def _rebuild_sftp_accounts(uow: UnitOfWork, settings: Settings | None = No
 
 def build_ftp_account(
     tenant_id: UUID,
+    owner_user_id: UUID | None,
     username: str,
     system_username: str,
     plain_password: str,
@@ -54,6 +55,7 @@ def build_ftp_account(
 ) -> FtpAccount:
     return FtpAccount(
         tenant_id=tenant_id,
+        owner_user_id=owner_user_id,
         username=username,
         system_username=system_username,
         password_hash=hash_password(plain_password),
@@ -86,6 +88,7 @@ class CreateFtpAccountHandler:
         system_username = domain.build_system_username(command.tenant_id, username)
         account = build_ftp_account(
             tenant_id=command.tenant_id,
+            owner_user_id=command.user_id,
             username=username,
             system_username=system_username,
             plain_password=plain_password,

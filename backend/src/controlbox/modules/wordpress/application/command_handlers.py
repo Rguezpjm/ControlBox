@@ -3,8 +3,10 @@ from uuid import UUID
 
 from controlbox.config.settings import Settings
 from controlbox.modules.identity.domain.entities import AuditLog
+from controlbox.modules.wordpress.application.responses import to_wordpress_site_response
 from controlbox.modules.wordpress.application.commands import (
     ChangePhpVersionCommand,
+    ChangeWordPressAdminPasswordCommand,
     CloneWordPressSiteCommand,
     CreateStagingCommand,
     CreateWordPressBackupCommand,
@@ -36,32 +38,11 @@ from controlbox.modules.wordpress.workers.tasks import (
 from controlbox.shared.application.cqrs import CommandHandler
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import ForbiddenError, NotFoundError, ConflictError, ValidationError
+from controlbox.shared.infrastructure.resource_isolation import set_owner_in_settings
 
 
-def _to_response(site: WordPressSite) -> WordPressSiteResponse:
-    return WordPressSiteResponse(
-        id=site.id,
-        tenant_id=site.tenant_id,
-        name=site.name,
-        domain=site.domain,
-        status=site.status.value,
-        php_version=site.php_version,
-        wordpress_version=site.wordpress_version,
-        url=site.url,
-        admin_user=site.admin_user,
-        admin_email=site.admin_email,
-        ssl_enabled=site.ssl_enabled,
-        ssl_status=site.ssl_status.value,
-        maintenance_mode=site.maintenance_mode,
-        disk_used_mb=site.disk_used_mb,
-        db_size_mb=site.db_size_mb,
-        is_staging=site.is_staging,
-        parent_site_id=site.parent_site_id,
-        error_message=site.error_message,
-        task_id=site.task_id,
-        created_at=site.created_at,
-        updated_at=site.updated_at,
-    )
+def _to_response(site: WordPressSite, settings: Settings | None = None) -> WordPressSiteResponse:
+    return to_wordpress_site_response(site, settings)
 
 
 class CreateWordPressSiteHandler(CommandHandler[CreateWordPressSiteCommand, WordPressSiteResponse]):
@@ -89,6 +70,7 @@ class CreateWordPressSiteHandler(CommandHandler[CreateWordPressSiteCommand, Word
 
         site = WordPressSite(
             tenant_id=command.tenant_id,
+            owner_user_id=command.user_id,
             name=command.name.strip(),
             domain=domain,
             status=WordPressStatus.PENDING,
@@ -99,7 +81,10 @@ class CreateWordPressSiteHandler(CommandHandler[CreateWordPressSiteCommand, Word
             admin_email=command.admin_email,
             ssl_enabled=command.ssl_enabled,
             ssl_status=WordPressSslStatus.PENDING if command.ssl_enabled else WordPressSslStatus.ACTIVE,
+            settings=set_owner_in_settings({}, command.user_id),
         )
+        if command.create_ftp_account:
+            site.settings["create_ftp_account"] = True
         nginx_name, php_name = domain_service.build_container_names(site.id)
         site.site_path = str(self._provisioner.get_site_path(command.tenant_id, site.id))
         site.nginx_container_name = nginx_name
@@ -140,7 +125,7 @@ class CreateWordPressSiteHandler(CommandHandler[CreateWordPressSiteCommand, Word
             )
         )
         await self._uow.commit()
-        return _to_response(site)
+        return _to_response(site, self._settings)
 
 
 class DeleteWordPressSiteHandler(CommandHandler[DeleteWordPressSiteCommand, None]):
@@ -174,6 +159,7 @@ class DeleteWordPressSiteHandler(CommandHandler[DeleteWordPressSiteCommand, None
 class RestartWordPressSiteHandler(CommandHandler[RestartWordPressSiteCommand, WordPressSiteResponse]):
     def __init__(self, uow: UnitOfWork, settings: Settings) -> None:
         self._uow = uow
+        self._settings = settings
         self._provisioner = WordPressProvisioner(settings)
 
     async def handle(self, command: RestartWordPressSiteCommand) -> WordPressSiteResponse:
@@ -184,12 +170,13 @@ class RestartWordPressSiteHandler(CommandHandler[RestartWordPressSiteCommand, Wo
         site.status = WordPressStatus.RUNNING
         await self._uow.wordpress_sites.save(site)
         await self._uow.commit()
-        return _to_response(site)
+        return _to_response(site, self._settings)
 
 
 class ChangePhpVersionHandler(CommandHandler[ChangePhpVersionCommand, WordPressSiteResponse]):
     def __init__(self, uow: UnitOfWork, settings: Settings) -> None:
         self._uow = uow
+        self._settings = settings
         self._provisioner = WordPressProvisioner(settings)
 
     async def handle(self, command: ChangePhpVersionCommand) -> WordPressSiteResponse:
@@ -204,12 +191,13 @@ class ChangePhpVersionHandler(CommandHandler[ChangePhpVersionCommand, WordPressS
         site.php_version = version
         await self._uow.wordpress_sites.save(site)
         await self._uow.commit()
-        return _to_response(site)
+        return _to_response(site, self._settings)
 
 
 class ToggleMaintenanceHandler(CommandHandler[ToggleMaintenanceCommand, WordPressSiteResponse]):
     def __init__(self, uow: UnitOfWork, settings: Settings) -> None:
         self._uow = uow
+        self._settings = settings
         self._provisioner = WordPressProvisioner(settings)
 
     async def handle(self, command: ToggleMaintenanceCommand) -> WordPressSiteResponse:
@@ -220,7 +208,36 @@ class ToggleMaintenanceHandler(CommandHandler[ToggleMaintenanceCommand, WordPres
         site.set_maintenance(command.enabled)
         await self._uow.wordpress_sites.save(site)
         await self._uow.commit()
-        return _to_response(site)
+        return _to_response(site, self._settings)
+
+
+class ChangeWordPressAdminPasswordHandler(
+    CommandHandler[ChangeWordPressAdminPasswordCommand, WordPressSiteResponse]
+):
+    def __init__(self, uow: UnitOfWork, settings: Settings) -> None:
+        self._uow = uow
+        self._settings = settings
+        self._provisioner = WordPressProvisioner(settings)
+
+    async def handle(self, command: ChangeWordPressAdminPasswordCommand) -> WordPressSiteResponse:
+        site = await self._uow.wordpress_sites.get_by_id_and_tenant(command.site_id, command.tenant_id)
+        if site is None:
+            raise NotFoundError("WordPress site not found")
+        if site.status != WordPressStatus.RUNNING:
+            raise ValidationError("El sitio debe estar en ejecución para cambiar la contraseña de WordPress")
+        await self._provisioner.change_admin_password(site, command.new_password)
+        await self._uow.audit_logs.add(
+            AuditLog(
+                tenant_id=command.tenant_id,
+                user_id=command.user_id,
+                action="wordpress.admin_password_changed",
+                resource_type="wordpress",
+                resource_id=str(site.id),
+                metadata={"domain": site.domain},
+            )
+        )
+        await self._uow.commit()
+        return _to_response(site, self._settings)
 
 
 class CloneWordPressSiteHandler(CommandHandler[CloneWordPressSiteCommand, WordPressSiteResponse]):
@@ -243,6 +260,7 @@ class CloneWordPressSiteHandler(CommandHandler[CloneWordPressSiteCommand, WordPr
 
         clone = WordPressSite(
             tenant_id=command.tenant_id,
+            owner_user_id=command.user_id,
             name=command.new_name.strip(),
             domain=domain,
             status=WordPressStatus.CLONING,
@@ -254,7 +272,7 @@ class CloneWordPressSiteHandler(CommandHandler[CloneWordPressSiteCommand, WordPr
             ssl_enabled=source.ssl_enabled,
             ssl_status=source.ssl_status,
             parent_site_id=source.id,
-            settings=dict(source.settings),
+            settings=set_owner_in_settings(dict(source.settings), command.user_id),
         )
         nginx_name, php_name = domain_service.build_container_names(clone.id)
         clone.nginx_container_name = nginx_name
@@ -273,7 +291,7 @@ class CloneWordPressSiteHandler(CommandHandler[CloneWordPressSiteCommand, WordPr
         clone.disk_used_mb = self._provisioner.measure_disk_mb(clone)
         await self._uow.wordpress_sites.save(clone)
         await self._uow.commit()
-        return _to_response(clone)
+        return _to_response(clone, self._settings)
 
 
 class CreateStagingHandler(CommandHandler[CreateStagingCommand, WordPressSiteResponse]):
@@ -302,7 +320,7 @@ class CreateStagingHandler(CommandHandler[CreateStagingCommand, WordPressSiteRes
             staging.parent_site_id = source.id
             await self._uow.wordpress_sites.save(staging)
             await self._uow.commit()
-            return _to_response(staging)
+            return _to_response(staging, self._settings)
         return result
 
 

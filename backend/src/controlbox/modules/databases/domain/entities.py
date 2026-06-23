@@ -46,6 +46,7 @@ ENGINE_DEFAULT_PORTS: dict[DatabaseEngineType, int] = {
 @dataclass
 class ManagedDatabase(Entity):
     tenant_id: UUID | None = None
+    owner_user_id: UUID | None = None
     name: str = ""
     engine: DatabaseEngineType = DatabaseEngineType.MYSQL
     status: DatabaseStatus = DatabaseStatus.PENDING

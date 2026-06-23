@@ -7,6 +7,8 @@ from uuid import UUID
 @dataclass(frozen=True)
 class ListWebsitesQuery:
     tenant_id: UUID
+    requester_user_id: UUID | None = None
+    can_manage_all: bool = False
     limit: int = 50
     offset: int = 0
 
@@ -15,6 +17,8 @@ class ListWebsitesQuery:
 class GetWebsiteQuery:
     website_id: UUID
     tenant_id: UUID
+    requester_user_id: UUID | None = None
+    can_manage_all: bool = False
 
 
 @dataclass(frozen=True)

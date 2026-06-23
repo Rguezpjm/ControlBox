@@ -249,6 +249,7 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ADMIN_PASSWORD:-change-me-mysql-root}
+      MYSQL_ROOT_HOST: "%"
     volumes:
       - mysql_data:/var/lib/mysql
     ports:
@@ -270,6 +271,7 @@ services:
     restart: unless-stopped
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ADMIN_PASSWORD:-change-me-mariadb-root}
+      MARIADB_ROOT_HOST: "%"
     volumes:
       - mariadb_data:/var/lib/mysql
     ports:

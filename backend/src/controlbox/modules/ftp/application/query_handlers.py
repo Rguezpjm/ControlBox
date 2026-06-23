@@ -39,6 +39,11 @@ class ListFtpAccountsHandler:
     async def handle(self, query: ListFtpAccountsQuery) -> list[FtpAccountResponse]:
         async with self._uow:
             accounts = await self._uow.ftp_accounts.list_by_tenant(query.tenant_id)
+        if not query.can_manage_all:
+            accounts = [
+                account for account in accounts
+                if account.owner_user_id is not None and account.owner_user_id == query.requester_user_id
+            ]
         return [to_account_response(account) for account in accounts]
 
 
@@ -50,6 +55,8 @@ class GetFtpAccountHandler:
         async with self._uow:
             account = await self._uow.ftp_accounts.get_by_id_and_tenant(query.account_id, query.tenant_id)
             if not account:
+                raise NotFoundError("FTP account not found")
+            if not query.can_manage_all and account.owner_user_id != query.requester_user_id:
                 raise NotFoundError("FTP account not found")
         return to_account_response(account)
 
@@ -63,9 +70,16 @@ class ListFtpLogsHandler:
     async def handle(self, query: ListFtpLogsQuery) -> list[FtpLogResponse]:
         async with self._uow:
             accounts = await self._uow.ftp_accounts.list_by_tenant(query.tenant_id)
+            if not query.can_manage_all:
+                accounts = [
+                    account for account in accounts
+                    if account.owner_user_id is not None and account.owner_user_id == query.requester_user_id
+                ]
             if query.account_id:
                 account = await self._uow.ftp_accounts.get_by_id_and_tenant(query.account_id, query.tenant_id)
                 if not account:
+                    raise NotFoundError("FTP account not found")
+                if not query.can_manage_all and account.owner_user_id != query.requester_user_id:
                     raise NotFoundError("FTP account not found")
                 accounts = [account]
 

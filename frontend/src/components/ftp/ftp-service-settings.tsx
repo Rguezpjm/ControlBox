@@ -29,9 +29,10 @@ function mapStatus(status: FtpServiceStatus): ResourceStatus {
 interface FtpServiceSettingsProps {
   serviceStatus: FtpServiceStatus | null;
   onUpdated: () => void;
+  inModal?: boolean;
 }
 
-export function FtpServiceSettings({ serviceStatus, onUpdated }: FtpServiceSettingsProps) {
+export function FtpServiceSettings({ serviceStatus, onUpdated, inModal = false }: FtpServiceSettingsProps) {
   const [enabled, setEnabled] = useState(false);
   const [protocol, setProtocol] = useState<"ftp" | "ftps" | "sftp">("ftp");
   const [port, setPort] = useState("21");
@@ -89,23 +90,19 @@ export function FtpServiceSettings({ serviceStatus, onUpdated }: FtpServiceSetti
   const canManage = serviceStatus.can_manage;
   const showPassive = protocol === "ftp" || protocol === "ftps";
 
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-3">
-        <div>
-          <CardTitle className="text-base">Servicio FTP</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            Protocolo, puerto y estado global del servicio
-          </p>
-        </div>
-        <StatusBadge status={mapStatus(serviceStatus)} />
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {serviceStatus.message && (
-          <p className="text-sm text-muted-foreground rounded-lg border bg-muted/30 p-3">
-            {serviceStatus.message}
-          </p>
-        )}
+  const settingsContent = (
+    <div className="space-y-4">
+      {enabled && !serviceStatus.enabled && (
+        <p className="text-sm text-amber-700 dark:text-amber-400 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+          Pulse <strong>Guardar configuración</strong> para activar el servicio FTP en el servidor.
+        </p>
+      )}
+
+      {serviceStatus.message && !(enabled && !serviceStatus.enabled) && (
+        <p className="text-sm text-muted-foreground rounded-lg border bg-muted/30 p-3">
+          {serviceStatus.message}
+        </p>
+      )}
 
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -223,7 +220,34 @@ export function FtpServiceSettings({ serviceStatus, onUpdated }: FtpServiceSetti
             SFTP: tras cambiar a este modo, reinicie la contraseña de cada cuenta para sincronizar el acceso SSH.
           </p>
         )}
-      </CardContent>
+    </div>
+  );
+
+  if (inModal) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-3 rounded-lg border bg-muted/20 px-3 py-2">
+          <div>
+            <p className="text-sm font-medium">Servicio FTP</p>
+            <p className="text-xs text-muted-foreground">Protocolo, puerto y estado global del servicio</p>
+          </div>
+          <StatusBadge status={mapStatus(serviceStatus)} />
+        </div>
+        {settingsContent}
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-3">
+        <div>
+          <CardTitle className="text-base">Servicio FTP</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">Protocolo, puerto y estado global del servicio</p>
+        </div>
+        <StatusBadge status={mapStatus(serviceStatus)} />
+      </CardHeader>
+      <CardContent>{settingsContent}</CardContent>
     </Card>
   );
 }

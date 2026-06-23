@@ -58,6 +58,8 @@ export interface WebsiteMetrics {
   memory_percent: number;
   disk_used_mb: number;
   disk_limit_mb: number;
+  site_type?: "website" | "wordpress";
+  created_at?: string | null;
 }
 
 export interface ServiceHealth {

@@ -12,6 +12,7 @@ def website_to_entity(model: WebsiteModel) -> Website:
     return Website(
         id=model.id,
         tenant_id=model.tenant_id,
+        owner_user_id=model.owner_user_id,
         name=model.name,
         domain=model.domain,
         runtime=WebsiteRuntime(model.runtime),
@@ -42,6 +43,7 @@ def website_to_model(entity: Website) -> WebsiteModel:
     return WebsiteModel(
         id=entity.id,
         tenant_id=entity.tenant_id,
+        owner_user_id=entity.owner_user_id,
         name=entity.name,
         domain=entity.domain,
         runtime=entity.runtime.value,

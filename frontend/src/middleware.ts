@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { APP_BASE_PATH, withBasePath } from "@/lib/base-path";
+import { APP_BASE_PATH } from "@/lib/base-path";
 
 const PUBLIC_PATHS = ["/login", "/register", "/accept-invite"];
 /** Legacy default path; redirect to root when panel runs without basePath. */
@@ -14,16 +14,59 @@ function stripBasePath(pathname: string): string {
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
 
+function base64UrlDecode(input: string): string {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padLength = (4 - (normalized.length % 4)) % 4;
+  const padded = normalized + "=".repeat(padLength);
+  return atob(padded);
+}
+
+function isExpiredJwt(token: string): boolean {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return true;
+    const payloadRaw = base64UrlDecode(parts[1]);
+    const payload = JSON.parse(payloadRaw) as { exp?: number };
+    if (typeof payload.exp !== "number") return true;
+    const now = Math.floor(Date.now() / 1000);
+    return payload.exp <= now;
+  } catch {
+    return true;
+  }
+}
+
+function redirectRelative(request: NextRequest, relativePath: string): NextResponse {
+  const target = relativePath.startsWith("/") ? relativePath : `/${relativePath}`;
+  const url = request.nextUrl.clone();
+  url.pathname = target;
+  url.search = "";
+  const [pathnameOnly, search = ""] = target.split("?");
+  return new NextResponse(null, {
+    status: 307,
+    headers: {
+      Location: `${pathnameOnly}${search ? `?${search}` : ""}`,
+    },
+  });
+}
+
 export function middleware(request: NextRequest) {
   const rawPath = request.nextUrl.pathname;
+  const duplicatedPrefix = APP_BASE_PATH ? `${APP_BASE_PATH}${APP_BASE_PATH}` : "";
+
+  if (
+    duplicatedPrefix &&
+    (rawPath === duplicatedPrefix || rawPath.startsWith(`${duplicatedPrefix}/`))
+  ) {
+    const fixedPath = rawPath.slice(APP_BASE_PATH.length) || "/";
+    return redirectRelative(request, fixedPath);
+  }
 
   if (
     !APP_BASE_PATH &&
     (rawPath === LEGACY_PANEL_PREFIX || rawPath.startsWith(`${LEGACY_PANEL_PREFIX}/`))
   ) {
-    const url = request.nextUrl.clone();
-    url.pathname = rawPath.slice(LEGACY_PANEL_PREFIX.length) || "/";
-    return NextResponse.redirect(url);
+    const fixedPath = rawPath.slice(LEGACY_PANEL_PREFIX.length) || "/";
+    return redirectRelative(request, fixedPath);
   }
 
   const pathname = stripBasePath(rawPath);
@@ -36,11 +79,9 @@ export function middleware(request: NextRequest) {
   }
 
   const accessCookie = request.cookies.get("cb_access")?.value;
-  if (!accessCookie) {
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = withBasePath("/login");
-    loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+  if (!accessCookie || isExpiredJwt(accessCookie)) {
+    const redirectTarget = encodeURIComponent(pathname);
+    return redirectRelative(request, `/login?redirect=${redirectTarget}`);
   }
   return NextResponse.next();
 }

@@ -78,10 +78,14 @@ from controlbox.modules.identity.application.queries import (
 )
 from controlbox.modules.identity.domain.services import PasswordService, SessionService
 from controlbox.shared.application.unit_of_work import UnitOfWork
-from controlbox.shared.domain.base import DomainException, ForbiddenError, NotFoundError
+from controlbox.shared.domain.base import DomainException, ForbiddenError, NotFoundError, utc_now
 
 
 router = APIRouter(prefix="/identity", tags=["identity"])
+
+
+def _access_cookie_ttl_seconds(expires_at) -> int:
+    return max(60, int((expires_at - utc_now()).total_seconds()))
 
 
 async def _issue_csrf(response: Response, container: AppState, session_id: str) -> str:
@@ -120,7 +124,12 @@ async def register_tenant(
             )
         )
         set_refresh_cookie(response, tokens.refresh_token, container.settings)
-        set_access_cookie(response, tokens.access_token, container.settings)
+        set_access_cookie(
+            response,
+            tokens.access_token,
+            container.settings,
+            max_age_seconds=_access_cookie_ttl_seconds(tokens.access_token_expires_at),
+        )
         return RegisterTenantResponseSchema(
             tenant=TenantResponseSchema(**tenant.__dict__),
             user=UserResponseSchema(**user.__dict__),
@@ -168,7 +177,12 @@ async def login(
                 methods=result.methods,
             )
         set_refresh_cookie(response, result.refresh_token, container.settings)
-        set_access_cookie(response, result.access_token, container.settings)
+        set_access_cookie(
+            response,
+            result.access_token,
+            container.settings,
+            max_age_seconds=_access_cookie_ttl_seconds(result.access_token_expires_at),
+        )
         csrf = await _issue_csrf(response, container, str(result.session_id))
         return LoginResponseSchema(
             access_token=result.access_token,
@@ -210,7 +224,12 @@ async def refresh_token(
             )
         )
         set_refresh_cookie(response, tokens.refresh_token, container.settings)
-        set_access_cookie(response, tokens.access_token, container.settings)
+        set_access_cookie(
+            response,
+            tokens.access_token,
+            container.settings,
+            max_age_seconds=_access_cookie_ttl_seconds(tokens.access_token_expires_at),
+        )
         await _issue_csrf(response, container, str(tokens.session_id))
         return TokenResponseSchema(
             access_token=tokens.access_token,

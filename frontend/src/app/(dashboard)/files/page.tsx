@@ -279,6 +279,7 @@ function FilesContent() {
         </Button>
         {breadcrumbs.map((part, i) => {
           const path = breadcrumbs.slice(0, i + 1).join("/");
+          const label = browse?.path_labels?.[path] ?? part;
           return (
             <span key={path} className="flex items-center gap-1">
               <ChevronRight className="h-3 w-3" />
@@ -287,7 +288,7 @@ function FilesContent() {
                 className="hover:text-foreground hover:underline"
                 onClick={() => load(path)}
               >
-                {part}
+                {label}
               </button>
             </span>
           );
@@ -342,7 +343,7 @@ function FilesContent() {
                         ) : (
                           <File className="h-4 w-4 text-muted-foreground" />
                         )}
-                        <span className="font-medium">{entry.name}</span>
+                        <span className="font-medium">{entry.display_name || entry.name}</span>
                       </div>
                     </td>
                     <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground text-xs">

@@ -4,8 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   Copy,
+  Eye,
+  EyeOff,
   ExternalLink,
   Loader2,
+  RefreshCw,
   Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +46,38 @@ interface CreateWordPressDialogProps {
 }
 
 type Phase = "form" | "deploying" | "success" | "error";
+
+function sanitizeIdentifier(raw: string): string {
+  const normalized = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const safe = normalized.replace(/_+/g, "_");
+  if (!safe) return "site";
+  return /^[a-z]/.test(safe) ? safe : `s_${safe}`;
+}
+
+function buildAutoDbName(siteName: string): string {
+  const base = sanitizeIdentifier(siteName);
+  return base.slice(0, 24);
+}
+
+function buildAutoDbUser(siteName: string): string {
+  const base = sanitizeIdentifier(siteName);
+  const user = `${base.slice(0, 18)}_usr`;
+  return user.slice(0, 24);
+}
+
+function generatePassword(length = 16): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+  const bytes = new Uint32Array(length);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (let i = 0; i < length; i += 1) {
+    out += chars[bytes[i] % chars.length];
+  }
+  return out;
+}
 
 function CredentialRow({
   label,
@@ -100,12 +135,18 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
   const [domain, setDomain] = useState("");
   const [adminUser, setAdminUser] = useState("admin");
   const [adminPassword, setAdminPassword] = useState("");
+  const [adminPasswordVisible, setAdminPasswordVisible] = useState(false);
   const [adminEmail, setAdminEmail] = useState("");
   const [dbName, setDbName] = useState("");
   const [dbUser, setDbUser] = useState("");
   const [dbPassword, setDbPassword] = useState("");
+  const [dbPasswordVisible, setDbPasswordVisible] = useState(false);
+  const [dbNameTouched, setDbNameTouched] = useState(false);
+  const [dbUserTouched, setDbUserTouched] = useState(false);
+  const [dbPasswordTouched, setDbPasswordTouched] = useState(false);
   const [phpVersion, setPhpVersion] = useState("8.3");
   const [sslEnabled, setSslEnabled] = useState(true);
+  const [createFtpAccount, setCreateFtpAccount] = useState(false);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -131,12 +172,29 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
           setPhpVersion(opts.php_versions[opts.php_versions.length - 1] || "8.3");
         })
         .catch(() => setOptions(null));
+      setAdminPassword(generatePassword(16));
+      setDbPassword(generatePassword(18));
+      setDbPasswordTouched(false);
+      setDbNameTouched(false);
+      setDbUserTouched(false);
+      setAdminPasswordVisible(false);
+      setDbPasswordVisible(false);
     } else {
       resetDialog();
     }
   }, [open, resetDialog]);
 
   useEffect(() => () => stopPolling(), [stopPolling]);
+
+  useEffect(() => {
+    if (!name.trim()) {
+      if (!dbNameTouched) setDbName("");
+      if (!dbUserTouched) setDbUser("");
+      return;
+    }
+    if (!dbNameTouched) setDbName(buildAutoDbName(name));
+    if (!dbUserTouched) setDbUser(buildAutoDbUser(name));
+  }, [name, dbNameTouched, dbUserTouched]);
 
   const pollProvision = useCallback(
     (siteId: string) => {
@@ -179,6 +237,7 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
         admin_email: adminEmail,
         php_version: phpVersion,
         ssl_enabled: sslEnabled,
+        create_ftp_account: createFtpAccount,
         db_name: dbName.trim() || undefined,
         db_user: dbUser.trim() || undefined,
         db_password: dbPassword.trim() || undefined,
@@ -205,6 +264,12 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
     }
   }
 
+  async function copyToClipboard(value: string, label: string) {
+    await navigator.clipboard.writeText(value);
+    // Keep it minimal and non-blocking for quick one-click UX.
+    console.info(`${label} copied`);
+  }
+
   function handleClose() {
     onOpenChange(false);
     if (phase === "success") {
@@ -214,6 +279,10 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
       setDbName("");
       setDbUser("");
       setDbPassword("");
+      setCreateFtpAccount(false);
+      setDbNameTouched(false);
+      setDbUserTouched(false);
+      setDbPasswordTouched(false);
     }
   }
 
@@ -270,14 +339,25 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="wp-password">Admin Password</Label>
-                  <Input
-                    id="wp-password"
-                    type="password"
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    minLength={8}
-                    required
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="wp-password"
+                      type={adminPasswordVisible ? "text" : "password"}
+                      value={adminPassword}
+                      onChange={(e) => setAdminPassword(e.target.value)}
+                      minLength={8}
+                      required
+                    />
+                    <Button type="button" variant="outline" size="icon" onClick={() => setAdminPasswordVisible((v) => !v)}>
+                      {adminPasswordVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setAdminPassword(generatePassword(16))}>
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                    <Button type="button" variant="outline" size="icon" onClick={() => copyToClipboard(adminPassword, "Admin password")}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="wp-email">Admin Email</Label>
@@ -305,7 +385,10 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
                       id="wp-db-name"
                       placeholder="myblog"
                       value={dbName}
-                      onChange={(e) => setDbName(e.target.value.toLowerCase())}
+                      onChange={(e) => {
+                        setDbNameTouched(true);
+                        setDbName(e.target.value.toLowerCase());
+                      }}
                       pattern="[a-z][a-z0-9_]*"
                       title="Start with a letter; use lowercase letters, numbers or _"
                     />
@@ -316,21 +399,46 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
                       id="wp-db-user"
                       placeholder="wpuser"
                       value={dbUser}
-                      onChange={(e) => setDbUser(e.target.value.toLowerCase())}
+                      onChange={(e) => {
+                        setDbUserTouched(true);
+                        setDbUser(e.target.value.toLowerCase());
+                      }}
                       pattern="[a-z][a-z0-9_]*"
                       title="Start with a letter; use lowercase letters, numbers or _"
                     />
                   </div>
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor="wp-db-password">Database password</Label>
-                    <Input
-                      id="wp-db-password"
-                      type="password"
-                      placeholder="Auto-generated if empty"
-                      value={dbPassword}
-                      onChange={(e) => setDbPassword(e.target.value)}
-                      minLength={8}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="wp-db-password"
+                        type={dbPasswordVisible ? "text" : "password"}
+                        placeholder="Auto-generated if empty"
+                        value={dbPassword}
+                        onChange={(e) => {
+                          setDbPasswordTouched(true);
+                          setDbPassword(e.target.value);
+                        }}
+                        minLength={8}
+                      />
+                      <Button type="button" variant="outline" size="icon" onClick={() => setDbPasswordVisible((v) => !v)}>
+                        {dbPasswordVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => {
+                          setDbPasswordTouched(true);
+                          setDbPassword(generatePassword(18));
+                        }}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                      <Button type="button" variant="outline" size="icon" onClick={() => copyToClipboard(dbPassword, "Database password")}>
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -341,6 +449,16 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
                   <p className="text-xs text-muted-foreground">Traefik auto-certificate via certresolver</p>
                 </div>
                 <Switch checked={sslEnabled} onCheckedChange={setSslEnabled} />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <Label>Create FTP account</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Auto-create FTP/SFTP account for this site after deployment.
+                  </p>
+                </div>
+                <Switch checked={createFtpAccount} onCheckedChange={setCreateFtpAccount} />
               </div>
 
               <DialogFooter>
@@ -417,6 +535,15 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
                   <CredentialRow label="Database host" value={credentials.db_host} mono />
                 ) : null}
               </div>
+
+              {(credentials.ftp_username || credentials.ftp_password || credentials.ftp_home) && (
+                <div className="rounded-lg border p-4 space-y-3">
+                  <p className="text-sm font-medium">FTP access</p>
+                  {credentials.ftp_username ? <CredentialRow label="FTP user" value={credentials.ftp_username} mono /> : null}
+                  {credentials.ftp_password ? <CredentialRow label="FTP password" value={credentials.ftp_password} secret mono /> : null}
+                  {credentials.ftp_home ? <CredentialRow label="FTP directory" value={credentials.ftp_home} mono /> : null}
+                </div>
+              )}
             </div>
 
             <DialogFooter>

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from controlbox.modules.wordpress.domain.entities import WordPressSite, WordPressStatus
+from controlbox.modules.wordpress.infrastructure.site_access import build_site_access_info
 
 
 def _now_iso() -> str:
@@ -25,6 +25,9 @@ def set_provision_credentials(
     db_name: str,
     db_user: str,
     db_password: str,
+    ftp_username: str | None = None,
+    ftp_password: str | None = None,
+    ftp_home: str | None = None,
 ) -> None:
     login_url = site.url.rstrip("/") + "/wp-admin"
     site.settings["provision_credentials"] = {
@@ -35,16 +38,22 @@ def set_provision_credentials(
         "db_user": db_user,
         "db_password": db_password,
         "db_host": site.settings.get("db_host", ""),
+        "ftp_username": ftp_username,
+        "ftp_password": ftp_password,
+        "ftp_home": ftp_home,
     }
 
 
-def build_provision_status(site: WordPressSite) -> dict[str, Any]:
+def build_provision_status(site: WordPressSite, settings=None) -> dict[str, Any]:
     steps = list(site.settings.get("provision_steps") or [])
     credentials = None
-    if site.status == WordPressStatus.RUNNING:
-        raw = site.settings.get("provision_credentials")
-        if isinstance(raw, dict):
-            credentials = dict(raw)
+    raw = site.settings.get("provision_credentials")
+    if isinstance(raw, dict):
+        credentials = dict(raw)
+    elif site.settings.get("db_name") and settings is not None:
+        credentials = build_site_access_info(site, settings).__dict__
+    elif site.status == WordPressStatus.RUNNING and settings is not None:
+        credentials = build_site_access_info(site, settings).__dict__
     return {
         "site_id": site.id,
         "status": site.status.value,

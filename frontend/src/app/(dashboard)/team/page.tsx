@@ -119,8 +119,8 @@ function TeamContent() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Team Members"
-        description="Manage collaborators, roles, invitations and audit history."
+        title="Sub Accounts"
+        description="Manage sub-users, roles, invitations and audit history."
         action={
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />

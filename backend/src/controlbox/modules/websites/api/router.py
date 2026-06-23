@@ -53,6 +53,7 @@ from controlbox.shared.domain.base import DomainException, ForbiddenError
 from controlbox.shared.api.site_log_schemas import AccessLogEntrySchema, SiteAccessLogsSchema, SiteErrorLogSchema
 from controlbox.shared.infrastructure.site_logs import SiteLogReader
 from controlbox.shared.infrastructure.site_stats import enrich_site_monitoring_fields, get_ssl_days_remaining
+from controlbox.shared.infrastructure.resource_isolation import can_manage_all_resources
 
 
 router = APIRouter(prefix="/websites", tags=["websites"])
@@ -114,6 +115,13 @@ def _require_tenant(context: RequestContext) -> UUID:
     return context.tenant_id
 
 
+def _assert_website_access(context: RequestContext, website) -> None:
+    if can_manage_all_resources(context):
+        return
+    if website.owner_user_id is None or website.owner_user_id != context.user_id:
+        raise map_domain_exception(ForbiddenError("Website not found"))
+
+
 @router.get("/options", response_model=WebsiteOptionsSchema)
 async def get_website_options(
     context: Annotated[RequestContext, Depends(require_permission("websites.read"))],
@@ -143,7 +151,13 @@ async def list_websites(
     try:
         handler = ListWebsitesHandler(uow=uow)
         websites = await handler.handle(
-            ListWebsitesQuery(tenant_id=tenant_id, limit=min(limit, 100), offset=offset)
+            ListWebsitesQuery(
+                tenant_id=tenant_id,
+                requester_user_id=context.user_id,
+                can_manage_all=can_manage_all_resources(context),
+                limit=min(limit, 100),
+                offset=offset,
+            )
         )
         return [await _website_schema(container, tenant_id, w) for w in websites]
     except DomainException as exc:
@@ -188,7 +202,14 @@ async def get_website(
     tenant_id = _require_tenant(context)
     try:
         handler = GetWebsiteHandler(uow=uow)
-        website = await handler.handle(GetWebsiteQuery(website_id=website_id, tenant_id=tenant_id))
+        website = await handler.handle(
+            GetWebsiteQuery(
+                website_id=website_id,
+                tenant_id=tenant_id,
+                requester_user_id=context.user_id,
+                can_manage_all=can_manage_all_resources(context),
+            )
+        )
         return await _website_schema(container, tenant_id, website)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
@@ -205,6 +226,7 @@ async def get_website_modification(
     website_entity = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
     if website_entity is None:
         raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website_entity)
     view = await SiteModificationService(settings).get_website(website_entity)
     return _modification_schema(view)
 
@@ -221,6 +243,7 @@ async def update_website_modification(
     website_entity = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
     if website_entity is None:
         raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website_entity)
     try:
         service = SiteModificationService(settings)
         view = await service.update_website(
@@ -257,6 +280,7 @@ async def add_website_domain(
     website_entity = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
     if website_entity is None:
         raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website_entity)
     service = SiteModificationService(settings)
     updated = service.add_domain(website_entity.settings or {}, payload.domain, payload.port)
     view = await service.update_website(website_entity, settings_patch=updated)
@@ -277,6 +301,7 @@ async def remove_website_domain(
     website_entity = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
     if website_entity is None:
         raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website_entity)
     service = SiteModificationService(settings)
     updated = service.remove_domain(website_entity.settings or {}, domain)
     view = await service.update_website(website_entity, settings_patch=updated)
@@ -297,6 +322,7 @@ async def get_website_access_logs(
     website = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
     if website is None:
         raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website)
     reader = SiteLogReader(settings)
     from controlbox.modules.websites.infrastructure.provisioner import DockerProvisioner
 
@@ -325,6 +351,7 @@ async def get_website_error_log(
     website = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
     if website is None:
         raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website)
     reader = SiteLogReader(settings)
     from controlbox.modules.websites.infrastructure.provisioner import DockerProvisioner
 
@@ -346,6 +373,10 @@ async def delete_website(
 ) -> None:
     tenant_id = _require_tenant(context)
     settings = get_settings()
+    website = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
+    if website is None:
+        raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website)
     try:
         handler = DeleteWebsiteHandler(uow=uow, settings=settings)
         await handler.handle(
@@ -363,6 +394,10 @@ async def start_website(
 ) -> WebsiteResponseSchema:
     tenant_id = _require_tenant(context)
     settings = get_settings()
+    website = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
+    if website is None:
+        raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website)
     try:
         handler = StartWebsiteHandler(uow=uow, settings=settings)
         website = await handler.handle(
@@ -381,6 +416,10 @@ async def stop_website(
 ) -> WebsiteResponseSchema:
     tenant_id = _require_tenant(context)
     settings = get_settings()
+    website = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
+    if website is None:
+        raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website)
     try:
         handler = StopWebsiteHandler(uow=uow, settings=settings)
         website = await handler.handle(

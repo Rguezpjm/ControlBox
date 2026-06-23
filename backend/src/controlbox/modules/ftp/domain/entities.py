@@ -16,6 +16,7 @@ class FtpAccountStatus(StrEnum):
 @dataclass
 class FtpAccount(Entity):
     tenant_id: UUID | None = None
+    owner_user_id: UUID | None = None
     username: str = ""
     system_username: str = ""
     password_hash: str = ""

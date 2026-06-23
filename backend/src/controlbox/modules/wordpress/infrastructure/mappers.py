@@ -12,6 +12,7 @@ def site_to_entity(model: WordPressSiteModel) -> WordPressSite:
     return WordPressSite(
         id=model.id,
         tenant_id=model.tenant_id,
+        owner_user_id=model.owner_user_id,
         name=model.name,
         domain=model.domain,
         status=WordPressStatus(model.status),
@@ -44,6 +45,7 @@ def site_to_model(entity: WordPressSite) -> WordPressSiteModel:
     return WordPressSiteModel(
         id=entity.id,
         tenant_id=entity.tenant_id,
+        owner_user_id=entity.owner_user_id,
         name=entity.name,
         domain=entity.domain,
         status=entity.status.value,

@@ -6,12 +6,16 @@ from uuid import UUID
 @dataclass
 class ListFtpAccountsQuery:
     tenant_id: UUID
+    requester_user_id: UUID | None = None
+    can_manage_all: bool = False
 
 
 @dataclass
 class GetFtpAccountQuery:
     tenant_id: UUID
     account_id: UUID
+    requester_user_id: UUID | None = None
+    can_manage_all: bool = False
 
 
 @dataclass
@@ -19,6 +23,8 @@ class ListFtpLogsQuery:
     tenant_id: UUID
     account_id: UUID | None
     limit: int
+    requester_user_id: UUID | None = None
+    can_manage_all: bool = False
 
 
 @dataclass

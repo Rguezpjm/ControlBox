@@ -37,9 +37,15 @@ class ListDatabasesHandler:
 
     async def handle(self, query: ListDatabasesQuery) -> list[ManagedDatabase]:
         async with self._uow:
-            return await self._uow.managed_databases.list_by_tenant(
+            databases = await self._uow.managed_databases.list_by_tenant(
                 query.tenant_id, query.engine, query.limit, query.offset
             )
+            if query.can_manage_all:
+                return databases
+            return [
+                db for db in databases
+                if db.owner_user_id is not None and db.owner_user_id == query.requester_user_id
+            ]
 
 
 class GetDatabaseHandler:
@@ -52,6 +58,8 @@ class GetDatabaseHandler:
                 query.database_id, query.tenant_id
             )
             if not database:
+                raise NotFoundError("Database not found")
+            if not query.can_manage_all and database.owner_user_id != query.requester_user_id:
                 raise NotFoundError("Database not found")
             return database
 

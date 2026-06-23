@@ -11,6 +11,8 @@ from controlbox.config.settings import Settings
 from controlbox.modules.files.infrastructure.filesystem_service import PathResolver
 from controlbox.modules.ftp.domain.entities import FtpAccount, FtpAccountStatus
 from controlbox.modules.ftp.infrastructure.provisioner import PureFtpdProvisioner
+from controlbox.modules.ftp.infrastructure.platform_env import read_platform_env_value
+from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
 
 logger = logging.getLogger("controlbox.ftp.service")
 
@@ -79,27 +81,7 @@ class FtpServiceManager:
         return cmd
 
     def _read_env_value(self, key: str, default: str = "") -> str:
-        if key == "PUREFTPD_ENABLED":
-            raw = str(self._settings.pureftpd_enabled).lower()
-            return raw if raw in {"true", "false"} else default
-        mapping = {
-            "PUREFTPD_PROTOCOL": self._settings.pureftpd_protocol,
-            "PUREFTPD_PORT": str(self._settings.pureftpd_port),
-            "PUREFTPD_PUBLIC_HOST": self._settings.pureftpd_public_host,
-            "PUREFTPD_PASSIVE_MIN": str(self._settings.pureftpd_passive_port_min),
-            "PUREFTPD_PASSIVE_MAX": str(self._settings.pureftpd_passive_port_max),
-            "PUREFTPD_TLS": str(int(self._settings.pureftpd_tls)),
-            "PUREFTPD_HOST": self._settings.pureftpd_host,
-        }
-        if key in mapping and mapping[key]:
-            return str(mapping[key])
-
-        env_file = self._env_file()
-        if env_file.is_file():
-            for line in env_file.read_text(encoding="utf-8").splitlines():
-                if line.startswith(f"{key}="):
-                    return line.split("=", 1)[1].strip().strip('"').strip("'")
-        return default
+        return read_platform_env_value(self._settings, key, default)
 
     def _write_env_values(self, values: dict[str, str]) -> None:
         env_file = self._env_file()
@@ -355,7 +337,7 @@ class FtpServiceManager:
         config = await self.get_config()
         if not config.enabled:
             return False, "Habilite el servicio FTP antes de iniciarlo"
-        return await self.apply_config(
+        ok, message, _ = await self.apply_config(
             enabled=True,
             protocol=config.protocol,
             port=config.port,
@@ -363,6 +345,7 @@ class FtpServiceManager:
             passive_port_max=config.passive_port_max,
             public_host=config.public_host,
         )
+        return ok, message
 
     async def stop(self) -> tuple[bool, str]:
         ok, msg = await self._run_compose(["--profile", "ftp", "stop", "pureftpd", "sftp"], optional=True)
@@ -385,15 +368,21 @@ class FtpServiceManager:
 
     async def _run_compose(self, args: list[str], *, optional: bool = False) -> tuple[bool, str]:
         cmd = self._compose_base_cmd() + args
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=docker_subprocess_env(self._settings),
+            )
+        except (FileNotFoundError, OSError) as exc:
+            logger.error("Could not run docker compose for FTP: %s", exc)
+            return False, str(exc)
         try:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=300)
         except asyncio.TimeoutError:
             proc.kill()
+            await proc.wait()
             return False, "Timeout al ejecutar docker compose"
         output = (stdout or b"").decode("utf-8", errors="replace")[-800:]
         if proc.returncode != 0:

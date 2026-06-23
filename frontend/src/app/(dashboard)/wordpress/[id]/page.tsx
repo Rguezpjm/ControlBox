@@ -28,6 +28,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { PageSkeleton } from "@/components/skeletons";
+import { WordPressSiteAccessPanel } from "@/components/wordpress/site-access-panel";
 import { wordpressApi, type WordPressBackup, type WordPressSite } from "@/lib/wordpress";
 import { formatBytes } from "@/lib/utils";
 import type { ResourceStatus } from "@/types";
@@ -150,6 +151,13 @@ function WordPressDetailContent() {
           </CardContent>
         </Card>
       </div>
+
+      <WordPressSiteAccessPanel
+        siteId={siteId}
+        access={site.access_info}
+        siteStatus={site.status}
+        onUpdated={load}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>

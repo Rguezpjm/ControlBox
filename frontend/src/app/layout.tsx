@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/providers/theme-provider";
 import { RealtimeProvider } from "@/providers/realtime-provider";
 import { I18nProvider } from "@/providers/i18n-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "sonner";
 import { publicAsset } from "@/lib/base-path";
 import "./globals.css";
 
@@ -39,6 +40,7 @@ export default function RootLayout({
             <RealtimeProvider>
               <TooltipProvider>
                 {children}
+                <Toaster richColors closeButton position="top-right" />
               </TooltipProvider>
             </RealtimeProvider>
           </I18nProvider>

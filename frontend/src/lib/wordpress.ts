@@ -22,8 +22,23 @@ export interface WordPressSite extends SiteMonitoringFields {
   error_message: string | null;
   ssl_days_remaining?: number | null;
   task_id: string | null;
+  access_info?: WordPressSiteAccessInfo | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface WordPressSiteAccessInfo {
+  site_url: string;
+  login_url: string;
+  admin_user: string;
+  admin_email: string;
+  db_name?: string | null;
+  db_user?: string | null;
+  db_host?: string | null;
+  db_password?: string | null;
+  ftp_username?: string | null;
+  ftp_password?: string | null;
+  ftp_home?: string | null;
 }
 
 export interface WordPressBackup {
@@ -54,6 +69,7 @@ export interface CreateWordPressPayload {
   admin_email: string;
   php_version?: string;
   ssl_enabled?: boolean;
+  create_ftp_account?: boolean;
   db_name?: string;
   db_user?: string;
   db_password?: string;
@@ -71,6 +87,9 @@ export interface WordPressDeployCredentials {
   db_user: string;
   db_password: string;
   db_host?: string;
+  ftp_username?: string | null;
+  ftp_password?: string | null;
+  ftp_home?: string | null;
 }
 
 export interface WordPressProvisionStep {
@@ -106,6 +125,11 @@ export const wordpressApi = {
     authRequest<WordPressSite>(`/api/v1/wordpress/${id}/php-version`, {
       method: "POST",
       body: JSON.stringify({ php_version }),
+    }),
+  changeAdminPassword: (id: string, new_password: string) =>
+    authRequest<WordPressSite>(`/api/v1/wordpress/${id}/admin-password`, {
+      method: "POST",
+      body: JSON.stringify({ new_password }),
     }),
   maintenance: (id: string, enabled: boolean) =>
     authRequest<WordPressSite>(`/api/v1/wordpress/${id}/maintenance`, {

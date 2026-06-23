@@ -303,6 +303,10 @@ cb_config_deploy_templates() {
     cp -rf "${templates_dir}/promtail/"* "${host_config_dir}/promtail/" 2>/dev/null || true
     cp -rf "${templates_dir}/supabase/"* "${host_config_dir}/supabase/" 2>/dev/null || true
 
+    local host_data_dir="${CONTROLBOX_DATA_DIR:-/var/lib/controlbox}"
+    mkdir -p "${host_data_dir}/supabase/db"
+    chmod 777 "${host_data_dir}/supabase/db" 2>/dev/null || true
+
     chown -R controlbox:controlbox "${host_install_dir}" "${host_config_dir}" 2>/dev/null || true
 }
 

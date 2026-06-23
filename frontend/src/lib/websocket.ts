@@ -1,4 +1,5 @@
 import type { RealtimeEvent } from "@/types";
+import { APP_BASE_PATH } from "@/lib/base-path";
 
 type EventHandler = (event: RealtimeEvent) => void;
 type ConnectionHandler = (connected: boolean) => void;
@@ -23,8 +24,7 @@ export class WebSocketClient {
     }
     if (typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const base = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "");
-      this.url = `${proto}//${window.location.host}${base}/ws`;
+      this.url = `${proto}//${window.location.host}${APP_BASE_PATH}/ws`;
       return;
     }
     this.url = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";

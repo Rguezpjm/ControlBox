@@ -5,6 +5,7 @@ from uuid import UUID
 @dataclass(frozen=True)
 class CreateDatabaseCommand:
     tenant_id: UUID
+    user_id: UUID
     name: str
     engine: str
     charset: str = "utf8mb4"

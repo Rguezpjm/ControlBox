@@ -286,6 +286,19 @@ class WordPressProvisioner:
 
         self._apply_permissions(site_path)
 
+    async def change_admin_password(self, site: WordPressSite, new_password: str) -> None:
+        compose_path = Path(site.site_path) / "docker-compose.yml"
+        if not compose_path.is_file():
+            raise RuntimeError("WordPress no está instalado en este sitio")
+        await self._run_wp_cli(
+            compose_path,
+            "wp",
+            "user",
+            "update",
+            site.admin_user,
+            f"--user_pass={new_password}",
+        )
+
     def _apply_permissions(self, site_path: Path) -> None:
         wp_dir = site_path / "wordpress"
         for root, dirs, files in os.walk(wp_dir):

@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
+import Link from "next/link";
 import {
   Activity,
   Cpu,
@@ -17,6 +18,7 @@ import { MetricsChart } from "@/components/dashboard/metrics-chart";
 import { ResourceBarChart, MultiLineChart } from "@/components/monitoring/resource-charts";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { PageSkeleton } from "@/components/skeletons";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -161,12 +163,12 @@ function MonitoringContent() {
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Globe className="h-4 w-4" />
-            Websites
+            Websites & WordPress
           </CardTitle>
         </CardHeader>
         <CardContent>
           {overview.websites.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No websites deployed.</p>
+            <p className="text-sm text-muted-foreground">No sites deployed.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -181,15 +183,33 @@ function MonitoringContent() {
                 </thead>
                 <tbody>
                   {overview.websites.map((site) => (
-                    <tr key={site.id} className="border-b last:border-0">
+                    <tr key={`${site.site_type ?? "website"}-${site.id}`} className="border-b last:border-0">
                       <td className="px-3 py-2">
-                        <div className="font-medium">{site.name}</div>
-                        <div className="text-xs text-muted-foreground">{site.domain}</div>
+                        <Link
+                          href={
+                            site.site_type === "wordpress"
+                              ? `/wordpress/${site.id}`
+                              : `/websites/${site.id}`
+                          }
+                          className="hover:underline"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{site.name}</span>
+                            {site.site_type === "wordpress" ? (
+                              <Badge variant="secondary" className="text-[10px]">
+                                WordPress
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{site.domain}</div>
+                        </Link>
                       </td>
                       <td className="px-3 py-2">{site.cpu_percent.toFixed(1)}%</td>
                       <td className="px-3 py-2">{site.memory_percent.toFixed(1)}%</td>
                       <td className="px-3 py-2 text-xs">
-                        {site.disk_used_mb} / {site.disk_limit_mb} MB
+                        {site.disk_limit_mb > 0
+                          ? `${site.disk_used_mb} / ${site.disk_limit_mb} MB`
+                          : `${site.disk_used_mb} MB`}
                       </td>
                       <td className="px-3 py-2">
                         <StatusBadge status={mapStatus(site.status)} />

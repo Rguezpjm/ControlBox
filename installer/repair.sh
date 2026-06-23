@@ -121,6 +121,10 @@ cb_repair_fix() {
         docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" "${profile_args[@]}" up -d --force-recreate api worker 2>/dev/null \
             || true
 
+        cb_mysql_ensure_remote_root "${CONTROLBOX_CONFIG_DIR}/platform.env" || true
+        cb_supabase_ensure_running "${CONTROLBOX_CONFIG_DIR}/platform.env" || true
+        cb_ftp_ensure_running "${CONTROLBOX_CONFIG_DIR}/platform.env" || true
+
         cb_info "Aplicando migraciones de base de datos..."
         docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" run --rm migrate 2>/dev/null \
             || docker compose --env-file "${CONTROLBOX_CONFIG_DIR}/platform.env" exec -T api alembic upgrade head 2>/dev/null \

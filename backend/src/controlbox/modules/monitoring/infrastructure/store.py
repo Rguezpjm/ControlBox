@@ -94,13 +94,20 @@ class MetricsStore:
         raw = await self._redis.get(key)
         return json.loads(raw) if raw else None
 
+    def _serialize_website(self, website) -> dict:
+        data = website.__dict__.copy()
+        created_at = data.get("created_at")
+        if isinstance(created_at, datetime):
+            data["created_at"] = created_at.isoformat()
+        return data
+
     def _serialize_snapshot(self, snapshot: MonitoringSnapshot) -> dict:
         return {
             "host": snapshot.host.__dict__,
             "docker": [c.__dict__ for c in snapshot.docker],
             "databases": [d.__dict__ for d in snapshot.databases],
             "supabase": [s.__dict__ for s in snapshot.supabase],
-            "websites": [w.__dict__ for w in snapshot.websites],
+            "websites": [self._serialize_website(w) for w in snapshot.websites],
             "services": [s.__dict__ for s in snapshot.services],
             "collected_at": snapshot.collected_at.isoformat() if snapshot.collected_at else None,
         }

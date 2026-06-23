@@ -112,7 +112,7 @@ export function SiteDirectoryPickerDialog({
                   onClick={() => load(entry.path)}
                 >
                   <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
-                  <span className="truncate">{entry.name}</span>
+                  <span className="truncate">{entry.display_name || entry.name}</span>
                   <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
                 </button>
               ))

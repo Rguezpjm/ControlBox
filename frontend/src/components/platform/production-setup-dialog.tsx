@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
   Circle,
@@ -71,6 +72,7 @@ interface ProductionSetupDialogProps {
 }
 
 export function ProductionSetupDialog({ open, onOpenChange, onComplete }: ProductionSetupDialogProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [overview, setOverview] = useState<PlatformOverview | null>(null);
@@ -80,6 +82,9 @@ export function ProductionSetupDialog({ open, onOpenChange, onComplete }: Produc
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [runtimes, setRuntimes] = useState<RuntimeVersion[]>([]);
   const [selectedRuntimes, setSelectedRuntimes] = useState<Set<string>>(new Set());
+  const [applyStatus, setApplyStatus] = useState<{ type: "success" | "error"; message: string } | null>(
+    null
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,7 +114,10 @@ export function ProductionSetupDialog({ open, onOpenChange, onComplete }: Produc
   }, []);
 
   useEffect(() => {
-    if (open) load();
+    if (open) {
+      setApplyStatus(null);
+      load();
+    }
   }, [open, load]);
 
   const lnmpServices = useMemo(() => services.filter((s) => s.category === "lnmp"), [services]);
@@ -139,6 +147,20 @@ export function ProductionSetupDialog({ open, onOpenChange, onComplete }: Produc
     return groups;
   }, [runtimes]);
 
+  const servicesConfigured = useMemo(() => {
+    const item = overview?.setup_checklist.items.find((i) => i.key === "configure_services");
+    return Boolean(item?.completed);
+  }, [overview]);
+
+  useEffect(() => {
+    // Si el checklist ya quedó completado (aunque sea por otra vista), cerramos el modal
+    // y refrescamos para quitar el banner/aviso inmediatamente.
+    if (!open || !servicesConfigured) return;
+    onOpenChange(false);
+    onComplete?.();
+    router.refresh();
+  }, [open, servicesConfigured, onOpenChange, onComplete, router]);
+
   function toggleRuntime(id: string, on: boolean) {
     setSelectedRuntimes((prev) => {
       const next = new Set(prev);
@@ -160,22 +182,32 @@ export function ProductionSetupDialog({ open, onOpenChange, onComplete }: Produc
       return;
     }
     setApplying(true);
+    setApplyStatus(null);
     try {
       const [svcResult, rtResult] = await Promise.all([
         applyServiceProfiles(profiles),
         applyRuntimeProfiles(runtimeIds),
       ]);
       const ok = svcResult.success && rtResult.success;
-      toast[ok ? "success" : "error"](
-        ok ? `${svcResult.message}. ${rtResult.message}` : svcResult.message || rtResult.message
-      );
+      const detail = ok
+        ? `${svcResult.message}. ${rtResult.message}`
+        : [svcResult.message, rtResult.message].filter(Boolean).join(" — ");
       if (ok) {
+        const doneMessage = "DONE — Configuración del servidor guardada correctamente.";
+        setApplyStatus({ type: "success", message: doneMessage });
+        toast.success(doneMessage, { description: detail });
         await load();
         onOpenChange(false);
         onComplete?.();
+        router.refresh();
+      } else {
+        setApplyStatus({ type: "error", message: detail || "Error al configurar el servidor" });
+        toast.error(detail || "Error al configurar el servidor");
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al configurar el servidor");
+      const message = e instanceof Error ? e.message : "Error al configurar el servidor";
+      setApplyStatus({ type: "error", message });
+      toast.error(message);
     } finally {
       setApplying(false);
     }
@@ -231,6 +263,7 @@ export function ProductionSetupDialog({ open, onOpenChange, onComplete }: Produc
   function renderServiceCard(svc: ServiceProfile) {
     const Icon = SERVICE_ICONS[svc.id] ?? Package;
     const isOn = selected.has(svc.id);
+    const missingRequires = svc.requires.filter((req) => !selected.has(req));
     return (
       <div
         key={svc.id}
@@ -257,9 +290,9 @@ export function ProductionSetupDialog({ open, onOpenChange, onComplete }: Produc
             )}
           </div>
           <p className="text-xs text-muted-foreground">{svc.description}</p>
-          {svc.requires.length > 0 && (
+          {missingRequires.length > 0 && (
             <p className="text-[10px] text-amber-700 dark:text-amber-300">
-              Requiere: {svc.requires.join(", ")}
+              Requiere: {missingRequires.join(", ")}
             </p>
           )}
         </div>
@@ -291,6 +324,18 @@ export function ProductionSetupDialog({ open, onOpenChange, onComplete }: Produc
           </div>
         ) : (
           <Tabs defaultValue="services" className="w-full">
+            {applyStatus && (
+              <div
+                className={cn(
+                  "mb-3 rounded-lg border px-3 py-2 text-xs",
+                  applyStatus.type === "success"
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                    : "border-destructive/40 bg-destructive/10 text-destructive"
+                )}
+              >
+                {applyStatus.message}
+              </div>
+            )}
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="services">Software</TabsTrigger>
               <TabsTrigger value="runtimes">Runtimes</TabsTrigger>

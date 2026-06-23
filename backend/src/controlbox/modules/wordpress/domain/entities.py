@@ -42,6 +42,7 @@ WORDPRESS_VERSION = "latest"
 @dataclass
 class WordPressSite(Entity):
     tenant_id: UUID | None = None
+    owner_user_id: UUID | None = None
     name: str = ""
     domain: str = ""
     status: WordPressStatus = WordPressStatus.PENDING

@@ -1,8 +1,13 @@
 import asyncio
 import logging
+import re
+from pathlib import Path
 from uuid import UUID
 
 from controlbox.config.settings import Settings
+from controlbox.modules.ftp.application.command_handlers import CreateFtpAccountHandler
+from controlbox.modules.ftp.application.commands import CreateFtpAccountCommand
+from controlbox.modules.ftp.domain.entities import FtpAccountStatus
 from controlbox.modules.wordpress.application.commands import ProvisionWordPressSiteCommand
 from controlbox.modules.wordpress.domain.entities import (
     WordPressBackup,
@@ -21,6 +26,33 @@ from controlbox.modules.wordpress.infrastructure.provisioner import WordPressPro
 from controlbox.modules.identity.infrastructure.unit_of_work import Database
 
 logger = logging.getLogger("controlbox.wordpress")
+
+
+def _slug_username(raw: str) -> str:
+    base = re.sub(r"[^a-z0-9_]+", "_", raw.lower()).strip("_")
+    if not base:
+        base = "wpftp"
+    if not base[0].isalpha():
+        base = f"u_{base}"
+    return base[:31]
+
+
+def _ftp_username_from_site(site: WordPressSite) -> str:
+    left = (site.domain.split(".", 1)[0] if site.domain else "") or site.name or "wpftp"
+    return _slug_username(left)
+
+
+def _ftp_home_for_site(settings: Settings, site: WordPressSite) -> str:
+    site_path = (site.site_path or "").replace("\\", "/").strip()
+    if not site_path:
+        return ""
+    try:
+        base = Path(settings.sites_base_path).resolve()
+        full = Path(site_path).resolve()
+        rel = full.relative_to(base)
+        return str(rel).replace("\\", "/")
+    except Exception:
+        return site_path.strip("/")
 
 
 class WordPressProvisionService:
@@ -109,11 +141,50 @@ class WordPressProvisionService:
 
             site.mark_running(nginx_name, php_name)
             site.disk_used_mb = self._provisioner.measure_disk_mb(site)
+            ftp_username: str | None = None
+            ftp_password: str | None = None
+            ftp_home: str | None = None
+
+            if bool(site.settings.get("create_ftp_account")):
+                ftp_home = _ftp_home_for_site(self._settings, site)
+                ftp_username = _ftp_username_from_site(site)
+                await self._record_step(site, "ftp", "Creating FTP account for this WordPress site…")
+                async with self._database.unit_of_work() as uow:
+                    account, generated_password = await CreateFtpAccountHandler(
+                        uow, settings=self._settings
+                    ).handle(
+                        CreateFtpAccountCommand(
+                            tenant_id=site.tenant_id,
+                            user_id=site.owner_user_id,
+                            username=ftp_username,
+                            password=None,
+                            home_directory=ftp_home,
+                            quota_mb=0,
+                            max_files=0,
+                            upload_bandwidth_kbps=0,
+                            download_bandwidth_kbps=0,
+                        )
+                    )
+                if account.status == FtpAccountStatus.ACTIVE:
+                    ftp_password = generated_password
+                    await self._record_step(site, "ftp_ready", f"FTP account created: {ftp_username}")
+                else:
+                    ftp_username = None
+                    ftp_password = None
+                    await self._record_step(
+                        site,
+                        "ftp_warn",
+                        f"FTP account could not be activated: {account.error_message or 'unknown error'}",
+                    )
+
             set_provision_credentials(
                 site,
                 db_name=db_name,
                 db_user=db_user,
                 db_password=db_password,
+                ftp_username=ftp_username,
+                ftp_password=ftp_password,
+                ftp_home=ftp_home,
             )
             await self._record_step(site, "complete", "WordPress deployed successfully.")
 

@@ -67,7 +67,7 @@ const SECTIONS: SectionDef[] = [
   { id: "ssl", label: "SSL", types: ["website", "wordpress"] },
   { id: "runtime", label: "PHP version", types: ["wordpress"] },
   { id: "runtime", label: "Runtime", types: ["website"] },
-  { id: "nginx", label: "Web Server", types: ["wordpress"] },
+  { id: "nginx", label: "Web Server", types: ["website", "wordpress"] },
   { id: "redirect", label: "Redirect", types: ["website", "wordpress"] },
   { id: "reverse-proxy", label: "Reverse proxy", types: ["website", "wordpress"] },
   { id: "hotlink", label: "Hotlink Protection", types: ["website", "wordpress"] },
@@ -188,8 +188,11 @@ export function SiteModificationModal({
       const mergedSettings = sectionSettings ? { ...settings, ...sectionSettings } : settings;
       const payload: UpdateSiteModificationPayload = sslPayload ?? {
         settings: mergedSettings,
-        vhost_config: activeSection === "config" ? vhostConfig : undefined,
-        nginx_config: activeSection === "nginx" ? nginxConfig : undefined,
+        vhost_config:
+          activeSection === "config" || (activeSection === "nginx" && siteType === "website")
+            ? vhostConfig
+            : undefined,
+        nginx_config: activeSection === "nginx" && siteType === "wordpress" ? nginxConfig : undefined,
         ssl_enabled: activeSection === "ssl" ? sslEnabled : undefined,
         php_version: siteType === "wordpress" && activeSection === "runtime" ? runtimeVersion : undefined,
         runtime_version: siteType === "website" && activeSection === "runtime" ? runtimeVersion : undefined,
@@ -612,10 +615,14 @@ export function SiteModificationModal({
       case "nginx":
         return (
           <div className="space-y-4">
-            <Label>nginx/default.conf</Label>
+            <Label>
+              {siteType === "wordpress" ? "nginx/default.conf" : "docker-compose.yml (Traefik routing)"}
+            </Label>
             <Textarea
-              value={nginxConfig}
-              onChange={(e) => setNginxConfig(e.target.value)}
+              value={siteType === "wordpress" ? nginxConfig : vhostConfig}
+              onChange={(e) =>
+                siteType === "wordpress" ? setNginxConfig(e.target.value) : setVhostConfig(e.target.value)
+              }
               className="min-h-[360px]"
             />
             <SaveBar saving={saving} onSave={() => handleSave()} />

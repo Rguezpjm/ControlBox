@@ -1,11 +1,17 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from controlbox.modules.wordpress.infrastructure.site_access import WordPressSiteAccessInfo
 
 
 @dataclass(frozen=True)
 class ListWordPressSitesQuery:
     tenant_id: UUID
+    requester_user_id: UUID | None = None
+    can_manage_all: bool = False
     limit: int = 50
     offset: int = 0
 
@@ -14,6 +20,8 @@ class ListWordPressSitesQuery:
 class GetWordPressSiteQuery:
     site_id: UUID
     tenant_id: UUID
+    requester_user_id: UUID | None = None
+    can_manage_all: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,6 +51,7 @@ class WordPressSiteResponse:
     parent_site_id: UUID | None
     error_message: str | None
     task_id: str | None
+    access_info: "WordPressSiteAccessInfo | None" = None
     created_at: datetime
     updated_at: datetime
 

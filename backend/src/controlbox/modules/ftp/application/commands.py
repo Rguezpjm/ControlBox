@@ -5,6 +5,7 @@ from uuid import UUID
 @dataclass
 class CreateFtpAccountCommand:
     tenant_id: UUID
+    user_id: UUID | None
     username: str
     password: str | None
     home_directory: str

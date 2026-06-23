@@ -1,4 +1,10 @@
-export const APP_BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "");
+function normalizeBasePath(raw: string): string {
+  const trimmed = (raw || "").trim().replace(/\/+$/, "");
+  if (!trimmed || trimmed === "/") return "";
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+export const APP_BASE_PATH = normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH || "");
 
 export function withBasePath(path: string): string {
   if (!APP_BASE_PATH) {

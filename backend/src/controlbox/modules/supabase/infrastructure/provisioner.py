@@ -3,6 +3,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 from jose import jwt
@@ -187,7 +188,15 @@ class SupabaseProvisioner:
         return 0
 
     def _profile_enabled(self) -> bool:
-        raw = self._settings.controlbox_enabled_profiles or ""
+        raw = ""
+        env_file = Path(self._settings.platform_config_dir) / "platform.env"
+        if env_file.is_file():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith("CONTROLBOX_ENABLED_PROFILES="):
+                    raw = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
+        if not raw.strip():
+            raw = self._settings.controlbox_enabled_profiles or ""
         profiles = {p.strip().lower() for p in raw.replace(" ", "").split(",") if p.strip()}
         return "supabase" in profiles
 

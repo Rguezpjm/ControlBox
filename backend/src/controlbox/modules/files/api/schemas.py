@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class FileEntrySchema(BaseModel):
     name: str
     path: str
+    display_name: str | None = None
     is_dir: bool
     size: int
     permissions: str
@@ -18,6 +19,7 @@ class BrowseResponseSchema(BaseModel):
     path: str
     parent: str | None
     entries: list[FileEntrySchema]
+    path_labels: dict[str, str] = Field(default_factory=dict)
 
 
 class WriteContentRequest(BaseModel):

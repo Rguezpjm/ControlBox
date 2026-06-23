@@ -8,14 +8,20 @@ CSRF_COOKIE_NAME = "cb_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 
 
-def set_access_cookie(response: Response, access_token: str, settings: Settings) -> None:
+def set_access_cookie(
+    response: Response,
+    access_token: str,
+    settings: Settings,
+    max_age_seconds: int | None = None,
+) -> None:
+    max_age = max_age_seconds if isinstance(max_age_seconds, int) and max_age_seconds > 0 else settings.jwt_access_token_expire_minutes * 60
     response.set_cookie(
         key=ACCESS_COOKIE_NAME,
         value=access_token,
         httponly=True,
         secure=settings.use_secure_cookies,
         samesite="lax",
-        max_age=settings.jwt_access_token_expire_minutes * 60,
+        max_age=max_age,
         path="/",
     )
 

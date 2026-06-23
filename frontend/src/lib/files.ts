@@ -5,6 +5,7 @@ import { API_BASE } from "@/lib/api-base";
 export interface FileEntry {
   name: string;
   path: string;
+  display_name?: string | null;
   is_dir: boolean;
   size: number;
   permissions: string;
@@ -17,6 +18,7 @@ export interface BrowseResult {
   path: string;
   parent: string | null;
   entries: FileEntry[];
+  path_labels?: Record<string, string>;
 }
 
 export interface FileContent {

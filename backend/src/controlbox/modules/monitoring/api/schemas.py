@@ -63,6 +63,8 @@ class WebsiteMetricSchema(BaseModel):
     memory_percent: float
     disk_used_mb: int
     disk_limit_mb: int
+    site_type: str = "website"
+    created_at: datetime | None = None
 
 
 class ServiceHealthSchema(BaseModel):

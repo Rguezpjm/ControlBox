@@ -14,6 +14,7 @@ class CreateWordPressSiteCommand:
     admin_email: str
     php_version: str = "8.3"
     ssl_enabled: bool = True
+    create_ftp_account: bool = False
     db_name: str | None = None
     db_user: str | None = None
     db_password: str | None = None
@@ -47,6 +48,14 @@ class ToggleMaintenanceCommand:
     tenant_id: UUID
     user_id: UUID
     enabled: bool
+
+
+@dataclass(frozen=True)
+class ChangeWordPressAdminPasswordCommand:
+    site_id: UUID
+    tenant_id: UUID
+    user_id: UUID
+    new_password: str
 
 
 @dataclass(frozen=True)

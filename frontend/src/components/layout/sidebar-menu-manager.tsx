@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { mainNav } from "@/config/navigation";
 import { useI18n } from "@/providers/i18n-provider";
 import { useSidebarNav } from "@/providers/sidebar-nav-provider";
 import { cn } from "@/lib/utils";
@@ -21,7 +20,7 @@ interface SidebarMenuManagerProps {
 
 export function SidebarMenuManager({ collapsed = false }: SidebarMenuManagerProps) {
   const { t } = useI18n();
-  const { isVisible, setItemVisible, savingId } = useSidebarNav();
+  const { availableNav, isVisible, setItemVisible, savingId } = useSidebarNav();
   const [open, setOpen] = useState(false);
 
   return (
@@ -52,7 +51,7 @@ export function SidebarMenuManager({ collapsed = false }: SidebarMenuManagerProp
               <span>{t("sidebar.displayColumn")}</span>
             </div>
 
-            {mainNav.map((item) => {
+            {availableNav.map((item) => {
               const Icon = item.icon;
               const visible = isVisible(item.id);
 

@@ -32,6 +32,7 @@ from controlbox.modules.databases.infrastructure.provisioner import (
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import NotFoundError
+from controlbox.shared.infrastructure.resource_isolation import set_owner_in_settings
 
 
 class CreateDatabaseHandler:
@@ -60,6 +61,8 @@ class CreateDatabaseHandler:
             charset=charset,
             max_connections=command.max_connections,
         )
+        database.owner_user_id = command.user_id
+        database.settings = set_owner_in_settings(database.settings, command.user_id)
 
         async with self._uow:
             await self._uow.managed_databases.add(database)

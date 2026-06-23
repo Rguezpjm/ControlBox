@@ -17,6 +17,7 @@ class SqlAlchemyFtpAccountRepository(FtpAccountRepository):
         model = FtpAccountModel(
             id=account.id,
             tenant_id=account.tenant_id,
+            owner_user_id=account.owner_user_id,
             username=account.username,
             system_username=account.system_username,
             password_hash=account.password_hash,

@@ -61,9 +61,11 @@ class TokenService:
         session_id: UUID,
         roles: list[str],
         permissions: list[str],
+        access_ttl_minutes: int | None = None,
     ) -> tuple[str, datetime]:
         now = utc_now()
-        expires_at = now + timedelta(minutes=self._settings.jwt_access_token_expire_minutes)
+        ttl_minutes = access_ttl_minutes or self._settings.jwt_access_token_expire_minutes
+        expires_at = now + timedelta(minutes=max(1, ttl_minutes))
         payload = {
             "sub": str(user.id),
             "tenant_id": str(user.tenant_id) if user.tenant_id else None,

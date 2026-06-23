@@ -7,6 +7,7 @@ from uuid import UUID
 from controlbox.config.settings import Settings
 from controlbox.modules.files.infrastructure.filesystem_service import PathResolver
 from controlbox.modules.ftp.domain.entities import FtpAccount, FtpLogEntry
+from controlbox.modules.ftp.infrastructure.platform_env import is_ftp_service_enabled, read_platform_env_value
 from controlbox.shared.domain.base import ValidationError
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env, validate_container_name
 
@@ -77,7 +78,7 @@ class PureFtpdProvisioner:
             return False
 
     async def service_status(self) -> dict[str, str | bool]:
-        if not self._settings.pureftpd_enabled:
+        if not is_ftp_service_enabled(self._settings):
             return {"enabled": False, "status": "disabled", "host": self._settings.pureftpd_host}
         if self._settings.pureftpd_use_docker:
             try:
@@ -135,7 +136,7 @@ class PureFtpdProvisioner:
         password: str | None = None,
         capture: bool = False,
     ) -> str:
-        if not self._settings.pureftpd_enabled:
+        if not is_ftp_service_enabled(self._settings):
             return ""
 
         base_cmd = self._build_command(action, args)

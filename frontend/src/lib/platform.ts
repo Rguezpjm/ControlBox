@@ -139,6 +139,13 @@ export function applyServiceProfiles(profiles: string[]) {
   );
 }
 
+export function ensureSupabaseService() {
+  return request<{ success: boolean; message: string; enabled_profiles: string[] }>(
+    "/api/v1/platform/services/supabase/ensure",
+    { method: "POST" }
+  );
+}
+
 export interface RuntimeVersion {
   id: string;
   runtime: string;

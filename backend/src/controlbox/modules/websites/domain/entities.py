@@ -65,6 +65,7 @@ RUNTIME_PORTS: dict[str, int] = {
 @dataclass
 class Website(Entity):
     tenant_id: UUID | None = None
+    owner_user_id: UUID | None = None
     name: str = ""
     domain: str = ""
     runtime: WebsiteRuntime = WebsiteRuntime.HTML

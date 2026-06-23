@@ -1,4 +1,5 @@
 import { API_BASE } from "./api-base";
+import { APP_BASE_PATH } from "./base-path";
 
 import { clearCsrfToken, ensureCsrfToken, getAuthHeaders } from "./auth";
 
@@ -15,6 +16,19 @@ class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+function redirectToLoginFromBrowser() {
+  if (typeof window === "undefined") return;
+  let currentPath = window.location.pathname;
+  if (APP_BASE_PATH) {
+    while (currentPath === APP_BASE_PATH || currentPath.startsWith(`${APP_BASE_PATH}/`)) {
+      currentPath = currentPath.slice(APP_BASE_PATH.length) || "/";
+    }
+  }
+  const current = `${currentPath}${window.location.search}`;
+  const loginPath = `${APP_BASE_PATH}/login?redirect=${encodeURIComponent(current)}`;
+  window.location.assign(loginPath);
 }
 
 function parseErrorPayload(text: string, status: number): { message: string; code?: string } {
@@ -148,6 +162,10 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   }
 
   if (!response.ok) {
+    if (response.status === 401 && !endpoint.includes("/auth/")) {
+      clearCsrfToken();
+      redirectToLoginFromBrowser();
+    }
     const text = await response.text();
     const { message, code } = parseErrorPayload(text, response.status);
     throw new ApiError(message, response.status, code);

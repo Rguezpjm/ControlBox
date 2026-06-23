@@ -69,6 +69,11 @@ class ListWebsitesHandler(QueryHandler[ListWebsitesQuery, list[WebsiteResponse]]
 
     async def handle(self, query: ListWebsitesQuery) -> list[WebsiteResponse]:
         websites = await self._uow.websites.list_by_tenant(query.tenant_id, query.limit, query.offset)
+        if not query.can_manage_all:
+            websites = [
+                website for website in websites
+                if website.owner_user_id is not None and website.owner_user_id == query.requester_user_id
+            ]
         return [_to_response(w) for w in websites]
 
 
@@ -79,6 +84,8 @@ class GetWebsiteHandler(QueryHandler[GetWebsiteQuery, WebsiteResponse]):
     async def handle(self, query: GetWebsiteQuery) -> WebsiteResponse:
         website = await self._uow.websites.get_by_id_and_tenant(query.website_id, query.tenant_id)
         if website is None:
+            raise NotFoundError("Website not found")
+        if not query.can_manage_all and website.owner_user_id != query.requester_user_id:
             raise NotFoundError("Website not found")
         return _to_response(website)
 

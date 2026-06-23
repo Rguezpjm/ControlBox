@@ -13,6 +13,10 @@ from controlbox.config.settings import Settings
 from controlbox.modules.websites.domain.entities import Website, WebsiteRuntime, SslStatus
 from controlbox.modules.websites.infrastructure.provisioner import DockerProvisioner, RUNTIME_PORTS
 from controlbox.modules.wordpress.domain.entities import WordPressSite, WordPressSslStatus
+from controlbox.modules.wordpress.infrastructure.provisioner import (
+    WordPressProvisioner,
+    _render_compose as render_wordpress_compose,
+)
 from controlbox.shared.infrastructure.custom_ssl import CustomSslInfo, CustomSslManager
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
 from controlbox.shared.infrastructure.site_directory_config import (
@@ -166,7 +170,78 @@ class SiteModificationService:
         return self._docker.get_site_path(website.tenant_id, website.id)
 
     def _wordpress_path(self, site: WordPressSite) -> Path:
+        if site.site_path:
+            stored = Path(site.site_path)
+            if stored.is_dir():
+                return stored
+        if site.tenant_id:
+            fallback = WordPressProvisioner(self._settings).get_site_path(site.tenant_id, site.id)
+            if fallback.is_dir():
+                return fallback
+            return fallback
         return Path(site.site_path) if site.site_path else Path("")
+
+    def _ensure_wordpress_nginx(self, site_path: Path, settings: dict[str, Any], document_root: str) -> str:
+        nginx_path = site_path / "nginx" / "default.conf"
+        if nginx_path.is_file():
+            content = nginx_path.read_text(encoding="utf-8", errors="replace")
+            if content.strip():
+                return content
+        site_directory = Path(document_root) if document_root else site_path / "wordpress"
+        if not site_directory.is_dir():
+            site_directory = site_path / "wordpress"
+        rendered = render_wordpress_nginx(settings, site_directory)
+        if site_path.is_dir():
+            try:
+                nginx_path.parent.mkdir(parents=True, exist_ok=True)
+                nginx_path.write_text(rendered, encoding="utf-8")
+            except OSError:
+                pass
+        return rendered
+
+    def _ensure_website_compose(self, website: Website, site_path: Path) -> str:
+        compose_path = site_path / "docker-compose.yml"
+        if compose_path.is_file():
+            content = compose_path.read_text(encoding="utf-8", errors="replace")
+            if content.strip():
+                return content
+        if not site_path.is_dir():
+            return "# docker-compose.yml not found\n"
+        try:
+            if not website.container_name:
+                website.container_name = f"cb-site-{str(website.id).split('-')[0]}"
+            self._docker._write_compose(site_path, website)
+            if compose_path.is_file():
+                return compose_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            pass
+        return "# docker-compose.yml not found\n"
+
+    def _ensure_wordpress_compose(self, site: WordPressSite, site_path: Path) -> str:
+        compose_path = site_path / "docker-compose.yml"
+        if compose_path.is_file():
+            content = compose_path.read_text(encoding="utf-8", errors="replace")
+            if content.strip():
+                return content
+        short = str(site.id).split("-")[0]
+        nginx_name = site.nginx_container_name or f"cb-wp-nginx-{short}"
+        php_name = site.php_container_name or f"cb-wp-php-{short}"
+        php_image = f"wordpress:php{site.php_version}-fpm"
+        rendered = render_wordpress_compose(
+            nginx_name=nginx_name,
+            php_name=php_name,
+            php_image=php_image,
+            php_version=site.php_version,
+            domain=site.domain,
+            router_name=f"wp-{short}",
+            ssl_enabled=site.ssl_enabled,
+        )
+        if site_path.is_dir():
+            try:
+                compose_path.write_text(rendered, encoding="utf-8")
+            except OSError:
+                pass
+        return rendered
 
     def _read_file(self, path: Path, default: str = "") -> str:
         if path.is_file():
@@ -181,6 +256,40 @@ class SiteModificationService:
             return "\n".join(content[-lines:])
         except OSError:
             return ""
+
+    def _default_wordpress_rewrite(self) -> str:
+        return """<IfModule mod_authz_core.c>
+    <FilesMatch "(?i)\\.(env|sql|log|bak|old|ini|sh|yml|yaml|pem|key|crt)$">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+</IfModule>
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress
+"""
 
     def _traefik_host_rule(self, domains: list[dict[str, Any]]) -> str:
         hosts = [d["domain"] for d in domains if d.get("domain")]
@@ -334,7 +443,7 @@ class SiteModificationService:
             logs_enabled=website.logs_enabled,
             site_files_path=self._site_files_path(website.tenant_id, site_path),
         )
-        compose = self._read_file(site_path / "docker-compose.yml", "# docker-compose.yml not found\n")
+        compose = self._ensure_website_compose(website, site_path)
         ssl_info = self._ssl.build_info("website", website.id, settings, website.domain)
         return SiteModificationView(
             site_type="website",
@@ -370,6 +479,9 @@ class SiteModificationService:
         settings = merge_settings(site.settings, site.domain, document_root)
         if settings.get("document_root"):
             document_root = str(settings["document_root"])
+        if not settings.get("url_rewrite"):
+            htaccess = self._read_file(Path(document_root) / ".htaccess", "")
+            settings["url_rewrite"] = htaccess if htaccess.strip() else self._default_wordpress_rewrite()
         self._sync_logs_enabled(settings)
         directory = self._directory_fields(
             site_path,
@@ -378,8 +490,8 @@ class SiteModificationService:
             logs_enabled=bool(settings.get("logs_enabled", True)),
             site_files_path=self._site_files_path(site.tenant_id, site_path),
         )
-        compose = self._read_file(site_path / "docker-compose.yml", "")
-        nginx = self._read_file(site_path / "nginx" / "default.conf", "")
+        compose = self._ensure_wordpress_compose(site, site_path)
+        nginx = self._ensure_wordpress_nginx(site_path, settings, document_root)
         ssl_info = self._ssl.build_info("wordpress", site.id, settings, site.domain)
         return SiteModificationView(
             site_type="wordpress",
@@ -594,6 +706,12 @@ class SiteModificationService:
         if nginx_config is not None:
             nginx_path.write_text(nginx_config, encoding="utf-8")
         elif settings.get("url_rewrite"):
+            try:
+                wp_root = Path(settings.get("document_root") or str(site_path / "wordpress"))
+                wp_root.mkdir(parents=True, exist_ok=True)
+                (wp_root / ".htaccess").write_text(settings["url_rewrite"], encoding="utf-8")
+            except OSError:
+                pass
             custom = site_path / "nginx" / "rewrite.conf"
             custom.write_text(settings["url_rewrite"], encoding="utf-8")
         else:

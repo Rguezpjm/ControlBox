@@ -11,11 +11,23 @@ import { primeCsrfAfterLogin, setTokens } from "@/lib/auth";
 import { getDeviceFingerprint } from "@/lib/fingerprint";
 import { ControlBoxLogo } from "@/components/layout/controlbox-logo";
 import { securityApi, loginWithPasskey } from "@/lib/security";
+import { APP_BASE_PATH } from "@/lib/base-path";
+
+function stripBasePathPrefix(path: string): string {
+  if (!APP_BASE_PATH) return path;
+  let current = path;
+  // Evita /ControlBox_Panel/ControlBox_Panel/... y también /ControlBox_Panel exacto.
+  while (current === APP_BASE_PATH || current.startsWith(`${APP_BASE_PATH}/`)) {
+    current = current.slice(APP_BASE_PATH.length) || "/";
+  }
+  return current.startsWith("/") ? current : `/${current}`;
+}
 
 function loginRedirectPath(): string {
   if (typeof window === "undefined") return "/";
   const redirect = new URLSearchParams(window.location.search).get("redirect");
-  return redirect && redirect.startsWith("/") ? redirect : "/";
+  if (!redirect || !redirect.startsWith("/")) return "/";
+  return stripBasePathPrefix(redirect);
 }
 
 export default function LoginPage() {

@@ -29,6 +29,7 @@ class SqlAlchemyManagedDatabaseRepository(ManagedDatabaseRepository):
         model = ManagedDatabaseModel(
             id=database.id,
             tenant_id=database.tenant_id,
+            owner_user_id=database.owner_user_id,
             name=database.name,
             engine=database.engine.value,
             status=database.status.value,

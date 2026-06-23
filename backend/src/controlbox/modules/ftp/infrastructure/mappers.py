@@ -6,6 +6,7 @@ def to_ftp_account(model: FtpAccountModel) -> FtpAccount:
     return FtpAccount(
         id=model.id,
         tenant_id=model.tenant_id,
+        owner_user_id=model.owner_user_id,
         username=model.username,
         system_username=model.system_username,
         password_hash=model.password_hash,

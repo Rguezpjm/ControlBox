@@ -60,6 +60,7 @@ from controlbox.modules.identity.api.dependencies import (
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import ForbiddenError
 from controlbox.modules.ftp.infrastructure.service_manager import FtpServiceManager
+from controlbox.shared.infrastructure.resource_isolation import can_manage_all_resources
 
 
 router = APIRouter(prefix="/ftp", tags=["ftp"])
@@ -69,6 +70,13 @@ def _require_tenant(context: RequestContext) -> UUID:
     if not context.tenant_id:
         raise map_domain_exception(ForbiddenError("Tenant context required"))
     return context.tenant_id
+
+
+def _assert_account_access(context: RequestContext, account) -> None:
+    if can_manage_all_resources(context):
+        return
+    if account.owner_user_id is None or account.owner_user_id != context.user_id:
+        raise map_domain_exception(ForbiddenError("FTP account not found"))
 
 
 def _to_schema(account: FtpAccountResponse) -> FtpAccountSchema:
@@ -170,7 +178,13 @@ async def list_ftp_accounts(
     _: Annotated[None, Depends(require_permission("ftp.read"))],
 ) -> list[FtpAccountSchema]:
     tenant_id = _require_tenant(context)
-    accounts = await ListFtpAccountsHandler(uow).handle(ListFtpAccountsQuery(tenant_id=tenant_id))
+    accounts = await ListFtpAccountsHandler(uow).handle(
+        ListFtpAccountsQuery(
+            tenant_id=tenant_id,
+            requester_user_id=context.user_id,
+            can_manage_all=can_manage_all_resources(context),
+        )
+    )
     return [_to_schema(account) for account in accounts]
 
 
@@ -185,6 +199,7 @@ async def create_ftp_account(
     account, password = await CreateFtpAccountHandler(uow).handle(
         CreateFtpAccountCommand(
             tenant_id=tenant_id,
+            user_id=context.user_id,
             username=body.username,
             password=body.password,
             home_directory=body.home_directory,
@@ -207,7 +222,12 @@ async def get_ftp_account(
 ) -> FtpAccountSchema:
     tenant_id = _require_tenant(context)
     account = await GetFtpAccountHandler(uow).handle(
-        GetFtpAccountQuery(tenant_id=tenant_id, account_id=account_id)
+        GetFtpAccountQuery(
+            tenant_id=tenant_id,
+            account_id=account_id,
+            requester_user_id=context.user_id,
+            can_manage_all=can_manage_all_resources(context),
+        )
     )
     return _to_schema(account)
 
@@ -221,6 +241,10 @@ async def update_ftp_account(
     _: Annotated[None, Depends(require_permission("ftp.manage"))],
 ) -> FtpAccountSchema:
     tenant_id = _require_tenant(context)
+    account_entity = await uow.ftp_accounts.get_by_id_and_tenant(account_id, tenant_id)
+    if not account_entity:
+        raise map_domain_exception(ForbiddenError("FTP account not found"))
+    _assert_account_access(context, account_entity)
     account = await UpdateFtpAccountHandler(uow).handle(
         UpdateFtpAccountCommand(
             tenant_id=tenant_id,
@@ -243,6 +267,10 @@ async def delete_ftp_account(
     _: Annotated[None, Depends(require_permission("ftp.manage"))],
 ) -> None:
     tenant_id = _require_tenant(context)
+    account_entity = await uow.ftp_accounts.get_by_id_and_tenant(account_id, tenant_id)
+    if not account_entity:
+        raise map_domain_exception(ForbiddenError("FTP account not found"))
+    _assert_account_access(context, account_entity)
     await DeleteFtpAccountHandler(uow).handle(
         DeleteFtpAccountCommand(tenant_id=tenant_id, account_id=account_id)
     )
@@ -257,6 +285,10 @@ async def change_ftp_password(
     _: Annotated[None, Depends(require_permission("ftp.manage"))],
 ) -> FtpPasswordChangedSchema:
     tenant_id = _require_tenant(context)
+    account_entity = await uow.ftp_accounts.get_by_id_and_tenant(account_id, tenant_id)
+    if not account_entity:
+        raise map_domain_exception(ForbiddenError("FTP account not found"))
+    _assert_account_access(context, account_entity)
     account, password = await ChangeFtpPasswordHandler(uow).handle(
         ChangeFtpPasswordCommand(
             tenant_id=tenant_id,
@@ -277,6 +309,10 @@ async def set_ftp_quota(
     _: Annotated[None, Depends(require_permission("ftp.manage"))],
 ) -> FtpAccountSchema:
     tenant_id = _require_tenant(context)
+    account_entity = await uow.ftp_accounts.get_by_id_and_tenant(account_id, tenant_id)
+    if not account_entity:
+        raise map_domain_exception(ForbiddenError("FTP account not found"))
+    _assert_account_access(context, account_entity)
     account = await SetFtpQuotaHandler(uow).handle(
         SetFtpQuotaCommand(
             tenant_id=tenant_id,
@@ -297,6 +333,10 @@ async def set_ftp_directory(
     _: Annotated[None, Depends(require_permission("ftp.manage"))],
 ) -> FtpAccountSchema:
     tenant_id = _require_tenant(context)
+    account_entity = await uow.ftp_accounts.get_by_id_and_tenant(account_id, tenant_id)
+    if not account_entity:
+        raise map_domain_exception(ForbiddenError("FTP account not found"))
+    _assert_account_access(context, account_entity)
     account = await SetFtpDirectoryHandler(uow).handle(
         SetFtpDirectoryCommand(
             tenant_id=tenant_id,
@@ -316,6 +356,10 @@ async def set_ftp_status(
     _: Annotated[None, Depends(require_permission("ftp.manage"))],
 ) -> FtpPasswordChangedSchema:
     tenant_id = _require_tenant(context)
+    account_entity = await uow.ftp_accounts.get_by_id_and_tenant(account_id, tenant_id)
+    if not account_entity:
+        raise map_domain_exception(ForbiddenError("FTP account not found"))
+    _assert_account_access(context, account_entity)
     account, password = await SetFtpStatusHandler(uow).handle(
         SetFtpStatusCommand(
             tenant_id=tenant_id,
@@ -336,7 +380,13 @@ async def get_ftp_account_logs(
 ) -> list[FtpLogSchema]:
     tenant_id = _require_tenant(context)
     logs = await ListFtpLogsHandler(uow).handle(
-        ListFtpLogsQuery(tenant_id=tenant_id, account_id=account_id, limit=limit)
+        ListFtpLogsQuery(
+            tenant_id=tenant_id,
+            account_id=account_id,
+            limit=limit,
+            requester_user_id=context.user_id,
+            can_manage_all=can_manage_all_resources(context),
+        )
     )
     return [FtpLogSchema(**log.__dict__) for log in logs]
 
@@ -350,6 +400,12 @@ async def get_ftp_logs(
 ) -> list[FtpLogSchema]:
     tenant_id = _require_tenant(context)
     logs = await ListFtpLogsHandler(uow).handle(
-        ListFtpLogsQuery(tenant_id=tenant_id, account_id=None, limit=limit)
+        ListFtpLogsQuery(
+            tenant_id=tenant_id,
+            account_id=None,
+            limit=limit,
+            requester_user_id=context.user_id,
+            can_manage_all=can_manage_all_resources(context),
+        )
     )
     return [FtpLogSchema(**log.__dict__) for log in logs]

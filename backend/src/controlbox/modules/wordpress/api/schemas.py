@@ -15,6 +15,7 @@ class CreateWordPressSiteRequest(BaseModel):
     admin_email: PanelEmail
     php_version: str = "8.3"
     ssl_enabled: bool = True
+    create_ftp_account: bool = False
     db_name: str | None = Field(default=None, min_length=2, max_length=63)
     db_user: str | None = Field(default=None, min_length=2, max_length=31)
     db_password: str | None = Field(default=None, min_length=8, max_length=128)
@@ -35,6 +36,24 @@ class CloneWordPressSiteRequest(BaseModel):
 
 class CreateWordPressBackupRequest(BaseModel):
     name: str | None = None
+
+
+class ChangeWordPressAdminPasswordRequest(BaseModel):
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class WordPressSiteAccessSchema(BaseModel):
+    site_url: str
+    login_url: str
+    admin_user: str
+    admin_email: str
+    db_name: str | None = None
+    db_user: str | None = None
+    db_host: str | None = None
+    db_password: str | None = None
+    ftp_username: str | None = None
+    ftp_password: str | None = None
+    ftp_home: str | None = None
 
 
 class WordPressSiteResponseSchema(BaseModel):
@@ -67,6 +86,7 @@ class WordPressSiteResponseSchema(BaseModel):
     is_up: bool = True
     error_message: str | None
     task_id: str | None
+    access_info: WordPressSiteAccessSchema | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -105,6 +125,9 @@ class WordPressDeployCredentialsSchema(BaseModel):
     db_user: str
     db_password: str
     db_host: str = ""
+    ftp_username: str | None = None
+    ftp_password: str | None = None
+    ftp_home: str | None = None
 
 
 class WordPressProvisionStatusSchema(BaseModel):

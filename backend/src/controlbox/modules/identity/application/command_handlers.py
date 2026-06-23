@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from controlbox.modules.identity.application.commands import (
     AssignRoleCommand,
     CreateRoleCommand,
@@ -37,6 +39,17 @@ from controlbox.shared.infrastructure.security.protection import IpReputation
 import logging
 
 _auth_logger = logging.getLogger("controlbox.auth")
+
+
+async def _resolve_session_timeout_hours(uow: UnitOfWork, tenant_id: UUID | None) -> int:
+    if tenant_id is None:
+        return 24
+    try:
+        platform = await uow.tenant_platform_settings.get_or_create(tenant_id)
+        raw = (platform.panel_settings or {}).get("session_timeout_hours", 24)
+        return max(1, min(168, int(raw)))
+    except Exception:
+        return 24
 
 
 DEFAULT_PERMISSIONS = [
@@ -178,12 +191,14 @@ class RegisterTenantHandler(CommandHandler[RegisterTenantCommand, tuple[TenantRe
         await self._uow.flush()
 
         role_names, permission_codes = await resolve_effective_auth(self._uow, admin_user.id, tenant.id)
+        session_timeout_hours = await _resolve_session_timeout_hours(self._uow, admin_user.tenant_id)
 
         access_token, access_expires = self._tokens.create_access_token(
             user=admin_user,
             session_id=session.id,
             roles=role_names,
             permissions=permission_codes,
+            access_ttl_minutes=session_timeout_hours * 60,
         )
 
         await self._session_cache.store_session(
@@ -354,12 +369,14 @@ class LoginHandler(CommandHandler[LoginCommand, TokenResponse | MfaChallengeResp
             )
 
         role_names, permission_codes = await resolve_effective_auth(self._uow, user.id, user.tenant_id)
+        session_timeout_hours = await _resolve_session_timeout_hours(self._uow, user.tenant_id)
 
         access_token, access_expires = self._tokens.create_access_token(
             user=user,
             session_id=session.id,
             roles=role_names,
             permissions=permission_codes,
+            access_ttl_minutes=session_timeout_hours * 60,
         )
 
         await self._session_cache.store_session(
@@ -440,12 +457,14 @@ class RefreshTokenHandler(CommandHandler[RefreshTokenCommand, TokenResponse]):
         await self._uow.sessions.add(new_session)
 
         role_names, permission_codes = await resolve_effective_auth(self._uow, user.id, user.tenant_id)
+        session_timeout_hours = await _resolve_session_timeout_hours(self._uow, user.tenant_id)
 
         access_token, access_expires = self._tokens.create_access_token(
             user=user,
             session_id=new_session.id,
             roles=role_names,
             permissions=permission_codes,
+            access_ttl_minutes=session_timeout_hours * 60,
         )
 
         await self._session_cache.revoke_session(old_session.id)

@@ -12,7 +12,12 @@ const hostname = process.env.HOSTNAME || "0.0.0.0";
 const nextPort = Number(process.env.INTERNAL_NEXT_PORT || port + 1);
 const apiBase = (process.env.API_PROXY_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 const wsBase = apiBase.replace(/^http/i, "ws");
-const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "");
+function normalizeBasePath(raw) {
+  const trimmed = String(raw || "").trim().replace(/\/+$/, "");
+  if (!trimmed || trimmed === "/") return "";
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+const basePath = normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH || "");
 
 // Proxy para la API: changeOrigin=true porque el target es un contenedor distinto
 const apiProxy = httpProxy.createProxyServer({

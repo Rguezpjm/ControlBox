@@ -15,6 +15,7 @@ from controlbox.modules.identity.api.dependencies import (
 )
 from controlbox.modules.wordpress.api.schemas import (
     ChangePhpVersionRequest,
+    ChangeWordPressAdminPasswordRequest,
     CloneWordPressSiteRequest,
     CreateWordPressBackupRequest,
     CreateWordPressSiteRequest,
@@ -22,8 +23,10 @@ from controlbox.modules.wordpress.api.schemas import (
     WordPressBackupResponseSchema,
     WordPressOptionsSchema,
     WordPressProvisionStatusSchema,
+    WordPressSiteAccessSchema,
     WordPressSiteResponseSchema,
 )
+from controlbox.modules.wordpress.application.queries import WordPressSiteResponse
 from controlbox.shared.api.site_modification_schemas import (
     AddSiteDomainRequest,
     SiteModificationSchema,
@@ -34,6 +37,7 @@ from controlbox.shared.api.site_modification_schemas import (
 from controlbox.shared.infrastructure.site_modification import SiteModificationService
 from controlbox.modules.wordpress.application.command_handlers import (
     ChangePhpVersionHandler,
+    ChangeWordPressAdminPasswordHandler,
     CloneWordPressSiteHandler,
     CreateStagingHandler,
     CreateWordPressBackupHandler,
@@ -45,6 +49,7 @@ from controlbox.modules.wordpress.application.command_handlers import (
 )
 from controlbox.modules.wordpress.application.commands import (
     ChangePhpVersionCommand,
+    ChangeWordPressAdminPasswordCommand,
     CloneWordPressSiteCommand,
     CreateStagingCommand,
     CreateWordPressBackupCommand,
@@ -71,21 +76,31 @@ from controlbox.shared.api.site_log_schemas import AccessLogEntrySchema, SiteAcc
 from controlbox.shared.infrastructure.site_logs import SiteLogReader
 from controlbox.modules.wordpress.infrastructure.provision_progress import build_provision_status
 from controlbox.shared.infrastructure.site_stats import enrich_site_monitoring_fields, get_ssl_days_remaining
+from controlbox.shared.infrastructure.resource_isolation import can_manage_all_resources
 
 
 router = APIRouter(prefix="/wordpress", tags=["wordpress"])
 
 
-async def _wordpress_schema(container: AppState, tenant_id: UUID, site) -> WordPressSiteResponseSchema:
+def _serialize_site_response(site: WordPressSiteResponse) -> WordPressSiteResponseSchema:
+    payload = {key: value for key, value in site.__dict__.items() if key != "access_info"}
+    if site.access_info is not None:
+        payload["access_info"] = WordPressSiteAccessSchema(**site.access_info.__dict__)
+    return WordPressSiteResponseSchema(**payload)
+
+
+async def _wordpress_schema(container: AppState, tenant_id: UUID, site: WordPressSiteResponse) -> WordPressSiteResponseSchema:
     monitoring = await enrich_site_monitoring_fields(
         container.redis_client, tenant_id, site.id, "wordpress"
     )
-    return WordPressSiteResponseSchema(
-        **site.__dict__,
-        ssl_days_remaining=get_ssl_days_remaining(
-            container.settings, site.domain, site.ssl_enabled, site.ssl_status
-        ),
-        **monitoring,
+    base = _serialize_site_response(site)
+    return base.model_copy(
+        update={
+            "ssl_days_remaining": get_ssl_days_remaining(
+                container.settings, site.domain, site.ssl_enabled, site.ssl_status
+            ),
+            **monitoring,
+        }
     )
 
 
@@ -128,6 +143,13 @@ def _require_tenant(context: RequestContext) -> UUID:
     return context.tenant_id
 
 
+def _assert_site_access(context: RequestContext, site_entity) -> None:
+    if can_manage_all_resources(context):
+        return
+    if site_entity.owner_user_id is None or site_entity.owner_user_id != context.user_id:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+
+
 @router.get("/options", response_model=WordPressOptionsSchema)
 async def get_options(
     context: Annotated[RequestContext, Depends(require_permission("wordpress.read"))],
@@ -150,7 +172,13 @@ async def list_sites(
     settings = get_settings()
     try:
         sites = await ListWordPressSitesHandler(uow=uow, settings=settings).handle(
-            ListWordPressSitesQuery(tenant_id=tenant_id, limit=min(limit, 100), offset=offset)
+            ListWordPressSitesQuery(
+                tenant_id=tenant_id,
+                requester_user_id=context.user_id,
+                can_manage_all=can_manage_all_resources(context),
+                limit=min(limit, 100),
+                offset=offset,
+            )
         )
         return [await _wordpress_schema(container, tenant_id, s) for s in sites]
     except DomainException as exc:
@@ -177,12 +205,13 @@ async def create_site(
                 admin_email=str(payload.admin_email),
                 php_version=payload.php_version,
                 ssl_enabled=payload.ssl_enabled,
+                create_ftp_account=payload.create_ftp_account,
                 db_name=payload.db_name,
                 db_user=payload.db_user,
                 db_password=payload.db_password,
             )
         )
-        return WordPressSiteResponseSchema(**site.__dict__)
+        return _serialize_site_response(site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 
@@ -197,9 +226,42 @@ async def get_site(
     settings = get_settings()
     try:
         site = await GetWordPressSiteHandler(uow=uow, settings=settings).handle(
-            GetWordPressSiteQuery(site_id=site_id, tenant_id=tenant_id)
+            GetWordPressSiteQuery(
+                site_id=site_id,
+                tenant_id=tenant_id,
+                requester_user_id=context.user_id,
+                can_manage_all=can_manage_all_resources(context),
+            )
         )
-        return WordPressSiteResponseSchema(**site.__dict__)
+        return _serialize_site_response(site)
+    except DomainException as exc:
+        raise map_domain_exception(exc) from exc
+
+
+@router.post("/{site_id}/admin-password", response_model=WordPressSiteResponseSchema)
+async def change_wordpress_admin_password(
+    site_id: UUID,
+    payload: ChangeWordPressAdminPasswordRequest,
+    context: Annotated[RequestContext, Depends(require_permission("wordpress.manage"))],
+    container: Annotated[AppState, Depends(get_app_state)],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> WordPressSiteResponseSchema:
+    tenant_id = _require_tenant(context)
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
+    try:
+        site = await ChangeWordPressAdminPasswordHandler(uow=uow, settings=settings).handle(
+            ChangeWordPressAdminPasswordCommand(
+                site_id=site_id,
+                tenant_id=tenant_id,
+                user_id=context.user_id,
+                new_password=payload.new_password,
+            )
+        )
+        return await _wordpress_schema(container, tenant_id, site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 
@@ -209,12 +271,14 @@ async def get_provision_status(
     site_id: UUID,
     context: Annotated[RequestContext, Depends(require_permission("wordpress.read"))],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> WordPressProvisionStatusSchema:
     tenant_id = _require_tenant(context)
     site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
     if site_entity is None:
         raise map_domain_exception(ForbiddenError("WordPress site not found"))
-    payload = build_provision_status(site_entity)
+    _assert_site_access(context, site_entity)
+    payload = build_provision_status(site_entity, settings)
     return WordPressProvisionStatusSchema(**payload)
 
 
@@ -229,6 +293,7 @@ async def get_site_modification(
     site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
     if site_entity is None:
         raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     view = await SiteModificationService(settings).get_wordpress(site_entity)
     return _modification_schema(view)
 
@@ -245,6 +310,7 @@ async def get_wordpress_access_logs(
     site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
     if site_entity is None:
         raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     reader = SiteLogReader(settings)
     site_path = Path(site_entity.site_path)
     cap = 2000 if limit <= 0 else min(max(limit, 1), 2000)
@@ -271,6 +337,7 @@ async def get_wordpress_error_log(
     site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
     if site_entity is None:
         raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     reader = SiteLogReader(settings)
     site_path = Path(site_entity.site_path)
     cap = 2000 if limit <= 0 else min(max(limit, 1), 2000)
@@ -294,6 +361,7 @@ async def update_site_modification(
     site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
     if site_entity is None:
         raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         service = SiteModificationService(settings)
         view = await service.update_wordpress(
@@ -329,6 +397,7 @@ async def add_wordpress_domain(
     site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
     if site_entity is None:
         raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     service = SiteModificationService(settings)
     updated = service.add_domain(site_entity.settings or {}, payload.domain, payload.port)
     view = await service.update_wordpress(site_entity, settings_patch=updated)
@@ -365,6 +434,10 @@ async def delete_site(
 ) -> None:
     tenant_id = _require_tenant(context)
     settings = get_settings()
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         await DeleteWordPressSiteHandler(uow=uow, settings=settings).handle(
             DeleteWordPressSiteCommand(site_id=site_id, tenant_id=tenant_id, user_id=context.user_id)
@@ -381,11 +454,15 @@ async def restart_site(
 ) -> WordPressSiteResponseSchema:
     tenant_id = _require_tenant(context)
     settings = get_settings()
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         site = await RestartWordPressSiteHandler(uow=uow, settings=settings).handle(
             RestartWordPressSiteCommand(site_id=site_id, tenant_id=tenant_id, user_id=context.user_id)
         )
-        return WordPressSiteResponseSchema(**site.__dict__)
+        return _serialize_site_response(site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 
@@ -399,6 +476,10 @@ async def change_php_version(
 ) -> WordPressSiteResponseSchema:
     tenant_id = _require_tenant(context)
     settings = get_settings()
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         site = await ChangePhpVersionHandler(uow=uow, settings=settings).handle(
             ChangePhpVersionCommand(
@@ -408,7 +489,7 @@ async def change_php_version(
                 php_version=payload.php_version,
             )
         )
-        return WordPressSiteResponseSchema(**site.__dict__)
+        return _serialize_site_response(site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 
@@ -422,6 +503,10 @@ async def toggle_maintenance(
 ) -> WordPressSiteResponseSchema:
     tenant_id = _require_tenant(context)
     settings = get_settings()
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         site = await ToggleMaintenanceHandler(uow=uow, settings=settings).handle(
             ToggleMaintenanceCommand(
@@ -431,7 +516,7 @@ async def toggle_maintenance(
                 enabled=payload.enabled,
             )
         )
-        return WordPressSiteResponseSchema(**site.__dict__)
+        return _serialize_site_response(site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 
@@ -445,6 +530,10 @@ async def clone_site(
 ) -> WordPressSiteResponseSchema:
     tenant_id = _require_tenant(context)
     settings = get_settings()
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         site = await CloneWordPressSiteHandler(uow=uow, settings=settings).handle(
             CloneWordPressSiteCommand(
@@ -455,7 +544,7 @@ async def clone_site(
                 new_name=payload.new_name,
             )
         )
-        return WordPressSiteResponseSchema(**site.__dict__)
+        return _serialize_site_response(site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 
@@ -468,11 +557,15 @@ async def create_staging(
 ) -> WordPressSiteResponseSchema:
     tenant_id = _require_tenant(context)
     settings = get_settings()
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         site = await CreateStagingHandler(uow=uow, settings=settings).handle(
             CreateStagingCommand(site_id=site_id, tenant_id=tenant_id, user_id=context.user_id)
         )
-        return WordPressSiteResponseSchema(**site.__dict__)
+        return _serialize_site_response(site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 
@@ -484,6 +577,10 @@ async def list_backups(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> list[WordPressBackupResponseSchema]:
     tenant_id = _require_tenant(context)
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         backups = await ListWordPressBackupsHandler(uow=uow).handle(
             ListWordPressBackupsQuery(site_id=site_id, tenant_id=tenant_id)
@@ -501,6 +598,10 @@ async def create_backup(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> dict:
     tenant_id = _require_tenant(context)
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         backup_id = await CreateWordPressBackupHandler(uow=uow).handle(
             CreateWordPressBackupCommand(
@@ -523,6 +624,10 @@ async def restore_backup(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> dict:
     tenant_id = _require_tenant(context)
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
     try:
         await RestoreWordPressBackupHandler(uow=uow).handle(
             RestoreWordPressBackupCommand(

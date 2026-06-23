@@ -1,6 +1,8 @@
 from typing import Annotated
 from uuid import UUID
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from controlbox.config.settings import Settings, get_settings
@@ -50,6 +52,8 @@ from controlbox.modules.platform.infrastructure.service_profiles import ServiceP
 from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
 from controlbox.shared.application.unit_of_work import UnitOfWork
 
+logger = logging.getLogger("controlbox.platform.api")
+
 router = APIRouter(prefix="/platform", tags=["platform"])
 
 PLATFORM_ADMIN_ROLES = {"admin", "owner", "administrator"}
@@ -78,6 +82,10 @@ def _require_tenant(context: RequestContext) -> UUID:
     if not context.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant context required")
     return context.tenant_id
+
+
+def _patch_setup_checklist(checklist: dict | None, **updates: bool) -> dict[str, bool]:
+    return {**(checklist or {}), **updates}
 
 
 def require_platform_admin():
@@ -318,10 +326,9 @@ async def update_panel_config(
         tenant_id = _.tenant_id
         if tenant_id:
             platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
-            platform_settings.setup_checklist = {
-                **platform_settings.setup_checklist,
-                "configure_panel_access": True,
-            }
+            platform_settings.setup_checklist = _patch_setup_checklist(
+                platform_settings.setup_checklist, configure_panel_access=True
+            )
             await uow.tenant_platform_settings.save(platform_settings)
             await uow.commit()
         return UpdatePanelConfigResponse(**result)
@@ -343,7 +350,9 @@ async def update_alert_thresholds(
     settings.disk_threshold_percent = payload.disk_threshold_percent
     settings.alerts_enabled = payload.alerts_enabled
     settings.alert_cooldown_minutes = payload.alert_cooldown_minutes
-    settings.setup_checklist = {**settings.setup_checklist, "review_alert_thresholds": True}
+    settings.setup_checklist = _patch_setup_checklist(
+        settings.setup_checklist, review_alert_thresholds=True
+    )
     await uow.tenant_platform_settings.save(settings)
     await uow.commit()
     return payload
@@ -463,18 +472,53 @@ async def apply_service_profiles(
     settings: Annotated[Settings, Depends(get_settings)],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> ApplyServicesResponse:
+    try:
+        manager = ServiceProfilesManager(settings)
+        ok, message, profiles = await manager.apply_profiles(payload.profiles)
+        if ok:
+            tenant_id = _require_tenant(context)
+            platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
+            platform_settings.setup_checklist = _patch_setup_checklist(
+                platform_settings.setup_checklist, configure_services=True
+            )
+            await uow.tenant_platform_settings.save(platform_settings)
+            await uow.commit()
+        return ApplyServicesResponse(success=ok, message=message, enabled_profiles=profiles)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("apply_service_profiles failed")
+        return ApplyServicesResponse(success=False, message=str(exc), enabled_profiles=[])
+
+
+@router.post("/services/supabase/ensure", response_model=ApplyServicesResponse)
+async def ensure_supabase_service(
+    context: Annotated[RequestContext, Depends(require_platform_admin())],
+    _: Annotated[None, Depends(require_permission("platform.manage"))],
+    settings: Annotated[Settings, Depends(get_settings)],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> ApplyServicesResponse:
+    """Enable Supabase profile (and dependencies) and start containers."""
     manager = ServiceProfilesManager(settings)
-    ok, message, profiles = await manager.apply_profiles(payload.profiles)
+    current = manager._read_enabled_profiles()
+    profiles = manager._normalize_profiles(list(set(current) | {"databases", "backups", "supabase"}))
+    ok, message, applied = await manager.apply_profiles(profiles)
+    if ok:
+        ok_sb, msg_sb = await manager._ensure_supabase_stack(profiles, wait_seconds=30)
+        if msg_sb:
+            message = f"{message} {msg_sb}".strip()
+        if not ok_sb:
+            ok = False
+            message = msg_sb or message
     if ok:
         tenant_id = _require_tenant(context)
         platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
-        platform_settings.setup_checklist = {
-            **platform_settings.setup_checklist,
-            "configure_services": True,
-        }
+        platform_settings.setup_checklist = _patch_setup_checklist(
+            platform_settings.setup_checklist, configure_services=True
+        )
         await uow.tenant_platform_settings.save(platform_settings)
         await uow.commit()
-    return ApplyServicesResponse(success=ok, message=message, enabled_profiles=profiles)
+    return ApplyServicesResponse(success=ok, message=message, enabled_profiles=applied)
 
 
 @router.get("/runtimes", response_model=RuntimesOverviewSchema)
@@ -517,10 +561,9 @@ async def apply_runtime_profiles(
     if ok:
         tenant_id = _require_tenant(context)
         platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
-        platform_settings.setup_checklist = {
-            **platform_settings.setup_checklist,
-            "configure_services": True,
-        }
+        platform_settings.setup_checklist = _patch_setup_checklist(
+            platform_settings.setup_checklist, configure_services=True
+        )
         await uow.tenant_platform_settings.save(platform_settings)
         await uow.commit()
     return ApplyRuntimesResponse(success=ok, message=message, enabled_runtimes=runtimes)
@@ -538,7 +581,9 @@ async def update_setup_checklist(
         raise HTTPException(status_code=400, detail="Invalid checklist key")
     tenant_id = _require_tenant(context)
     settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
-    settings.setup_checklist = {**settings.setup_checklist, payload.key: payload.completed}
+    settings.setup_checklist = _patch_setup_checklist(
+        settings.setup_checklist, **{payload.key: payload.completed}
+    )
     await uow.tenant_platform_settings.save(settings)
     await uow.commit()
     return _checklist_schema(settings.setup_checklist)

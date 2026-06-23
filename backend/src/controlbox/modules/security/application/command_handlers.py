@@ -30,6 +30,17 @@ from controlbox.shared.infrastructure.security.audit import record_audit
 from controlbox.shared.infrastructure.security.protection import IpReputation
 
 
+async def _resolve_session_timeout_hours(uow: UnitOfWork, tenant_id: UUID | None) -> int:
+    if tenant_id is None:
+        return 24
+    try:
+        platform = await uow.tenant_platform_settings.get_or_create(tenant_id)
+        raw = (platform.panel_settings or {}).get("session_timeout_hours", 24)
+        return max(1, min(168, int(raw)))
+    except Exception:
+        return 24
+
+
 class SetupMfaHandler(CommandHandler[SetupMfaCommand, MfaSetupResponse]):
     def __init__(self, uow: UnitOfWork, mfa_service: MfaService) -> None:
         self._uow = uow
@@ -204,12 +215,14 @@ class VerifyMfaLoginHandler(CommandHandler[VerifyMfaLoginCommand, TokenResponse]
             )
 
         role_names, permission_codes = await resolve_effective_auth(self._uow, user.id, user.tenant_id)
+        session_timeout_hours = await _resolve_session_timeout_hours(self._uow, user.tenant_id)
 
         access_token, access_expires = self._tokens.create_access_token(
             user=user,
             session_id=session.id,
             roles=role_names,
             permissions=permission_codes,
+            access_ttl_minutes=session_timeout_hours * 60,
         )
 
         await self._session_cache.store_session(

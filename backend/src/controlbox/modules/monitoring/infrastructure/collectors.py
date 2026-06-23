@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import time
+from datetime import datetime, timezone
 from uuid import UUID
 
 import psutil
@@ -200,6 +201,34 @@ class TenantMetricsCollector:
     def __init__(self, settings: Settings) -> None:
         self._docker = DockerMetricsCollector(settings)
 
+    @staticmethod
+    def _runtime_status(stored_status: str, has_container: bool, container_running: bool) -> str:
+        if stored_status == "error":
+            return "error"
+        if has_container:
+            return "running" if container_running else "stopped"
+        return stored_status
+
+    @staticmethod
+    def _combine_container_stats(
+        docker_by_name: dict[str, DockerContainerMetrics],
+        *names: str | None,
+    ) -> DockerContainerMetrics | None:
+        stats = [docker_by_name[name] for name in names if name and name in docker_by_name]
+        if not stats:
+            return None
+        return DockerContainerMetrics(
+            name=stats[0].name,
+            container_id=stats[0].container_id,
+            status=stats[0].status,
+            cpu_percent=max(s.cpu_percent for s in stats),
+            memory_percent=max(s.memory_percent for s in stats),
+            memory_used_mb=max(s.memory_used_mb for s in stats),
+            memory_limit_mb=max(s.memory_limit_mb for s in stats),
+            network_in_mb=sum(s.network_in_mb for s in stats),
+            network_out_mb=sum(s.network_out_mb for s in stats),
+        )
+
     async def collect(self, uow: UnitOfWork, tenant_id: UUID) -> tuple[
         list[DatabaseMetrics],
         list[SupabaseMetrics],
@@ -209,6 +238,7 @@ class TenantMetricsCollector:
         databases = await uow.managed_databases.list_by_tenant(tenant_id)
         projects = await uow.supabase_projects.list_by_tenant(tenant_id)
         websites = await uow.websites.list_by_tenant(tenant_id)
+        wordpress_sites = await uow.wordpress_sites.list_by_tenant(tenant_id, 500, 0)
 
         db_metrics = [
             DatabaseMetrics(
@@ -238,6 +268,10 @@ class TenantMetricsCollector:
         for site in websites:
             if site.container_name:
                 container_names.add(site.container_name)
+        for wp in wordpress_sites:
+            for name in (wp.nginx_container_name, wp.php_container_name):
+                if name:
+                    container_names.add(name)
 
         docker_all = await self._docker.collect(container_names)
         docker_by_name = {c.name: c for c in docker_all}
@@ -245,10 +279,11 @@ class TenantMetricsCollector:
         website_metrics: list[WebsiteMetrics] = []
         for site in websites:
             docker_stat = docker_by_name.get(site.container_name or "")
-            if site.container_name:
-                status = "running" if docker_stat else "stopped"
-            else:
-                status = site.status.value
+            status = self._runtime_status(
+                site.status.value,
+                bool(site.container_name),
+                bool(docker_stat),
+            )
             website_metrics.append(
                 WebsiteMetrics(
                     id=str(site.id),
@@ -259,7 +294,41 @@ class TenantMetricsCollector:
                     memory_percent=docker_stat.memory_percent if docker_stat else 0.0,
                     disk_used_mb=site.disk_used_mb,
                     disk_limit_mb=site.disk_limit_mb,
+                    site_type="website",
+                    created_at=site.created_at,
                 )
             )
+
+        for wp in wordpress_sites:
+            docker_stat = self._combine_container_stats(
+                docker_by_name,
+                wp.nginx_container_name,
+                wp.php_container_name,
+            )
+            has_container = bool(wp.nginx_container_name or wp.php_container_name)
+            status = self._runtime_status(
+                wp.status.value,
+                has_container,
+                bool(docker_stat),
+            )
+            website_metrics.append(
+                WebsiteMetrics(
+                    id=str(wp.id),
+                    name=wp.name,
+                    domain=wp.domain,
+                    status=status,
+                    cpu_percent=docker_stat.cpu_percent if docker_stat else 0.0,
+                    memory_percent=docker_stat.memory_percent if docker_stat else 0.0,
+                    disk_used_mb=wp.disk_used_mb,
+                    disk_limit_mb=0,
+                    site_type="wordpress",
+                    created_at=wp.created_at,
+                )
+            )
+
+        website_metrics.sort(
+            key=lambda item: item.created_at or datetime.fromtimestamp(0, tz=timezone.utc),
+            reverse=True,
+        )
 
         return db_metrics, supabase_metrics, website_metrics, docker_all

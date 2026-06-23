@@ -83,12 +83,15 @@ class RuntimeCatalogManager:
         return self._config_dir() / "platform.env"
 
     def _read_enabled_keys(self) -> list[str]:
-        raw = getattr(self._settings, "controlbox_enabled_runtimes", "") or ""
-        if not raw.strip() and self._env_file().is_file():
-            for line in self._env_file().read_text(encoding="utf-8").splitlines():
+        raw = ""
+        env_file = self._env_file()
+        if env_file.is_file():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
                 if line.startswith("CONTROLBOX_ENABLED_RUNTIMES="):
                     raw = line.split("=", 1)[1].strip().strip('"').strip("'")
                     break
+        if not raw.strip():
+            raw = getattr(self._settings, "controlbox_enabled_runtimes", "") or ""
         keys = [p.strip() for p in raw.replace(" ", "").split(",") if p.strip()]
         return keys if keys else list(DEFAULT_ENABLED_RUNTIMES)
 
@@ -206,6 +209,9 @@ class RuntimeCatalogManager:
         if not keys:
             keys = list(DEFAULT_ENABLED_RUNTIMES)
 
+        previous = set(self._read_enabled_keys())
+        keys_set = set(keys)
+
         images = []
         for item in RUNTIME_CATALOG:
             key = f"{item['runtime']}:{item['version']}"
@@ -219,9 +225,26 @@ class RuntimeCatalogManager:
         except FileNotFoundError as exc:
             return False, str(exc), keys
 
+        if previous == keys_set:
+            return True, "Runtimes configurados correctamente", keys
+
+        unique_images = list(dict.fromkeys(images))
+        pull_task = asyncio.create_task(self._pull_images(unique_images))
+        try:
+            pulled, failed = await asyncio.wait_for(asyncio.shield(pull_task), timeout=45)
+        except asyncio.TimeoutError:
+            return True, "Runtimes guardados. Descarga de imágenes en segundo plano.", keys
+
+        if failed and not pulled:
+            return True, f"Runtimes guardados. Imágenes pendientes: {', '.join(failed)}", keys
+        if failed:
+            return True, f"Runtimes guardados. Algunas imágenes pendientes: {', '.join(failed)}", keys
+        return True, f"Runtimes activados: {', '.join(keys)}", keys
+
+    async def _pull_images(self, images: list[str]) -> tuple[list[str], list[str]]:
         pulled: list[str] = []
         failed: list[str] = []
-        for image in dict.fromkeys(images):
+        for image in images:
             proc = await asyncio.create_subprocess_exec(
                 "docker",
                 "pull",
@@ -241,9 +264,4 @@ class RuntimeCatalogManager:
             else:
                 logger.warning("Failed to pull %s: %s", image, (stderr or b"").decode()[-200:])
                 failed.append(image)
-
-        if failed and not pulled:
-            return False, f"No se pudieron descargar imágenes: {', '.join(failed)}", keys
-        if failed:
-            return True, f"Runtimes guardados. Algunas imágenes pendientes: {', '.join(failed)}", keys
-        return True, f"Runtimes activados: {', '.join(keys)}", keys
+        return pulled, failed

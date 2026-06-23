@@ -1,3 +1,4 @@
+from controlbox.modules.wordpress.application.responses import to_wordpress_site_response
 from controlbox.modules.wordpress.application.queries import (
     GetWordPressSiteQuery,
     ListWordPressBackupsQuery,
@@ -16,32 +17,6 @@ from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import NotFoundError
 
 
-def _site_response(site) -> WordPressSiteResponse:
-    return WordPressSiteResponse(
-        id=site.id,
-        tenant_id=site.tenant_id,
-        name=site.name,
-        domain=site.domain,
-        status=site.status.value,
-        php_version=site.php_version,
-        wordpress_version=site.wordpress_version,
-        url=site.url,
-        admin_user=site.admin_user,
-        admin_email=site.admin_email,
-        ssl_enabled=site.ssl_enabled,
-        ssl_status=site.ssl_status.value,
-        maintenance_mode=site.maintenance_mode,
-        disk_used_mb=site.disk_used_mb,
-        db_size_mb=site.db_size_mb,
-        is_staging=site.is_staging,
-        parent_site_id=site.parent_site_id,
-        error_message=site.error_message,
-        task_id=site.task_id,
-        created_at=site.created_at,
-        updated_at=site.updated_at,
-    )
-
-
 class ListWordPressSitesHandler(QueryHandler[ListWordPressSitesQuery, list[WordPressSiteResponse]]):
     def __init__(self, uow: UnitOfWork, settings: Settings | None = None) -> None:
         self._uow = uow
@@ -49,11 +24,16 @@ class ListWordPressSitesHandler(QueryHandler[ListWordPressSitesQuery, list[WordP
 
     async def handle(self, query: ListWordPressSitesQuery) -> list[WordPressSiteResponse]:
         sites = await self._uow.wordpress_sites.list_by_tenant(query.tenant_id, query.limit, query.offset)
+        if not query.can_manage_all:
+            sites = [
+                site for site in sites
+                if site.owner_user_id is not None and site.owner_user_id == query.requester_user_id
+            ]
         if self._settings:
             provisioner = WordPressProvisioner(self._settings)
             for site in sites:
                 site.disk_used_mb = provisioner.measure_disk_mb(site)
-        return [_site_response(s) for s in sites]
+        return [to_wordpress_site_response(s, self._settings) for s in sites]
 
 
 class GetWordPressSiteHandler(QueryHandler[GetWordPressSiteQuery, WordPressSiteResponse]):
@@ -65,10 +45,12 @@ class GetWordPressSiteHandler(QueryHandler[GetWordPressSiteQuery, WordPressSiteR
         site = await self._uow.wordpress_sites.get_by_id_and_tenant(query.site_id, query.tenant_id)
         if site is None:
             raise NotFoundError("WordPress site not found")
+        if not query.can_manage_all and site.owner_user_id != query.requester_user_id:
+            raise NotFoundError("WordPress site not found")
         if self._settings:
             provisioner = WordPressProvisioner(self._settings)
             site.disk_used_mb = provisioner.measure_disk_mb(site)
-        return _site_response(site)
+        return to_wordpress_site_response(site, self._settings)
 
 
 class ListWordPressBackupsHandler(QueryHandler[ListWordPressBackupsQuery, list[WordPressBackupResponse]]):

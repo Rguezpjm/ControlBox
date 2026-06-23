@@ -70,11 +70,26 @@ from controlbox.modules.security.application.security_events import SecurityEven
 from controlbox.modules.security.domain.services import MfaChallengeStore, MfaService, WebAuthnChallengeStore
 from controlbox.modules.security.domain.webauthn_service import WebAuthnService
 from controlbox.shared.application.unit_of_work import UnitOfWork
-from controlbox.shared.domain.base import DomainException, NotFoundError
+from controlbox.shared.domain.base import DomainException, NotFoundError, utc_now
 from controlbox.shared.infrastructure.security.cookies import set_access_cookie, set_csrf_cookie, set_refresh_cookie
 from controlbox.shared.infrastructure.security.protection import CsrfProtection, IpReputation
 
 router = APIRouter(prefix="/security", tags=["security"])
+
+
+def _access_cookie_ttl_seconds(expires_at) -> int:
+    return max(60, int((expires_at - utc_now()).total_seconds()))
+
+
+async def _resolve_session_timeout_hours(uow: UnitOfWork, tenant_id: UUID | None) -> int:
+    if tenant_id is None:
+        return 24
+    try:
+        platform = await uow.tenant_platform_settings.get_or_create(tenant_id)
+        raw = (platform.panel_settings or {}).get("session_timeout_hours", 24)
+        return max(1, min(168, int(raw)))
+    except Exception:
+        return 24
 
 
 def _mfa_service(container: AppState) -> MfaService:
@@ -277,7 +292,12 @@ async def verify_mfa_login(
             )
         )
         set_refresh_cookie(response, tokens.refresh_token, container.settings)
-        set_access_cookie(response, tokens.access_token, container.settings)
+        set_access_cookie(
+            response,
+            tokens.access_token,
+            container.settings,
+            max_age_seconds=_access_cookie_ttl_seconds(tokens.access_token_expires_at),
+        )
         return TokenResponseSchema(**tokens.__dict__)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
@@ -439,11 +459,13 @@ async def webauthn_login_verify(
             )
 
         role_names, permission_codes = await resolve_effective_auth(uow, user.id, user.tenant_id)
+        session_timeout_hours = await _resolve_session_timeout_hours(uow, user.tenant_id)
         access_token, access_expires = container.token_service.create_access_token(
             user=user,
             session_id=session.id,
             roles=role_names,
             permissions=permission_codes,
+            access_ttl_minutes=session_timeout_hours * 60,
         )
         await container.session_cache.store_session(
             session_id=session.id,
@@ -475,7 +497,12 @@ async def webauthn_login_verify(
         await uow.commit()
 
         set_refresh_cookie(response, refresh_token, container.settings)
-        set_access_cookie(response, access_token, container.settings)
+        set_access_cookie(
+            response,
+            access_token,
+            container.settings,
+            max_age_seconds=_access_cookie_ttl_seconds(access_expires),
+        )
         return TokenResponseSchema(
             access_token=access_token,
             refresh_token=refresh_token,

@@ -24,6 +24,7 @@ from controlbox.modules.websites.infrastructure.provisioner import DatabaseProvi
 from controlbox.shared.application.cqrs import CommandHandler
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import ForbiddenError, NotFoundError
+from controlbox.shared.infrastructure.resource_isolation import set_owner_in_settings
 
 
 def _to_response(website: Website) -> WebsiteResponse:
@@ -80,6 +81,7 @@ class CreateWebsiteHandler(CommandHandler[CreateWebsiteCommand, WebsiteResponse]
 
         website = Website(
             tenant_id=command.tenant_id,
+            owner_user_id=command.user_id,
             name=command.name.strip(),
             domain=domain,
             runtime=runtime,
@@ -93,6 +95,7 @@ class CreateWebsiteHandler(CommandHandler[CreateWebsiteCommand, WebsiteResponse]
             monitoring_enabled=True,
             logs_enabled=True,
             traefik_router=f"site-{domain.replace('.', '-')}",
+            settings=set_owner_in_settings({}, command.user_id),
         )
         website.container_name = domain_service.build_container_name(command.tenant_id, website.id)
 

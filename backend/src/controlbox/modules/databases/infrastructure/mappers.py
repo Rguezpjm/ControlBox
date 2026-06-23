@@ -18,6 +18,7 @@ def to_managed_database(model: ManagedDatabaseModel) -> ManagedDatabase:
     return ManagedDatabase(
         id=model.id,
         tenant_id=model.tenant_id,
+        owner_user_id=model.owner_user_id,
         name=model.name,
         engine=DatabaseEngineType(model.engine),
         status=DatabaseStatus(model.status),

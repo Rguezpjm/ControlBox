@@ -25,23 +25,24 @@ export interface NavItem {
   icon: LucideIcon;
   badgeKey?: "websites";
   locked?: boolean;
+  requiredPermissions?: string[];
 }
 
 export const mainNav: NavItem[] = [
-  { id: "dashboard", titleKey: "nav.dashboard", href: "/", icon: LayoutDashboard, locked: true },
-  { id: "websites", titleKey: "nav.websites", href: "/websites", icon: Globe, badgeKey: "websites" },
-  { id: "wordpress", titleKey: "nav.wordpress", href: "/wordpress", icon: Blocks },
-  { id: "staging", titleKey: "nav.staging", href: "/staging", icon: GitBranch },
-  { id: "domains", titleKey: "nav.domains", href: "/domains", icon: Link2 },
-  { id: "dns", titleKey: "nav.dns", href: "/dns", icon: Server },
-  { id: "email", titleKey: "nav.email", href: "/email", icon: Mail },
-  { id: "databases", titleKey: "nav.databases", href: "/databases", icon: Database },
-  { id: "files", titleKey: "nav.files", href: "/files", icon: Files },
-  { id: "ftp", titleKey: "nav.ftp", href: "/ftp", icon: FolderOpen },
-  { id: "backups", titleKey: "nav.backups", href: "/backups", icon: Archive },
-  { id: "monitoring", titleKey: "nav.monitoring", href: "/monitoring", icon: Activity },
-  { id: "security", titleKey: "nav.security", href: "/security", icon: Shield },
-  { id: "team", titleKey: "nav.team", href: "/team", icon: Users },
+  { id: "dashboard", titleKey: "nav.dashboard", href: "/", icon: LayoutDashboard, locked: true, requiredPermissions: ["platform.read"] },
+  { id: "websites", titleKey: "nav.websites", href: "/websites", icon: Globe, badgeKey: "websites", requiredPermissions: ["websites.read"] },
+  { id: "wordpress", titleKey: "nav.wordpress", href: "/wordpress", icon: Blocks, requiredPermissions: ["wordpress.read"] },
+  { id: "staging", titleKey: "nav.staging", href: "/staging", icon: GitBranch, requiredPermissions: ["websites.read", "wordpress.read"] },
+  { id: "domains", titleKey: "nav.domains", href: "/domains", icon: Link2, requiredPermissions: ["dns.read"] },
+  { id: "dns", titleKey: "nav.dns", href: "/dns", icon: Server, requiredPermissions: ["dns.read"] },
+  { id: "email", titleKey: "nav.email", href: "/email", icon: Mail, requiredPermissions: ["mail.read"] },
+  { id: "databases", titleKey: "nav.databases", href: "/databases", icon: Database, requiredPermissions: ["databases.read"] },
+  { id: "files", titleKey: "nav.files", href: "/files", icon: Files, requiredPermissions: ["files.read"] },
+  { id: "ftp", titleKey: "nav.ftp", href: "/ftp", icon: FolderOpen, requiredPermissions: ["ftp.read"] },
+  { id: "backups", titleKey: "nav.backups", href: "/backups", icon: Archive, requiredPermissions: ["backups.read"] },
+  { id: "monitoring", titleKey: "nav.monitoring", href: "/monitoring", icon: Activity, requiredPermissions: ["monitoring.read"] },
+  { id: "security", titleKey: "nav.security", href: "/security", icon: Shield, requiredPermissions: ["security.read"] },
+  { id: "team", titleKey: "nav.team", href: "/sub-accounts", icon: Users, requiredPermissions: ["team_members.read"] },
   { id: "settings", titleKey: "nav.settings", href: "/settings", icon: Settings, locked: true },
 ];
 

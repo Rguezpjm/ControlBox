@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
+import Link from "next/link";
 import { Globe, Database, HardDrive, Network, Radio } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -32,6 +33,18 @@ function DashboardContent() {
 
   const runningSites = websites.filter((w) => w.status === "running").length;
   const pendingSites = websites.filter((w) => w.status !== "running").length;
+
+  function siteHref(site: (typeof websites)[number]) {
+    return site.site_type === "wordpress" ? `/wordpress/${site.id}` : `/websites/${site.id}`;
+  }
+
+  function formatSiteDisk(site: (typeof websites)[number]) {
+    const used = formatBytes(site.disk_used_mb * 1024 * 1024);
+    if (site.disk_limit_mb > 0) {
+      return `${used} / ${formatBytes(site.disk_limit_mb * 1024 * 1024)}`;
+    }
+    return used;
+  }
   const healthyDbs = databases.filter((d) => d.status === "running" || d.status === "healthy").length;
   const servicesUp = services.filter((s) => s.status === "healthy" || s.status === "up").length;
 
@@ -137,8 +150,9 @@ function DashboardContent() {
           ) : (
             <div className="space-y-3">
               {websites.slice(0, 8).map((site) => (
-                <div
-                  key={site.id}
+                <Link
+                  key={`${site.site_type ?? "website"}-${site.id}`}
+                  href={siteHref(site)}
                   className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/50"
                 >
                   <div className="flex items-center gap-3">
@@ -146,18 +160,24 @@ function DashboardContent() {
                       <Globe className="h-4 w-4 text-primary" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{site.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">{site.name}</p>
+                        {site.site_type === "wordpress" ? (
+                          <Badge variant="secondary" className="text-[10px]">
+                            WordPress
+                          </Badge>
+                        ) : null}
+                      </div>
                       <p className="text-xs text-muted-foreground">{site.domain}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="hidden text-xs tabular-nums text-muted-foreground sm:block">
-                      {formatBytes(site.disk_used_mb * 1024 * 1024)} /{" "}
-                      {formatBytes(site.disk_limit_mb * 1024 * 1024)}
+                      {formatSiteDisk(site)}
                     </span>
                     <StatusBadge status={site.status} />
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}

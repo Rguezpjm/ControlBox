@@ -65,6 +65,7 @@ from controlbox.modules.identity.api.dependencies import (
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 from controlbox.shared.domain.base import DomainException, ForbiddenError
+from controlbox.shared.infrastructure.resource_isolation import can_manage_all_resources
 
 
 router = APIRouter(prefix="/databases", tags=["databases"])
@@ -74,6 +75,13 @@ def _require_tenant(context: RequestContext) -> UUID:
     if not context.tenant_id:
         raise map_domain_exception(ForbiddenError("Tenant context required"))
     return context.tenant_id
+
+
+def _assert_database_access(context: RequestContext, database: ManagedDatabase) -> None:
+    if can_manage_all_resources(context):
+        return
+    if database.owner_user_id is None or database.owner_user_id != context.user_id:
+        raise map_domain_exception(ForbiddenError("Database not found"))
 
 
 def _to_database_schema(db: ManagedDatabase) -> ManagedDatabaseSchema:
@@ -159,7 +167,14 @@ async def list_databases(
     try:
         handler = ListDatabasesHandler(uow=uow)
         databases = await handler.handle(
-            ListDatabasesQuery(tenant_id=tenant_id, engine=engine, limit=limit, offset=offset)
+            ListDatabasesQuery(
+                tenant_id=tenant_id,
+                requester_user_id=context.user_id,
+                can_manage_all=can_manage_all_resources(context),
+                engine=engine,
+                limit=limit,
+                offset=offset,
+            )
         )
         return [_to_database_schema(db) for db in databases]
     except DomainException as exc:
@@ -178,6 +193,7 @@ async def create_database(
         database = await handler.handle(
             CreateDatabaseCommand(
                 tenant_id=tenant_id,
+                user_id=context.user_id,
                 name=body.name,
                 engine=body.engine,
                 charset=body.charset,
@@ -200,7 +216,14 @@ async def get_database(
     tenant_id = _require_tenant(context)
     try:
         handler = GetDatabaseHandler(uow=uow)
-        database = await handler.handle(GetDatabaseQuery(tenant_id=tenant_id, database_id=database_id))
+        database = await handler.handle(
+            GetDatabaseQuery(
+                tenant_id=tenant_id,
+                database_id=database_id,
+                requester_user_id=context.user_id,
+                can_manage_all=can_manage_all_resources(context),
+            )
+        )
         return _to_database_schema(database)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
@@ -213,6 +236,10 @@ async def delete_database(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> None:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = DeleteDatabaseHandler(uow=uow, settings=get_settings())
         await handler.handle(DeleteDatabaseCommand(tenant_id=tenant_id, database_id=database_id))
@@ -228,6 +255,10 @@ async def set_database_connection_limit(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> ManagedDatabaseSchema:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = SetDatabaseConnectionLimitHandler(uow=uow)
         database = await handler.handle(
@@ -249,6 +280,10 @@ async def list_database_users(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> list[DatabaseUserSchema]:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = ListDatabaseUsersHandler(uow=uow)
         users = await handler.handle(ListDatabaseUsersQuery(tenant_id=tenant_id, database_id=database_id))
@@ -265,6 +300,10 @@ async def create_database_user(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> DatabaseUserCreatedSchema:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = CreateDatabaseUserHandler(uow=uow, settings=get_settings())
         user, password = await handler.handle(
@@ -295,6 +334,10 @@ async def change_database_user_password(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> DatabaseUserCreatedSchema:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = ChangeDatabaseUserPasswordHandler(uow=uow, settings=get_settings())
         user, password = await handler.handle(
@@ -320,6 +363,10 @@ async def set_database_user_connection_limit(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> DatabaseUserSchema:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = SetDatabaseUserConnectionLimitHandler(uow=uow, settings=get_settings())
         user = await handler.handle(
@@ -343,6 +390,10 @@ async def delete_database_user(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> None:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = DeleteDatabaseUserHandler(uow=uow, settings=get_settings())
         await handler.handle(
@@ -360,6 +411,10 @@ async def list_database_backups(
     limit: int = 20,
 ) -> list[DatabaseBackupSchema]:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = ListDatabaseBackupsHandler(uow=uow)
         backups = await handler.handle(
@@ -378,6 +433,10 @@ async def create_database_backup(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> DatabaseBackupSchema:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = CreateDatabaseBackupHandler(uow=uow, settings=get_settings())
         backup = await handler.handle(
@@ -401,6 +460,10 @@ async def restore_database_backup(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> DatabaseBackupSchema:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = RestoreDatabaseBackupHandler(uow=uow, settings=get_settings())
         backup = await handler.handle(
@@ -425,6 +488,10 @@ async def delete_database_backup(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> None:
     tenant_id = _require_tenant(context)
+    database = await uow.managed_databases.get_by_id_and_tenant(database_id, tenant_id)
+    if not database:
+        raise map_domain_exception(ForbiddenError("Database not found"))
+    _assert_database_access(context, database)
     try:
         handler = DeleteDatabaseBackupHandler(uow=uow)
         await handler.handle(

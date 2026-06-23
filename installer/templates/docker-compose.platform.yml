@@ -119,6 +119,7 @@ services:
       - databases
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ADMIN_PASSWORD:?required}
+      MYSQL_ROOT_HOST: "%"
     volumes:
       - ${CONTROLBOX_DATA_DIR}/mysql:/var/lib/mysql
     networks:

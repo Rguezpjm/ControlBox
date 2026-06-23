@@ -1,11 +1,12 @@
 "use client";
 
 import { Suspense, useState, useEffect, useCallback } from "react";
-import { Plus, FolderOpen, ScrollText } from "lucide-react";
+import { Plus, FolderOpen, ScrollText, Settings } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TableSkeleton } from "@/components/skeletons";
 import { CreateFtpAccountDialog } from "@/components/ftp/create-ftp-account-dialog";
@@ -34,6 +35,7 @@ function FtpContent() {
   const [serviceStatus, setServiceStatus] = useState<FtpServiceStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [manageAccount, setManageAccount] = useState<FtpAccount | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
 
@@ -73,14 +75,17 @@ function FtpContent() {
         title="FTP Manager"
         description="FTP, FTPS y SFTP — cuentas, cuotas y logs de transferencia"
         action={
-          <Button onClick={() => setCreateOpen(true)} disabled={!serviceStatus?.enabled || !serviceStatus?.running}>
-            <Plus className="h-4 w-4" />
-            Create Account
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setSettingsOpen(true)}>
+              <Settings className="h-4 w-4" />
+            </Button>
+            <Button onClick={() => setCreateOpen(true)} disabled={!serviceStatus?.enabled || !serviceStatus?.running}>
+              <Plus className="h-4 w-4" />
+              Create Account
+            </Button>
+          </div>
         }
       />
-
-      <FtpServiceSettings serviceStatus={serviceStatus} onUpdated={loadData} />
 
       <Tabs defaultValue="accounts">
         <TabsList>
@@ -209,6 +214,15 @@ function FtpContent() {
         onOpenChange={setManageOpen}
         onUpdated={loadData}
       />
+
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>FTP Service Settings</DialogTitle>
+          </DialogHeader>
+          <FtpServiceSettings serviceStatus={serviceStatus} onUpdated={loadData} inModal />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

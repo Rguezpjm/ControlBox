@@ -13,6 +13,7 @@ class FtpAccountModel(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    owner_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     username: Mapped[str] = mapped_column(String(64), nullable=False)
     system_username: Mapped[str] = mapped_column(String(96), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)

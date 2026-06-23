@@ -724,8 +724,170 @@ cb_docker_deploy_stack() {
     cb_wait_for_service "panel" \
         "cb_compose_service_is_running '${env_file}' panel" 180
 
+    cb_mysql_ensure_remote_root "${env_file}" || true
+    cb_supabase_ensure_running "${env_file}" || true
+    cb_ftp_ensure_running "${env_file}" || true
+
     cb_step_done "deploy_stack"
     cb_success "Stack desplegado correctamente"
+}
+
+cb_mysql_ensure_remote_root() {
+    local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
+    [[ -f "${env_file}" ]] || return 0
+
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-mysql' || return 0
+
+    local mysql_pass
+    mysql_pass="$(grep '^MYSQL_ADMIN_PASSWORD=' "${env_file}" | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    [[ -n "${mysql_pass}" ]] || return 0
+
+    cb_info "Verificando acceso MySQL remoto (root@'%')..."
+
+    local sql_pass="${mysql_pass//\'/\'\'}"
+    local sql="
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${sql_pass}';
+ALTER USER 'root'@'%' IDENTIFIED BY '${sql_pass}';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+CREATE USER IF NOT EXISTS 'root'@'localhost' IDENTIFIED BY '${sql_pass}';
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${sql_pass}';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+"
+
+    if docker exec controlbox-mysql mysql -uroot -p"${mysql_pass}" --skip-ssl -h127.0.0.1 -e "${sql}" >/dev/null 2>&1; then
+        cb_success "MySQL: root@'%' listo para el panel y WordPress"
+        return 0
+    fi
+
+    cb_warn "No se pudo configurar root@'%' en MySQL (revise MYSQL_ADMIN_PASSWORD en platform.env)"
+    return 1
+}
+
+cb_supabase_ensure_running() {
+    local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
+    [[ -f "${env_file}" ]] || return 0
+
+    local profiles
+    profiles="$(grep '^CONTROLBOX_ENABLED_PROFILES=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    [[ "${profiles}" == *supabase* ]] || return 0
+
+    local install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
+    local config_dir="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}"
+    local data_dir="${CONTROLBOX_DATA_DIR:-/var/lib/controlbox}"
+    local templates_dir="${install_dir}/templates/supabase"
+
+    if [[ ! -f "${config_dir}/supabase/kong.yml" ]] && [[ -d "${templates_dir}" ]]; then
+        mkdir -p "${config_dir}/supabase"
+        cp -f "${templates_dir}/"* "${config_dir}/supabase/" 2>/dev/null || true
+        cb_info "Plantillas Supabase copiadas a ${config_dir}/supabase"
+    fi
+
+    mkdir -p "${data_dir}/supabase/db"
+    chmod 777 "${data_dir}/supabase/db" 2>/dev/null || true
+
+    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-supabase-db'; then
+        cb_info "Iniciando stack Supabase (requiere MinIO/backups)..."
+        cd "${install_dir}"
+        docker compose --env-file "${env_file}" \
+            --profile databases --profile backups --profile supabase \
+            up -d --remove-orphans \
+            minio supabase-db supabase-meta supabase-kong supabase-auth \
+            supabase-rest supabase-realtime supabase-storage supabase-studio \
+            2>/dev/null || cb_warn "No se pudo levantar Supabase automáticamente"
+    fi
+
+    local attempt=0
+    while [[ ${attempt} -lt 36 ]]; do
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-supabase-db'; then
+            cb_success "Supabase: supabase-db en ejecución"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 5
+    done
+
+    cb_warn "Supabase no arrancó. Revise: docker logs controlbox-supabase-db"
+    return 1
+}
+
+cb_ftp_ensure_running() {
+    local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
+    [[ -f "${env_file}" ]] || return 0
+
+    local enabled profiles protocol port passive_min passive_max install_dir
+    enabled="$(grep '^PUREFTPD_ENABLED=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    [[ "${enabled}" == "true" ]] || return 0
+
+    profiles="$(grep '^CONTROLBOX_ENABLED_PROFILES=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    if [[ "${profiles}" != *ftp* ]]; then
+        profiles="${profiles},ftp"
+        profiles="${profiles#,}"
+        cb_info "Añadiendo perfil ftp a CONTROLBOX_ENABLED_PROFILES"
+        if grep -q '^CONTROLBOX_ENABLED_PROFILES=' "${env_file}"; then
+            sed -i "s|^CONTROLBOX_ENABLED_PROFILES=.*|CONTROLBOX_ENABLED_PROFILES=${profiles}|" "${env_file}"
+        else
+            echo "CONTROLBOX_ENABLED_PROFILES=${profiles}" >> "${env_file}"
+        fi
+    fi
+
+    install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
+    protocol="$(grep '^PUREFTPD_PROTOCOL=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    protocol="${protocol:-ftp}"
+    port="$(grep '^PUREFTPD_PORT=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    port="${port:-21}"
+    passive_min="$(grep '^PUREFTPD_PASSIVE_MIN=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    passive_min="${passive_min:-30000}"
+    passive_max="$(grep '^PUREFTPD_PASSIVE_MAX=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
+    passive_max="${passive_max:-30009}"
+
+    local override_file="${install_dir}/docker-compose.ftp.yml"
+    if [[ "${protocol}" == "sftp" ]]; then
+        cat > "${override_file}" <<EOF
+services:
+  sftp:
+    ports:
+      - "${port}:22"
+EOF
+    else
+        cat > "${override_file}" <<EOF
+services:
+  pureftpd:
+    ports:
+      - "${port}:21"
+      - "${passive_min}-${passive_max}:${passive_min}-${passive_max}"
+EOF
+    fi
+
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-pureftpd' \
+        || docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-sftp'; then
+        cb_success "FTP: servicio ya en ejecución"
+        return 0
+    fi
+
+    cb_info "Iniciando servicio FTP (${protocol})..."
+    cd "${install_dir}"
+    local -a compose_args=(--env-file "${env_file}" -f docker-compose.yml --profile ftp)
+    [[ -f docker-compose.override.yml ]] && compose_args+=(-f docker-compose.override.yml)
+    [[ -f docker-compose.ports.yml ]] && compose_args+=(-f docker-compose.ports.yml)
+    [[ -f docker-compose.ftp.yml ]] && compose_args+=(-f docker-compose.ftp.yml)
+
+    if [[ "${protocol}" == "sftp" ]]; then
+        docker compose "${compose_args[@]}" up -d --remove-orphans sftp 2>/dev/null \
+            || cb_warn "No se pudo levantar SFTP automáticamente"
+    else
+        docker compose "${compose_args[@]}" up -d --remove-orphans pureftpd 2>/dev/null \
+            || cb_warn "No se pudo levantar Pure-FTPd automáticamente"
+    fi
+
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-pureftpd' \
+        || docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-sftp'; then
+        cb_success "FTP: servicio en ejecución"
+        return 0
+    fi
+
+    cb_warn "FTP no arrancó. Revise: docker logs controlbox-pureftpd"
+    return 1
 }
 
 cb_docker_stack_status() {

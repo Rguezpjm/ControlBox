@@ -2,7 +2,8 @@
 
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { Plus, Settings2 } from "lucide-react";
+import { Loader2, Plus, Settings2 } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { ManageDatabaseDialog } from "@/components/databases/manage-database-dia
 import { CreateSupabaseProjectDialog } from "@/components/supabase/create-project-dialog";
 import { ManageSupabaseProjectDialog } from "@/components/supabase/manage-project-dialog";
 import { ProductionSetupDialog } from "@/components/platform/production-setup-dialog";
+import { ensureSupabaseService } from "@/lib/platform";
 import { databasesApi, type ManagedDatabase } from "@/lib/databases";
 import { supabaseApi, type SupabaseProject, type SupabaseServiceStatus } from "@/lib/supabase";
 import { formatBytes } from "@/lib/utils";
@@ -68,6 +70,7 @@ function DatabasesContent() {
   const [manageProject, setManageProject] = useState<SupabaseProject | null>(null);
   const [manageSupabaseOpen, setManageSupabaseOpen] = useState(false);
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
+  const [activatingSupabase, setActivatingSupabase] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
@@ -131,6 +134,23 @@ function DatabasesContent() {
     return databases.filter((db) => db.engine === engine);
   }
 
+  async function activateSupabase() {
+    setActivatingSupabase(true);
+    try {
+      const result = await ensureSupabaseService();
+      if (result.success) {
+        toast.success("Supabase activado correctamente", { description: result.message });
+        await loadSupabase();
+      } else {
+        toast.error(result.message || "No se pudo activar Supabase");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo activar Supabase");
+    } finally {
+      setActivatingSupabase(false);
+    }
+  }
+
   function renderDatabaseCards(items: ManagedDatabase[]) {
     if (loading && activeTab !== "supabase") return <CardGridSkeleton count={4} />;
     if (items.length === 0) {
@@ -192,15 +212,36 @@ function DatabasesContent() {
           <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm sm:col-span-2">
             <p className="font-medium text-amber-700 dark:text-amber-400">Supabase no disponible</p>
             <p className="text-muted-foreground mt-1">{supabaseStatus.message}</p>
+            {supabaseStatus.profile_enabled && (
+              <p className="text-muted-foreground mt-2 text-xs">
+                El perfil Supabase está guardado en la configuración, pero los contenedores no están en
+                ejecución. Pulse el botón para iniciarlos (puede tardar unos minutos la primera vez).
+              </p>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setSetupDialogOpen(true)}>
-                <Settings2 className="h-3.5 w-3.5" />
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-1.5"
+                disabled={activatingSupabase}
+                onClick={activateSupabase}
+              >
+                {activatingSupabase ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Settings2 className="h-3.5 w-3.5" />
+                )}
                 Activar Supabase
               </Button>
+              {!supabaseStatus.profile_enabled && (
+                <Button size="sm" variant="outline" onClick={() => setSetupDialogOpen(true)}>
+                  Configuración del servidor
+                </Button>
+              )}
             </div>
             <p className="text-muted-foreground mt-3 text-xs">
-              También puede ejecutar <code className="font-mono">controlbox repair</code> en el VPS tras activar el
-              servicio. Supabase requiere MinIO (Backups).
+              También puede ejecutar <code className="font-mono">controlbox repair</code> en el VPS.
+              Supabase requiere MinIO (Backups).
             </p>
           </div>
         )}

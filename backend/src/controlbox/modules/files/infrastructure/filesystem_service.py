@@ -42,15 +42,15 @@ class PathResolver:
     def __init__(self, settings: Settings) -> None:
         self._base = Path(settings.sites_base_path)
 
-    def tenant_root(self, tenant_id: UUID) -> Path:
-        root = (self._base / str(tenant_id)).resolve()
+    def tenant_root(self, tenant_id: UUID | None) -> Path:
+        root = (self._base / str(tenant_id)).resolve() if tenant_id else self._base.resolve()
         try:
             root.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise ForbiddenError(f"Cannot access tenant file root: {exc}") from exc
         return root
 
-    def resolve(self, tenant_id: UUID, relative_path: str = "") -> Path:
+    def resolve(self, tenant_id: UUID | None, relative_path: str = "") -> Path:
         root = self.tenant_root(tenant_id)
         clean = relative_path.replace("\\", "/").strip("/")
         if ".." in clean.split("/"):
@@ -60,7 +60,7 @@ class PathResolver:
             raise ForbiddenError("Access denied")
         return target
 
-    def to_relative(self, tenant_id: UUID, absolute: Path) -> str:
+    def to_relative(self, tenant_id: UUID | None, absolute: Path) -> str:
         root = self.tenant_root(tenant_id)
         resolved = absolute.resolve()
         if resolved == root:
@@ -76,7 +76,7 @@ class FileSystemService:
     def __init__(self, settings: Settings) -> None:
         self._resolver = PathResolver(settings)
 
-    def browse(self, tenant_id: UUID, path: str = "") -> BrowseResult:
+    def browse(self, tenant_id: UUID | None, path: str = "") -> BrowseResult:
         root = self._resolver.tenant_root(tenant_id)
         target = self._resolver.resolve(tenant_id, path)
         if not target.exists():
@@ -109,7 +109,7 @@ class FileSystemService:
             entries=entries,
         )
 
-    def read_content(self, tenant_id: UUID, path: str) -> tuple[str, str]:
+    def read_content(self, tenant_id: UUID | None, path: str) -> tuple[str, str]:
         target = self._resolver.resolve(tenant_id, path)
         if not target.is_file():
             raise NotFoundError("File not found")
@@ -120,13 +120,13 @@ class FileSystemService:
             raise ValidationError("File type is not editable")
         return target.read_text(encoding="utf-8", errors="replace"), ext
 
-    def get_entry(self, tenant_id: UUID, path: str) -> FileEntry:
+    def get_entry(self, tenant_id: UUID | None, path: str) -> FileEntry:
         target = self._resolver.resolve(tenant_id, path)
         if not target.exists():
             raise NotFoundError("Path not found")
         return self._to_entry(tenant_id, target)
 
-    def write_content(self, tenant_id: UUID, path: str, content: str) -> FileEntry:
+    def write_content(self, tenant_id: UUID | None, path: str, content: str) -> FileEntry:
         target = self._resolver.resolve(tenant_id, path)
         ext = target.suffix.lower()
         if ext not in TEXT_EXTENSIONS and target.name != ".htaccess":
@@ -135,7 +135,7 @@ class FileSystemService:
         target.write_text(content, encoding="utf-8")
         return self._to_entry(tenant_id, target)
 
-    def upload(self, tenant_id: UUID, directory: str, filename: str, data: bytes) -> FileEntry:
+    def upload(self, tenant_id: UUID | None, directory: str, filename: str, data: bytes) -> FileEntry:
         if len(data) > MAX_UPLOAD_SIZE:
             raise ValidationError("File exceeds maximum upload size")
         safe_name = Path(filename).name
@@ -148,12 +148,12 @@ class FileSystemService:
         dest.write_bytes(data)
         return self._to_entry(tenant_id, dest)
 
-    def mkdir(self, tenant_id: UUID, path: str) -> FileEntry:
+    def mkdir(self, tenant_id: UUID | None, path: str) -> FileEntry:
         target = self._resolver.resolve(tenant_id, path)
         target.mkdir(parents=True, exist_ok=False)
         return self._to_entry(tenant_id, target)
 
-    def rename(self, tenant_id: UUID, path: str, new_name: str) -> FileEntry:
+    def rename(self, tenant_id: UUID | None, path: str, new_name: str) -> FileEntry:
         target = self._resolver.resolve(tenant_id, path)
         if not target.exists():
             raise NotFoundError("Path not found")
@@ -166,7 +166,7 @@ class FileSystemService:
         target.rename(dest)
         return self._to_entry(tenant_id, dest)
 
-    def delete(self, tenant_id: UUID, path: str) -> None:
+    def delete(self, tenant_id: UUID | None, path: str) -> None:
         target = self._resolver.resolve(tenant_id, path)
         root = self._resolver.tenant_root(tenant_id)
         if target == root:
@@ -178,7 +178,7 @@ class FileSystemService:
         else:
             target.unlink()
 
-    def compress(self, tenant_id: UUID, paths: list[str], archive_name: str, dest_dir: str = "") -> FileEntry:
+    def compress(self, tenant_id: UUID | None, paths: list[str], archive_name: str, dest_dir: str = "") -> FileEntry:
         if not archive_name.endswith(".zip"):
             archive_name = f"{archive_name}.zip"
         safe_name = Path(archive_name).name
@@ -204,7 +204,7 @@ class FileSystemService:
                             zf.write(file_path, arcname)
         return self._to_entry(tenant_id, archive_path)
 
-    def extract(self, tenant_id: UUID, archive_path: str, dest_dir: str = "") -> BrowseResult:
+    def extract(self, tenant_id: UUID | None, archive_path: str, dest_dir: str = "") -> BrowseResult:
         archive = self._resolver.resolve(tenant_id, archive_path)
         if not archive.is_file() or archive.suffix.lower() != ".zip":
             raise ValidationError("Only .zip archives are supported")
@@ -217,7 +217,7 @@ class FileSystemService:
             zf.extractall(out_dir)
         return self.browse(tenant_id, self._resolver.to_relative(tenant_id, out_dir))
 
-    def get_permissions(self, tenant_id: UUID, path: str) -> dict:
+    def get_permissions(self, tenant_id: UUID | None, path: str) -> dict:
         target = self._resolver.resolve(tenant_id, path)
         if not target.exists():
             raise NotFoundError("Path not found")
@@ -230,7 +230,7 @@ class FileSystemService:
             "executable": os.access(target, os.X_OK),
         }
 
-    def set_permissions(self, tenant_id: UUID, path: str, mode: str) -> dict:
+    def set_permissions(self, tenant_id: UUID | None, path: str, mode: str) -> dict:
         target = self._resolver.resolve(tenant_id, path)
         if not target.exists():
             raise NotFoundError("Path not found")
@@ -246,13 +246,13 @@ class FileSystemService:
         os.chmod(target, octal_mode)
         return self.get_permissions(tenant_id, path)
 
-    def resolve_download(self, tenant_id: UUID, path: str) -> Path:
+    def resolve_download(self, tenant_id: UUID | None, path: str) -> Path:
         target = self._resolver.resolve(tenant_id, path)
         if not target.is_file():
             raise NotFoundError("File not found")
         return target
 
-    def _to_entry(self, tenant_id: UUID, path: Path) -> FileEntry:
+    def _to_entry(self, tenant_id: UUID | None, path: Path) -> FileEntry:
         st = path.stat()
         ext = path.suffix.lower() if path.is_file() else None
         editable = path.is_file() and (ext in TEXT_EXTENSIONS or path.name == ".htaccess")
