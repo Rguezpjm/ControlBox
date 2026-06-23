@@ -14,6 +14,7 @@ from controlbox.modules.databases.domain.entities import DatabaseEngineType
 from controlbox.modules.databases.infrastructure.engine_adapters import MySqlMariaAdapter
 from controlbox.modules.databases.infrastructure.engine_config import EngineConfigResolver
 from controlbox.modules.ftp.infrastructure.service_manager import FtpServiceManager
+from controlbox.shared.infrastructure.compose_overrides import compose_override_files
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
 from controlbox.shared.infrastructure.platform_env_file import patch_env_key, repair_celery_redis_urls
 
@@ -161,10 +162,8 @@ class ServiceProfilesManager:
             "-f",
             str(install_dir / "docker-compose.yml"),
         ]
-        for extra in ("docker-compose.override.yml", "docker-compose.ports.yml", "docker-compose.ftp.yml", "docker-compose.build.yml"):
-            path = install_dir / extra
-            if path.exists():
-                cmd.extend(["-f", str(path)])
+        for path in compose_override_files(self._settings):
+            cmd.extend(["-f", str(path)])
         return cmd
 
     def _read_enabled_profiles(self) -> list[str]:

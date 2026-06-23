@@ -14,6 +14,7 @@ import { CreateDatabaseDialog } from "@/components/databases/create-database-dia
 import { ManageDatabaseDialog } from "@/components/databases/manage-database-dialog";
 import { CreateSupabaseProjectDialog } from "@/components/supabase/create-project-dialog";
 import { ManageSupabaseProjectDialog } from "@/components/supabase/manage-project-dialog";
+import { SupabaseProjectCard } from "@/components/supabase/project-card";
 import { ProductionSetupDialog } from "@/components/platform/production-setup-dialog";
 import { ensureSupabaseService } from "@/lib/platform";
 import { databasesApi, type ManagedDatabase } from "@/lib/databases";
@@ -203,13 +204,18 @@ function DatabasesContent() {
     });
   }
 
+  function openManageProject(project: SupabaseProject) {
+    setManageProject(project);
+    setManageSupabaseOpen(true);
+  }
+
   function renderSupabaseTab() {
     if (supabaseLoading) return <CardGridSkeleton count={3} />;
 
     return (
       <div className="space-y-4">
         {supabaseStatus && !supabaseStatus.enabled && (
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm sm:col-span-2">
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
             <p className="font-medium text-amber-700 dark:text-amber-400">Supabase no disponible</p>
             <p className="text-muted-foreground mt-1">{supabaseStatus.message}</p>
             {supabaseStatus.profile_enabled && (
@@ -257,57 +263,18 @@ function DatabasesContent() {
         )}
 
         {supabaseProjects.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-12">
+          <p className="py-12 text-center text-sm text-muted-foreground">
             No Supabase projects yet. Create your first project to get PostgreSQL + Supabase APIs.
           </p>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {supabaseProjects.map((project) => (
-              <Card key={project.id} className="hover:shadow-md transition-shadow">
-                <CardHeader className="flex flex-row items-start justify-between pb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white text-xs font-bold">
-                      S
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{project.name}</CardTitle>
-                      <p className="text-xs text-muted-foreground font-mono">{project.project_ref}</p>
-                    </div>
-                  </div>
-                  <StatusBadge status={mapStatus(project.status)} />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {project.error_message && (
-                    <p className="text-xs text-destructive rounded border border-destructive/30 bg-destructive/5 p-2">
-                      {project.error_message}
-                    </p>
-                  )}
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-lg bg-muted/50 p-2">
-                      <p className="text-muted-foreground">DB Size</p>
-                      <p className="font-medium">{formatBytes(project.database_size_mb * 1024 * 1024)}</p>
-                    </div>
-                    <div className="rounded-lg bg-muted/50 p-2">
-                      <p className="text-muted-foreground">Storage</p>
-                      <p className="font-medium">{formatBytes(project.storage_used_mb * 1024 * 1024)}</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground font-mono truncate">
-                    {project.database_user}@{project.database_name}
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => {
-                      setManageProject(project);
-                      setManageSupabaseOpen(true);
-                    }}
-                  >
-                    Manage
-                  </Button>
-                </CardContent>
-              </Card>
+              <SupabaseProjectCard
+                key={project.id}
+                project={project}
+                status={mapStatus(project.status)}
+                onManage={() => openManageProject(project)}
+              />
             ))}
           </div>
         )}
@@ -329,33 +296,13 @@ function DatabasesContent() {
       <>
         {renderDatabaseCards(databases)}
         {supabaseProjects.map((project) => (
-          <Card key={project.id} className="hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-start justify-between pb-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white text-xs font-bold">
-                  S
-                </div>
-                <div>
-                  <CardTitle className="text-base">{project.name}</CardTitle>
-                  <p className="text-xs text-muted-foreground">Supabase · {project.project_ref}</p>
-                </div>
-              </div>
-              <StatusBadge status={mapStatus(project.status)} />
-            </CardHeader>
-            <CardContent>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => {
-                  setManageProject(project);
-                  setManageSupabaseOpen(true);
-                }}
-              >
-                Manage
-              </Button>
-            </CardContent>
-          </Card>
+          <SupabaseProjectCard
+            key={project.id}
+            project={project}
+            status={mapStatus(project.status)}
+            compact
+            onManage={() => openManageProject(project)}
+          />
         ))}
       </>
     );
@@ -396,13 +343,15 @@ function DatabasesContent() {
 
         {engineTabs.map((tab) => (
           <TabsContent key={tab.id} value={tab.id} className="mt-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              {tab.id === "supabase"
-                ? renderSupabaseTab()
-                : tab.id === "all"
+            {tab.id === "supabase" ? (
+              renderSupabaseTab()
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {tab.id === "all"
                   ? renderAllTab()
                   : renderDatabaseCards(filterByEngine(tab.id))}
-            </div>
+              </div>
+            )}
           </TabsContent>
         ))}
       </Tabs>

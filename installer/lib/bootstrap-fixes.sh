@@ -155,7 +155,7 @@ cb_fix_platform_env_permissions() {
     # 2. Rechownear config dir y archivos clave con el GID actualizado
     #    (groupmod NO actualiza los inodos en disco; este paso es CRÍTICO)
     chown controlbox:controlbox "${config_dir}" 2>/dev/null || true
-    chmod 755 "${config_dir}" 2>/dev/null || true
+    chmod 775 "${config_dir}" 2>/dev/null || true
 
     for f in \
         "${config_dir}/platform.env" \
@@ -181,6 +181,22 @@ cb_fix_platform_env_permissions() {
             chown controlbox:controlbox "${state_dir}/install.state" 2>/dev/null || true
             chmod 640 "${state_dir}/install.state" 2>/dev/null || true
         fi
+    fi
+
+    # 5. Overrides dinámicos del panel (FTP, etc.) en config dir — UID 1000 del contenedor API
+    mkdir -p "${config_dir}/ftp" 2>/dev/null || true
+    chown -R controlbox:controlbox "${config_dir}/ftp" 2>/dev/null || true
+    chmod 750 "${config_dir}/ftp" 2>/dev/null || true
+
+    local ftp_override="${config_dir}/docker-compose.ftp.yml"
+    touch "${ftp_override}" 2>/dev/null || true
+    chown controlbox:controlbox "${ftp_override}" 2>/dev/null || true
+    chmod 664 "${ftp_override}" 2>/dev/null || true
+
+    local legacy_ftp="${install_dir}/docker-compose.ftp.yml"
+    if [[ -f "${legacy_ftp}" ]] && [[ ! -s "${ftp_override}" ]]; then
+        cp -f "${legacy_ftp}" "${ftp_override}" 2>/dev/null || true
+        chown controlbox:controlbox "${ftp_override}" 2>/dev/null || true
     fi
 
     cb_info "Permisos de configuración ajustados (GID=${target_gid}, archivos env=640)"
@@ -749,7 +765,18 @@ cb_mysql_ensure_remote_root() {
     local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
     [[ -f "${env_file}" ]] || return 0
 
+    cb_platform_env_dedupe_keys "${env_file}" 2>/dev/null || true
+
     docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-mysql' || return 0
+
+    local mysql_data_dir
+    mysql_data_dir="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Source}}{{end}}{{end}}' controlbox-mysql 2>/dev/null || true)"
+    if [[ -z "${mysql_data_dir}" ]]; then
+        mysql_data_dir="$(cb_env_read_key "${env_file}" "CONTROLBOX_DATA_DIR" 2>/dev/null || true)"
+        mysql_data_dir="${mysql_data_dir:-${CONTROLBOX_DATA_DIR:-/var/lib/controlbox}}/mysql"
+    fi
+    mkdir -p "${mysql_data_dir}" 2>/dev/null || true
+    chmod 755 "${mysql_data_dir}" 2>/dev/null || true
 
     local mysql_pass
     mysql_pass="$(cb_env_read_key "${env_file}" "MYSQL_ADMIN_PASSWORD" 2>/dev/null || true)"
@@ -797,10 +824,14 @@ cb_mysql_resync_root_password() {
     mysql_pass="$(cb_env_read_key "${env_file}" "MYSQL_ADMIN_PASSWORD" 2>/dev/null || true)"
     [[ -n "${mysql_pass}" ]] || return 1
 
-    data_dir="$(cb_env_read_key "${env_file}" "CONTROLBOX_DATA_DIR" 2>/dev/null || true)"
-    data_dir="${data_dir:-${CONTROLBOX_DATA_DIR:-/var/lib/controlbox}}"
-    data_dir="${data_dir}/mysql"
-    [[ -d "${data_dir}" ]] || return 1
+    data_dir="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Source}}{{end}}{{end}}' controlbox-mysql 2>/dev/null || true)"
+    if [[ -z "${data_dir}" ]]; then
+        data_dir="$(cb_env_read_key "${env_file}" "CONTROLBOX_DATA_DIR" 2>/dev/null || true)"
+        data_dir="${data_dir:-${CONTROLBOX_DATA_DIR:-/var/lib/controlbox}}"
+        data_dir="${data_dir}/mysql"
+    fi
+    mkdir -p "${data_dir}" 2>/dev/null || true
+    chmod 755 "${data_dir}" 2>/dev/null || true
 
     local sql_pass="${mysql_pass//\'/\'\'}"
     local mysql_image="mysql:8.4"
@@ -825,6 +856,9 @@ mysql -e \"FLUSH PRIVILEGES;\"
 mysql -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '${sql_pass}';\"
 mysql -e \"CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${sql_pass}';\"
 mysql -e \"ALTER USER 'root'@'%' IDENTIFIED BY '${sql_pass}';\"
+mysql -e \"CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '${sql_pass}';\"
+mysql -e \"ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY '${sql_pass}';\"
+mysql -e \"GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;\"
 mysql -e \"GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;\"
 mysql -e \"FLUSH PRIVILEGES;\"
 kill \"\$pid\" 2>/dev/null || true
@@ -918,6 +952,7 @@ cb_ftp_ensure_running() {
     fi
 
     install_dir="${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
+    local config_dir="${CONTROLBOX_CONFIG_DIR:-/etc/controlbox}"
     protocol="$(grep '^PUREFTPD_PROTOCOL=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
     protocol="${protocol:-ftp}"
     port="$(grep '^PUREFTPD_PORT=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
@@ -927,7 +962,14 @@ cb_ftp_ensure_running() {
     passive_max="$(grep '^PUREFTPD_PASSIVE_MAX=' "${env_file}" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"'"'"'"' | tr -d "'")"
     passive_max="${passive_max:-30009}"
 
-    local override_file="${install_dir}/docker-compose.ftp.yml"
+    local override_file="${config_dir}/docker-compose.ftp.yml"
+    local legacy_override="${install_dir}/docker-compose.ftp.yml"
+    if [[ -f "${legacy_override}" ]] && [[ ! -f "${override_file}" ]]; then
+        cp -f "${legacy_override}" "${override_file}" 2>/dev/null || true
+    fi
+    touch "${override_file}" 2>/dev/null || true
+    chown controlbox:controlbox "${override_file}" 2>/dev/null || true
+    chmod 664 "${override_file}" 2>/dev/null || true
     if [[ "${protocol}" == "sftp" ]]; then
         cat > "${override_file}" <<EOF
 services:
@@ -956,6 +998,7 @@ EOF
     local -a compose_args=(--env-file "${env_file}" -f docker-compose.yml --profile ftp)
     [[ -f docker-compose.override.yml ]] && compose_args+=(-f docker-compose.override.yml)
     [[ -f docker-compose.ports.yml ]] && compose_args+=(-f docker-compose.ports.yml)
+    [[ -f "${config_dir}/docker-compose.ftp.yml" ]] && compose_args+=(-f "${config_dir}/docker-compose.ftp.yml")
     [[ -f docker-compose.ftp.yml ]] && compose_args+=(-f docker-compose.ftp.yml)
 
     if [[ "${protocol}" == "sftp" ]]; then

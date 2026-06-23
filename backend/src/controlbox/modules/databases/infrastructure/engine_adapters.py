@@ -122,6 +122,11 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
         async with _MYSQL_PREP_LOCK:
             if key in _MYSQL_PREPARED:
                 return
+            from controlbox.shared.infrastructure.mysql_root_sync import mysql_sync_working_password
+
+            synced = await mysql_sync_working_password()
+            if synced:
+                conn = self._conn_with_platform_password(conn)
             await self._ensure_remote_root(conn)
             _MYSQL_PREPARED.add(key)
 
@@ -303,6 +308,9 @@ class MySqlMariaAdapter(DatabaseEngineAdapter):
             f"CREATE USER IF NOT EXISTS 'root'@'localhost' IDENTIFIED BY '{escaped}'; "
             f"ALTER USER 'root'@'localhost' IDENTIFIED BY '{escaped}'; "
             "GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION; "
+            f"CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '{escaped}'; "
+            f"ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY '{escaped}'; "
+            "GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION; "
             "FLUSH PRIVILEGES;"
         )
         container = validate_container_name(self._container_name(conn))

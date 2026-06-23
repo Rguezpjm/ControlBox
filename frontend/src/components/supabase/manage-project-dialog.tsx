@@ -10,10 +10,6 @@ import {
   Copy,
   Check,
   ExternalLink,
-  Archive,
-  Shield,
-  Radio,
-  Database,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,8 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -37,6 +31,29 @@ import {
   type SupabaseRealtimeChannel,
   type SupabaseRlsPolicy,
 } from "@/lib/supabase";
+import {
+  applyBucketPreset,
+  applySchemaPreset,
+  SupabaseStorageTab,
+} from "@/components/supabase/storage-tab";
+import {
+  BUCKET_PRESET_CUSTOM,
+  getBucketPreset,
+  SCHEMA_PRESET_CUSTOM,
+} from "@/components/supabase/storage-presets";
+import { SupabaseRealtimeTab } from "@/components/supabase/realtime-tab";
+import {
+  applyRealtimePreset,
+  getRealtimePreset,
+  REALTIME_PRESET_CUSTOM,
+} from "@/components/supabase/realtime-presets";
+import { SupabaseRlsTab } from "@/components/supabase/rls-tab";
+import {
+  applyRlsPreset,
+  getRlsPreset,
+  RLS_PRESET_CUSTOM,
+  type RlsAction,
+} from "@/components/supabase/rls-presets";
 import { ApiError } from "@/lib/api-client";
 import { formatBytes } from "@/lib/utils";
 import type { ResourceStatus } from "@/types";
@@ -78,10 +95,20 @@ export function ManageSupabaseProjectDialog({
 
   const [newSchema, setNewSchema] = useState("");
   const [newBucket, setNewBucket] = useState("");
+  const [bucketPresetId, setBucketPresetId] = useState(BUCKET_PRESET_CUSTOM);
+  const [schemaPresetId, setSchemaPresetId] = useState(SCHEMA_PRESET_CUSTOM);
+  const [realtimePresetId, setRealtimePresetId] = useState(REALTIME_PRESET_CUSTOM);
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelTable, setNewChannelTable] = useState("");
+  const [newChannelSchema, setNewChannelSchema] = useState("public");
+  const [rlsPresetId, setRlsPresetId] = useState(RLS_PRESET_CUSTOM);
   const [newPolicyName, setNewPolicyName] = useState("");
   const [newPolicyTable, setNewPolicyTable] = useState("");
+  const [newPolicySchema, setNewPolicySchema] = useState("public");
+  const [newPolicyAction, setNewPolicyAction] = useState<RlsAction>("ALL");
+  const [newPolicyRole, setNewPolicyRole] = useState("authenticated");
+  const [newPolicyUsing, setNewPolicyUsing] = useState("true");
+  const [newPolicyCheck, setNewPolicyCheck] = useState("");
 
   const loadData = useCallback(async () => {
     if (!project) return;
@@ -177,11 +204,12 @@ export function ManageSupabaseProjectDialog({
 
   async function handleCreateSchema(e: React.FormEvent) {
     e.preventDefault();
-    if (!project) return;
+    if (!project || !newSchema.trim()) return;
     setLoading(true);
     try {
-      await supabaseApi.createSchema(project.id, newSchema);
+      await supabaseApi.createSchema(project.id, newSchema.trim());
       setNewSchema("");
+      setSchemaPresetId(SCHEMA_PRESET_CUSTOM);
       await loadData();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create schema");
@@ -192,11 +220,16 @@ export function ManageSupabaseProjectDialog({
 
   async function handleCreateBucket(e: React.FormEvent) {
     e.preventDefault();
-    if (!project) return;
+    if (!project || !newBucket.trim()) return;
+    const preset = getBucketPreset(bucketPresetId);
     setLoading(true);
     try {
-      await supabaseApi.createBucket(project.id, newBucket);
+      await supabaseApi.createBucket(project.id, newBucket.trim(), {
+        public: preset?.public ?? false,
+        file_size_limit_mb: preset?.fileSizeLimitMb ?? 50,
+      });
       setNewBucket("");
+      setBucketPresetId(BUCKET_PRESET_CUSTOM);
       await loadData();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create bucket");
@@ -205,17 +238,42 @@ export function ManageSupabaseProjectDialog({
     }
   }
 
+  function handleBucketPresetChange(presetId: string) {
+    const next = applyBucketPreset(presetId);
+    setBucketPresetId(next.presetId);
+    setNewBucket(next.name);
+  }
+
+  function handleSchemaPresetChange(presetId: string) {
+    const next = applySchemaPreset(presetId);
+    setSchemaPresetId(next.presetId);
+    setNewSchema(next.name);
+  }
+
+  function handleRealtimePresetChange(presetId: string) {
+    const next = applyRealtimePreset(presetId);
+    setRealtimePresetId(next.presetId);
+    setNewChannelName(next.channelName);
+    setNewChannelTable(next.tableName);
+    setNewChannelSchema(next.schemaName);
+  }
+
   async function handleCreateChannel(e: React.FormEvent) {
     e.preventDefault();
-    if (!project) return;
+    if (!project || !newChannelName.trim() || !newChannelTable.trim()) return;
+    const preset = getRealtimePreset(realtimePresetId);
     setLoading(true);
     try {
       await supabaseApi.createRealtimeChannel(project.id, {
-        name: newChannelName,
-        table_name: newChannelTable,
+        name: newChannelName.trim(),
+        table_name: newChannelTable.trim(),
+        schema_name: newChannelSchema.trim() || "public",
+        events: preset?.events,
       });
       setNewChannelName("");
       setNewChannelTable("");
+      setNewChannelSchema("public");
+      setRealtimePresetId(REALTIME_PRESET_CUSTOM);
       await loadData();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create channel");
@@ -224,20 +282,71 @@ export function ManageSupabaseProjectDialog({
     }
   }
 
-  async function handleCreatePolicy(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleDeleteChannel(channelId: string) {
     if (!project) return;
     setLoading(true);
     try {
+      await supabaseApi.deleteRealtimeChannel(project.id, channelId);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to delete channel");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleRlsPresetChange(presetId: string) {
+    const next = applyRlsPreset(presetId);
+    setRlsPresetId(next.presetId);
+    setNewPolicyName(next.policyName);
+    setNewPolicyTable(next.tableName);
+    setNewPolicySchema(next.schemaName);
+    setNewPolicyAction(next.action);
+    setNewPolicyRole(next.roleName);
+    setNewPolicyUsing(next.usingExpression);
+    setNewPolicyCheck(next.checkExpression);
+  }
+
+  async function handleCreatePolicy(e: React.FormEvent) {
+    e.preventDefault();
+    if (!project || !newPolicyName.trim() || !newPolicyTable.trim()) return;
+    const preset = getRlsPreset(rlsPresetId);
+    setLoading(true);
+    try {
       await supabaseApi.createRlsPolicy(project.id, {
-        name: newPolicyName,
-        table_name: newPolicyTable,
+        name: newPolicyName.trim(),
+        table_name: newPolicyTable.trim(),
+        schema_name: newPolicySchema.trim() || "public",
+        action: preset?.action ?? newPolicyAction,
+        role_name: preset?.roleName ?? newPolicyRole,
+        using_expression: preset?.usingExpression ?? newPolicyUsing.trim(),
+        check_expression:
+          (preset?.checkExpression ?? newPolicyCheck.trim()) || null,
       });
       setNewPolicyName("");
       setNewPolicyTable("");
+      setNewPolicySchema("public");
+      setNewPolicyAction("ALL");
+      setNewPolicyRole("authenticated");
+      setNewPolicyUsing("true");
+      setNewPolicyCheck("");
+      setRlsPresetId(RLS_PRESET_CUSTOM);
       await loadData();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create policy");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeletePolicy(policyId: string) {
+    if (!project) return;
+    setLoading(true);
+    try {
+      await supabaseApi.deleteRlsPolicy(project.id, policyId);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to delete policy");
     } finally {
       setLoading(false);
     }
@@ -348,87 +457,70 @@ export function ManageSupabaseProjectDialog({
             )}
           </TabsContent>
 
-          <TabsContent value="storage" className="space-y-4 mt-4">
-            <form onSubmit={handleCreateBucket} className="flex gap-2">
-              <Input
-                placeholder="bucket-name"
-                value={newBucket}
-                onChange={(e) => setNewBucket(e.target.value)}
-                required
-              />
-              <Button type="submit" size="sm" disabled={loading}>
-                <Archive className="h-4 w-4" />
-                Add Bucket
-              </Button>
-            </form>
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <Database className="h-3 w-3" /> Schemas
-              </p>
-              {schemas.map((s) => (
-                <div key={s.id} className="flex justify-between rounded border p-2 text-sm">
-                  <span>{s.name}{s.is_default ? " (default)" : ""}</span>
-                </div>
-              ))}
-            </div>
-            <form onSubmit={handleCreateSchema} className="flex gap-2">
-              <Input placeholder="schema_name" value={newSchema} onChange={(e) => setNewSchema(e.target.value)} />
-              <Button type="submit" size="sm" disabled={loading}>Add Schema</Button>
-            </form>
-            <div className="space-y-2">
-              {buckets.map((b) => (
-                <div key={b.id} className="flex justify-between rounded border p-2 text-sm">
-                  <span>{b.name} {b.public && "(public)"}</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => project && supabaseApi.deleteBucket(project.id, b.id).then(loadData)}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))}
-              {buckets.length === 0 && <p className="text-sm text-muted-foreground">No buckets yet</p>}
-            </div>
+          <TabsContent value="storage" className="mt-4">
+            <SupabaseStorageTab
+              schemas={schemas}
+              buckets={buckets}
+              loading={loading}
+              bucketPresetId={bucketPresetId}
+              bucketName={newBucket}
+              schemaPresetId={schemaPresetId}
+              schemaName={newSchema}
+              onBucketPresetChange={handleBucketPresetChange}
+              onBucketNameChange={setNewBucket}
+              onSchemaPresetChange={handleSchemaPresetChange}
+              onSchemaNameChange={setNewSchema}
+              onCreateBucket={handleCreateBucket}
+              onCreateSchema={handleCreateSchema}
+              onDeleteBucket={(bucketId) => {
+                if (!project) return;
+                void supabaseApi.deleteBucket(project.id, bucketId).then(loadData);
+              }}
+            />
           </TabsContent>
 
-          <TabsContent value="realtime" className="space-y-4 mt-4">
-            <form onSubmit={handleCreateChannel} className="flex flex-wrap gap-2">
-              <Input placeholder="channel name" value={newChannelName} onChange={(e) => setNewChannelName(e.target.value)} required />
-              <Input placeholder="table name" value={newChannelTable} onChange={(e) => setNewChannelTable(e.target.value)} required />
-              <Button type="submit" size="sm" disabled={loading}>
-                <Radio className="h-4 w-4" /> Add
-              </Button>
-            </form>
-            {channels.map((c) => (
-              <div key={c.id} className="flex justify-between rounded border p-2 text-sm">
-                <span>{c.name} → {c.schema_name}.{c.table_name}</span>
-                <Button size="sm" variant="ghost" onClick={() => supabaseApi.deleteRealtimeChannel(project.id, c.id).then(loadData)}>
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
-            {channels.length === 0 && <p className="text-sm text-muted-foreground">No channels yet</p>}
+          <TabsContent value="realtime" className="mt-4">
+            <SupabaseRealtimeTab
+              channels={channels}
+              schemas={schemas}
+              loading={loading}
+              presetId={realtimePresetId}
+              channelName={newChannelName}
+              tableName={newChannelTable}
+              schemaName={newChannelSchema}
+              onPresetChange={handleRealtimePresetChange}
+              onChannelNameChange={setNewChannelName}
+              onTableNameChange={setNewChannelTable}
+              onSchemaNameChange={setNewChannelSchema}
+              onCreate={handleCreateChannel}
+              onDelete={handleDeleteChannel}
+            />
           </TabsContent>
 
-          <TabsContent value="rls" className="space-y-4 mt-4">
-            <form onSubmit={handleCreatePolicy} className="flex flex-wrap gap-2">
-              <Input placeholder="policy name" value={newPolicyName} onChange={(e) => setNewPolicyName(e.target.value)} required />
-              <Input placeholder="table name" value={newPolicyTable} onChange={(e) => setNewPolicyTable(e.target.value)} required />
-              <Button type="submit" size="sm" disabled={loading}>
-                <Shield className="h-4 w-4" /> Add
-              </Button>
-            </form>
-            {policies.map((p) => (
-              <div key={p.id} className="rounded border p-2 text-sm">
-                <p className="font-medium">{p.name}</p>
-                <p className="text-xs text-muted-foreground">{p.schema_name}.{p.table_name} · {p.action}</p>
-                <Button size="sm" variant="ghost" className="mt-1" onClick={() => supabaseApi.deleteRlsPolicy(project.id, p.id).then(loadData)}>
-                  <Trash2 className="h-3 w-3" /> Remove
-                </Button>
-              </div>
-            ))}
-            {policies.length === 0 && <p className="text-sm text-muted-foreground">No policies yet</p>}
+          <TabsContent value="rls" className="mt-4">
+            <SupabaseRlsTab
+              policies={policies}
+              schemas={schemas}
+              loading={loading}
+              presetId={rlsPresetId}
+              policyName={newPolicyName}
+              tableName={newPolicyTable}
+              schemaName={newPolicySchema}
+              action={newPolicyAction}
+              roleName={newPolicyRole}
+              usingExpression={newPolicyUsing}
+              checkExpression={newPolicyCheck}
+              onPresetChange={handleRlsPresetChange}
+              onPolicyNameChange={setNewPolicyName}
+              onTableNameChange={setNewPolicyTable}
+              onSchemaNameChange={setNewPolicySchema}
+              onActionChange={setNewPolicyAction}
+              onRoleNameChange={setNewPolicyRole}
+              onUsingExpressionChange={setNewPolicyUsing}
+              onCheckExpressionChange={setNewPolicyCheck}
+              onCreate={handleCreatePolicy}
+              onDelete={handleDeletePolicy}
+            />
           </TabsContent>
         </Tabs>
 

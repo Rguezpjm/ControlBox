@@ -88,6 +88,10 @@ class CreateSupabaseProjectHandler:
             project.database_size_mb = await self._provisioner.get_database_size_mb(project.database_name)
             await self._uow.supabase_projects.save(project)
         except Exception as exc:
+            try:
+                await self._provisioner.deprovision_project(project)
+            except Exception:
+                pass
             project.mark_error(str(exc))
             await self._uow.supabase_projects.save(project)
             await self._uow.commit()

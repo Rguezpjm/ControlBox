@@ -61,47 +61,79 @@ class SupabaseProvisioner:
         )
         return anon, service
 
+    def _quote_ident(self, name: str) -> str:
+        return f'"{name.replace(chr(34), chr(34) + chr(34))}"'
+
+    def _quote_literal(self, value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    async def _grant_admin_membership(self, role_name: str) -> None:
+        await self._execute(
+            f"GRANT {self._quote_ident(role_name)} TO {self._quote_ident(self._conn.admin_user)}",
+        )
+
+    async def _revoke_admin_membership(self, role_name: str) -> None:
+        await self._execute(
+            f"REVOKE {self._quote_ident(role_name)} FROM {self._quote_ident(self._conn.admin_user)}",
+        )
+
     async def provision_project(
         self,
         project: SupabaseProject,
         database_password: str,
     ) -> None:
+        db_name = self._quote_ident(project.database_name)
+        db_user = self._quote_ident(project.database_user)
+        password = self._quote_literal(database_password)
+
+        await self._execute(f"CREATE DATABASE {db_name} ENCODING 'UTF8'")
         await self._execute(
-            f'CREATE DATABASE "{project.database_name}" ENCODING \'UTF8\'',
+            f"CREATE USER {db_user} WITH PASSWORD {password} CONNECTION LIMIT 50",
         )
-        await self._execute(
-            f"CREATE USER \"{project.database_user}\" WITH PASSWORD '{database_password}' "
-            f"CONNECTION LIMIT 50",
-        )
-        await self._execute(
-            f'GRANT ALL PRIVILEGES ON DATABASE "{project.database_name}" TO "{project.database_user}"',
-        )
-        await self._execute_on_db(
-            project.database_name,
-            f'GRANT ALL ON SCHEMA public TO "{project.database_user}"',
-        )
-        await self._execute_on_db(
-            project.database_name,
-            f'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "{project.database_user}"',
-        )
-        await self._execute_on_db(
-            project.database_name,
-            "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"",
-        )
-        await self._execute_on_db(
-            project.database_name,
-            "CREATE EXTENSION IF NOT EXISTS pgcrypto",
-        )
-        await self._execute_on_db(
-            project.database_name,
-            f'ALTER DATABASE "{project.database_name}" OWNER TO "{project.database_user}"',
-        )
+        await self._grant_admin_membership(project.database_user)
+        try:
+            await self._execute(f"GRANT ALL PRIVILEGES ON DATABASE {db_name} TO {db_user}")
+            await self._execute_on_db(
+                project.database_name,
+                f"GRANT ALL ON SCHEMA public TO {db_user}",
+            )
+            await self._execute_on_db(
+                project.database_name,
+                f"ALTER SCHEMA public OWNER TO {db_user}",
+            )
+            await self._execute_on_db(
+                project.database_name,
+                f"ALTER DEFAULT PRIVILEGES FOR ROLE {db_user} IN SCHEMA public "
+                f"GRANT ALL ON TABLES TO {db_user}",
+            )
+            await self._execute_on_db(
+                project.database_name,
+                f"ALTER DEFAULT PRIVILEGES FOR ROLE {db_user} IN SCHEMA public "
+                f"GRANT ALL ON SEQUENCES TO {db_user}",
+            )
+            await self._execute_on_db(
+                project.database_name,
+                'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"',
+            )
+            await self._execute_on_db(
+                project.database_name,
+                "CREATE EXTENSION IF NOT EXISTS pgcrypto",
+            )
+            await self._execute(f"ALTER DATABASE {db_name} OWNER TO {db_user}")
+        finally:
+            await self._revoke_admin_membership(project.database_user)
 
     async def create_schema(self, project: SupabaseProject, schema_name: str) -> None:
-        await self._execute_on_db(
-            project.database_name,
-            f'CREATE SCHEMA IF NOT EXISTS "{schema_name}" AUTHORIZATION "{project.database_user}"',
-        )
+        db_user = self._quote_ident(project.database_user)
+        schema = self._quote_ident(schema_name)
+        await self._grant_admin_membership(project.database_user)
+        try:
+            await self._execute_on_db(
+                project.database_name,
+                f"CREATE SCHEMA IF NOT EXISTS {schema} AUTHORIZATION {db_user}",
+            )
+        finally:
+            await self._revoke_admin_membership(project.database_user)
 
     async def drop_schema(self, project: SupabaseProject, schema_name: str) -> None:
         await self._execute_on_db(
@@ -168,14 +200,18 @@ class SupabaseProvisioner:
         )
 
     async def deprovision_project(self, project: SupabaseProject) -> None:
+        db_name = self._quote_ident(project.database_name)
+        db_user = self._quote_ident(project.database_user)
         await self._execute(
-            f'REVOKE CONNECT ON DATABASE "{project.database_name}" FROM PUBLIC',
+            f"REVOKE CONNECT ON DATABASE {db_name} FROM PUBLIC",
         )
         await self._execute(
-            f'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = \'{project.database_name}\'',
+            f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            f"WHERE datname = {self._quote_literal(project.database_name)}",
         )
-        await self._execute(f'DROP DATABASE IF EXISTS "{project.database_name}"')
-        await self._execute(f'DROP USER IF EXISTS "{project.database_user}"')
+        await self._execute(f"DROP DATABASE IF EXISTS {db_name}")
+        await self._revoke_admin_membership(project.database_user)
+        await self._execute(f"DROP USER IF EXISTS {db_user}")
 
     async def get_database_size_mb(self, database_name: str) -> int:
         sql = (

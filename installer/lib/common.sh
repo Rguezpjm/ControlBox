@@ -203,9 +203,28 @@ cb_env_read_key() {
     printf '%s' "${raw}"
 }
 
+cb_platform_env_dedupe_keys() {
+    local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
+    [[ -f "${env_file}" ]] || return 0
+
+    local key value count
+    for key in MYSQL_ADMIN_PASSWORD REDIS_PASSWORD POSTGRES_PASSWORD SUPABASE_DB_PASSWORD SUPABASE_DB_ADMIN_PASSWORD; do
+        count="$(grep -c "^${key}=" "${env_file}" 2>/dev/null || echo 0)"
+        if [[ "${count}" -gt 1 ]]; then
+            value="$(cb_env_read_key "${env_file}" "${key}" 2>/dev/null || true)"
+            if [[ -n "${value}" ]]; then
+                cb_env_patch_key "${env_file}" "${key}" "${value}"
+                cb_info "platform.env: ${key} unificado (último valor)"
+            fi
+        fi
+    done
+}
+
 cb_platform_env_repair() {
     local env_file="${1:-${CONTROLBOX_CONFIG_DIR}/platform.env}"
     [[ -f "${env_file}" ]] || return 0
+
+    cb_platform_env_dedupe_keys "${env_file}"
 
     local tmp changed=0
     tmp="$(mktemp)"

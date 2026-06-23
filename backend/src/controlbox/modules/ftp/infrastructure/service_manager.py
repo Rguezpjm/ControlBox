@@ -11,6 +11,11 @@ from controlbox.config.settings import Settings
 from controlbox.modules.ftp.domain.entities import FtpAccount, FtpAccountStatus
 from controlbox.modules.ftp.infrastructure.platform_env import read_platform_env_value
 from controlbox.modules.ftp.infrastructure.provisioner import PureFtpdProvisioner
+from controlbox.shared.infrastructure.compose_overrides import (
+    compose_override_files,
+    ftp_override_write_path,
+    write_ftp_override,
+)
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
 from controlbox.shared.infrastructure.platform_env_file import patch_env_keys, repair_celery_redis_urls
 
@@ -63,7 +68,7 @@ class FtpServiceManager:
         return self._config_dir() / "platform.env"
 
     def _ftp_override_file(self) -> Path:
-        return self._install_dir() / "docker-compose.ftp.yml"
+        return ftp_override_write_path(self._settings)
 
     def _compose_base_cmd(self) -> list[str]:
         install_dir = self._install_dir()
@@ -76,15 +81,8 @@ class FtpServiceManager:
             "-f",
             str(install_dir / "docker-compose.yml"),
         ]
-        for extra in (
-            "docker-compose.override.yml",
-            "docker-compose.ports.yml",
-            "docker-compose.ftp.yml",
-            "docker-compose.build.yml",
-        ):
-            path = install_dir / extra
-            if path.exists():
-                cmd.extend(["-f", str(path)])
+        for path in compose_override_files(self._settings):
+            cmd.extend(["-f", str(path)])
         return cmd
 
     def _read_env_value(self, key: str, default: str = "") -> str:
@@ -121,7 +119,6 @@ class FtpServiceManager:
         self._write_env_values({"CONTROLBOX_ENABLED_PROFILES": ",".join(profiles)})
 
     def _write_compose_override(self, protocol: str, port: int, passive_min: int, passive_max: int) -> None:
-        override = self._ftp_override_file()
         if protocol == "sftp":
             content = f"""services:
   sftp:
@@ -135,12 +132,7 @@ class FtpServiceManager:
       - "{port}:21"
       - "{passive_min}-{passive_max}:{passive_min}-{passive_max}"
 """
-        try:
-            override.write_text(content, encoding="utf-8")
-        except OSError as exc:
-            raise OSError(
-                f"No se pudo escribir {override.name}. En el VPS ejecute: controlbox repair"
-            ) from exc
+        write_ftp_override(self._settings, content)
 
     def ensure_compose_override_from_env(self) -> None:
         """Ensure docker-compose.ftp.yml exists (host port mappings for Pure-FTPd/SFTP)."""
@@ -200,7 +192,6 @@ class FtpServiceManager:
         return result
 
     def _write_sftp_compose(self, accounts: list[FtpAccount]) -> None:
-        override = self._ftp_override_file()
         port = _safe_int(self._read_env_value("PUREFTPD_PORT", "22"), 22)
         passwords = self._read_sftp_passwords()
         uid = self._settings.pureftpd_virtual_uid
@@ -237,7 +228,7 @@ class FtpServiceManager:
     volumes:
 {volumes_block}
 """
-        override.write_text(content, encoding="utf-8")
+        write_ftp_override(self._settings, content)
 
     async def _container_running(self, name: str) -> bool:
         proc = await asyncio.create_subprocess_exec(

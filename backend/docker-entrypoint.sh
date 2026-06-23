@@ -59,13 +59,26 @@ if [ "$(id -u)" = "0" ]; then
   _cb_uid="$(id -u controlbox 2>/dev/null || echo 1000)"
   _cb_gid="$(id -g controlbox 2>/dev/null || echo 1000)"
 
-  # platform.env
-  _platform_env="${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}/platform.env"
-  if [ -f "${_platform_env}" ]; then
-    chmod 640 "${_platform_env}" 2>/dev/null || true
-    chown "${_cb_uid}:${_cb_gid}" "${_platform_env}" 2>/dev/null || true
-    chmod o+x "${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}" 2>/dev/null || true
-    chmod g+rx "${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}" 2>/dev/null || true
+  # platform.env y directorio de config (FTP override, etc.)
+  _config_dir="${PLATFORM_CONFIG_DIR:-/host/etc/controlbox}"
+  if [ -d "${_config_dir}" ]; then
+    chown "${_cb_uid}:${_cb_gid}" "${_config_dir}" 2>/dev/null || true
+    chmod 775 "${_config_dir}" 2>/dev/null || true
+
+    _platform_env="${_config_dir}/platform.env"
+    if [ -f "${_platform_env}" ]; then
+      chmod 640 "${_platform_env}" 2>/dev/null || true
+      chown "${_cb_uid}:${_cb_gid}" "${_platform_env}" 2>/dev/null || true
+    fi
+
+    mkdir -p "${_config_dir}/ftp" 2>/dev/null || true
+    chown -R "${_cb_uid}:${_cb_gid}" "${_config_dir}/ftp" 2>/dev/null || true
+    chmod 750 "${_config_dir}/ftp" 2>/dev/null || true
+
+    _ftp_override="${_config_dir}/docker-compose.ftp.yml"
+    touch "${_ftp_override}" 2>/dev/null || true
+    chown "${_cb_uid}:${_cb_gid}" "${_ftp_override}" 2>/dev/null || true
+    chmod 664 "${_ftp_override}" 2>/dev/null || true
   fi
 
   # install.state — contiene VERSION, PANEL_PORT, etc.; necesario para /health

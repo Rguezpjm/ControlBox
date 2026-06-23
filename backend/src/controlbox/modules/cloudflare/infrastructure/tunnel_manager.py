@@ -10,6 +10,7 @@ from pathlib import Path
 from controlbox.config.settings import Settings
 from controlbox.modules.cloudflare.infrastructure.settings_service import CloudflareSettingsService
 from controlbox.modules.platform.domain.entities import TenantPlatformSettings
+from controlbox.shared.infrastructure.compose_overrides import compose_override_files
 
 logger = logging.getLogger("controlbox.cloudflare.tunnel")
 
@@ -69,16 +70,8 @@ class CloudflareTunnelManager:
             "-f",
             str(install_dir / "docker-compose.yml"),
         ]
-        for extra in (
-            "docker-compose.override.yml",
-            "docker-compose.ports.yml",
-            "docker-compose.cloudflare.yml",
-            "docker-compose.ftp.yml",
-            "docker-compose.build.yml",
-        ):
-            path = install_dir / extra
-            if path.exists():
-                cmd.extend(["-f", str(path)])
+        for path in compose_override_files(self._settings):
+            cmd.extend(["-f", str(path)])
         cmd.extend(args)
         return cmd
 

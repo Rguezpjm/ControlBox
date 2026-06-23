@@ -131,16 +131,32 @@ export const supabaseApi = {
     authRequest<void>(`/api/v1/supabase/projects/${id}/schemas/${schemaId}`, { method: "DELETE" }),
   listBuckets: (id: string) =>
     authRequest<SupabaseBucket[]>(`/api/v1/supabase/projects/${id}/buckets`),
-  createBucket: (id: string, name: string, publicBucket = false) =>
+  createBucket: (
+    id: string,
+    name: string,
+    options?: { public?: boolean; file_size_limit_mb?: number },
+  ) =>
     authRequest<SupabaseBucket>(`/api/v1/supabase/projects/${id}/buckets`, {
       method: "POST",
-      body: JSON.stringify({ name, public: publicBucket }),
+      body: JSON.stringify({
+        name,
+        public: options?.public ?? false,
+        file_size_limit_mb: options?.file_size_limit_mb ?? 50,
+      }),
     }),
   deleteBucket: (id: string, bucketId: string) =>
     authRequest<void>(`/api/v1/supabase/projects/${id}/buckets/${bucketId}`, { method: "DELETE" }),
   listRealtimeChannels: (id: string) =>
     authRequest<SupabaseRealtimeChannel[]>(`/api/v1/supabase/projects/${id}/realtime-channels`),
-  createRealtimeChannel: (id: string, data: { name: string; table_name: string; schema_name?: string }) =>
+  createRealtimeChannel: (
+    id: string,
+    data: {
+      name: string;
+      table_name: string;
+      schema_name?: string;
+      events?: string[];
+    },
+  ) =>
     authRequest<SupabaseRealtimeChannel>(`/api/v1/supabase/projects/${id}/realtime-channels`, {
       method: "POST",
       body: JSON.stringify(data),
@@ -153,7 +169,10 @@ export const supabaseApi = {
     name: string;
     table_name: string;
     schema_name?: string;
+    action?: string;
+    role_name?: string;
     using_expression?: string;
+    check_expression?: string | null;
   }) =>
     authRequest<SupabaseRlsPolicy>(`/api/v1/supabase/projects/${id}/rls-policies`, {
       method: "POST",
