@@ -55,4 +55,5 @@ DEFAULT_SECURITY_SETTINGS = {
     "brute_force_protection": True,
     "enforce_mfa": False,
     "malware_scanner": False,
+    "web_vuln_scan": False,
 }

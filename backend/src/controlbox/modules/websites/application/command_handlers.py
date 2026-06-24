@@ -18,16 +18,30 @@ from controlbox.modules.websites.domain.entities import (
     WebsiteStatus,
 )
 from controlbox.config.settings import Settings
+from controlbox.modules.ftp.application.site_provisioning import (
+    provision_site_ftp_account,
+    slug_ftp_username,
+)
+from controlbox.modules.identity.infrastructure.unit_of_work import Database
 from controlbox.modules.platform.infrastructure.runtime_catalog import RuntimeCatalogManager
 from controlbox.modules.websites.domain.services import WebsiteDomainService
+from controlbox.modules.websites.infrastructure.managed_database import (
+    provision_website_managed_database,
+)
 from controlbox.modules.websites.infrastructure.provisioner import DatabaseProvisioner, DockerProvisioner
 from controlbox.shared.application.cqrs import CommandHandler
 from controlbox.shared.application.unit_of_work import UnitOfWork
-from controlbox.shared.domain.base import ForbiddenError, NotFoundError
+from controlbox.shared.domain.base import ForbiddenError, NotFoundError, ValidationError
 from controlbox.shared.infrastructure.resource_isolation import set_owner_in_settings
 
 
-def _to_response(website: Website) -> WebsiteResponse:
+def _to_response(
+    website: Website,
+    *,
+    ftp_username: str | None = None,
+    ftp_password: str | None = None,
+    ftp_home: str | None = None,
+) -> WebsiteResponse:
     return WebsiteResponse(
         id=website.id,
         tenant_id=website.tenant_id,
@@ -54,15 +68,19 @@ def _to_response(website: Website) -> WebsiteResponse:
         error_message=website.error_message,
         created_at=website.created_at,
         updated_at=website.updated_at,
+        ftp_username=ftp_username,
+        ftp_password=ftp_password,
+        ftp_home=ftp_home,
     )
 
 
 class CreateWebsiteHandler(CommandHandler[CreateWebsiteCommand, WebsiteResponse]):
-    def __init__(self, uow: UnitOfWork, settings: Settings) -> None:
+    def __init__(self, uow: UnitOfWork, settings: Settings, database: Database | None = None) -> None:
         self._uow = uow
         self._settings = settings
         self._docker = DockerProvisioner(settings)
         self._database = DatabaseProvisioner(settings)
+        self._db = database
 
     async def handle(self, command: CreateWebsiteCommand) -> WebsiteResponse:
         if not command.tenant_id:
@@ -100,7 +118,17 @@ class CreateWebsiteHandler(CommandHandler[CreateWebsiteCommand, WebsiteResponse]
         website.container_name = domain_service.build_container_name(command.tenant_id, website.id)
 
         if database_engine != DatabaseEngine.NONE:
-            website.database_config = self._database.provision(website)
+            if database_engine != DatabaseEngine.SUPABASE and self._db is not None:
+                try:
+                    async with self._db.unit_of_work() as db_uow:
+                        website.database_config = await provision_website_managed_database(
+                            db_uow, self._settings, website
+                        )
+                except RuntimeError as exc:
+                    raise ValidationError(str(exc)) from exc
+            else:
+                # Supabase uses its own project flow; fall back to connection metadata.
+                website.database_config = self._database.provision(website)
 
         site_path = self._docker.get_site_path(command.tenant_id, website.id)
         website.document_root = str(site_path / "public")
@@ -133,7 +161,26 @@ class CreateWebsiteHandler(CommandHandler[CreateWebsiteCommand, WebsiteResponse]
             )
         )
         await self._uow.commit()
-        return _to_response(website)
+
+        ftp_username: str | None = None
+        ftp_password: str | None = None
+        ftp_home: str | None = None
+        if command.create_ftp_account and self._db is not None and website.status == WebsiteStatus.RUNNING:
+            ftp_username, ftp_password, ftp_home, _ftp_error = await provision_site_ftp_account(
+                self._db,
+                self._settings,
+                tenant_id=command.tenant_id,
+                owner_user_id=command.user_id,
+                username=slug_ftp_username(domain.split(".", 1)[0] or website.name),
+                home_directory=str(website.id),
+            )
+
+        return _to_response(
+            website,
+            ftp_username=ftp_username,
+            ftp_password=ftp_password,
+            ftp_home=ftp_home,
+        )
 
 
 class DeleteWebsiteHandler(CommandHandler[DeleteWebsiteCommand, None]):

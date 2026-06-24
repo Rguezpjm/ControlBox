@@ -21,6 +21,7 @@ class CreateWebsiteRequest(BaseModel):
     database_engine: str = Field(default="none", pattern=r"^(none|mysql|supabase|mssql)$")
     ssl_enabled: bool = True
     disk_limit_mb: int = Field(default=5120, ge=512, le=102400)
+    create_ftp_account: bool = False
 
 
 class WebsiteResponseSchema(BaseModel):
@@ -57,6 +58,9 @@ class WebsiteResponseSchema(BaseModel):
     is_up: bool = True
     created_at: datetime
     updated_at: datetime
+    ftp_username: str | None = None
+    ftp_password: str | None = None
+    ftp_home: str | None = None
 
 
 class RuntimeOptionSchema(BaseModel):

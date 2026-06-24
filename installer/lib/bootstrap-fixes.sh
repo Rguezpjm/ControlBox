@@ -944,7 +944,9 @@ cb_mssql_ensure_running() {
 
     local data_dir="${CONTROLBOX_DATA_DIR:-/var/lib/controlbox}/mssql"
     mkdir -p "${data_dir}" 2>/dev/null || true
-    chmod 755 "${data_dir}" 2>/dev/null || true
+    # SQL Server runs as the non-root "mssql" user (UID 10001); the data dir must be owned by it
+    chown -R 10001:0 "${data_dir}" 2>/dev/null || true
+    chmod -R 770 "${data_dir}" 2>/dev/null || true
 
     cb_info "Iniciando SQL Server (Microsoft SQL)..."
     cd "${CONTROLBOX_INSTALL_DIR:-/opt/controlbox}"
@@ -954,8 +956,14 @@ cb_mssql_ensure_running() {
     [[ -f docker-compose.build.yml ]] && compose_args+=(-f docker-compose.build.yml)
     [[ -f "${CONTROLBOX_CONFIG_DIR}/docker-compose.ftp.yml" ]] && compose_args+=(-f "${CONTROLBOX_CONFIG_DIR}/docker-compose.ftp.yml")
 
-    docker compose "${compose_args[@]}" up -d --remove-orphans mssql 2>/dev/null \
-        || cb_warn "No se pudo levantar SQL Server automáticamente"
+    # If a crash-looping container already exists, recreate it so the permission fix takes effect
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx 'controlbox-mssql'; then
+        docker compose "${compose_args[@]}" up -d --force-recreate --remove-orphans mssql 2>/dev/null \
+            || cb_warn "No se pudo recrear SQL Server automáticamente"
+    else
+        docker compose "${compose_args[@]}" up -d --remove-orphans mssql 2>/dev/null \
+            || cb_warn "No se pudo levantar SQL Server automáticamente"
+    fi
 
     local i
     for i in $(seq 1 60); do

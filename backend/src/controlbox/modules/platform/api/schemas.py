@@ -199,6 +199,11 @@ class PanelSettingsSchema(BaseModel):
     controlbox_profile: str = ""
     os_label: str = ""
     sidebar_hidden_items: list[str] = Field(default_factory=list)
+    has_custom_logo: bool = False
+    logo_version: int = 0
+    panel_ip_whitelist: list[str] = Field(default_factory=list)
+    panel_ip_whitelist_active: bool = False
+    panel_ip_whitelist_supported: bool = False
 
 
 class UpdatePanelSettingsRequest(BaseModel):
@@ -224,6 +229,7 @@ class UpdatePanelSettingsRequest(BaseModel):
     telegram_bot_token: str | None = Field(default=None, min_length=10, max_length=128)
     telegram_chat_id: str | None = Field(default=None, max_length=64)
     sidebar_hidden_items: list[str] | None = None
+    panel_ip_whitelist: list[str] | None = None
 
 
 class TestTelegramRequest(BaseModel):

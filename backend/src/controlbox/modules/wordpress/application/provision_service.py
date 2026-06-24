@@ -5,9 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 from controlbox.config.settings import Settings
-from controlbox.modules.ftp.application.command_handlers import CreateFtpAccountHandler
-from controlbox.modules.ftp.application.commands import CreateFtpAccountCommand
-from controlbox.modules.ftp.domain.entities import FtpAccountStatus
+from controlbox.modules.ftp.application.site_provisioning import provision_site_ftp_account
 from controlbox.modules.wordpress.application.commands import ProvisionWordPressSiteCommand
 from controlbox.modules.wordpress.domain.entities import (
     WordPressBackup,
@@ -47,7 +45,9 @@ def _ftp_home_for_site(settings: Settings, site: WordPressSite) -> str:
     if not site_path:
         return ""
     try:
-        base = Path(settings.sites_base_path).resolve()
+        # Home is resolved relative to the tenant root (sites_base/<tenant_id>),
+        # so strip the tenant prefix to avoid a doubled tenant path.
+        base = Path(settings.sites_base_path).resolve() / str(site.tenant_id)
         full = Path(site_path).resolve()
         rel = full.relative_to(base)
         return str(rel).replace("\\", "/")
@@ -146,35 +146,22 @@ class WordPressProvisionService:
             ftp_home: str | None = None
 
             if bool(site.settings.get("create_ftp_account")):
-                ftp_home = _ftp_home_for_site(self._settings, site)
-                ftp_username = _ftp_username_from_site(site)
                 await self._record_step(site, "ftp", "Creating FTP account for this WordPress site…")
-                async with self._database.unit_of_work() as uow:
-                    account, generated_password = await CreateFtpAccountHandler(
-                        uow, settings=self._settings
-                    ).handle(
-                        CreateFtpAccountCommand(
-                            tenant_id=site.tenant_id,
-                            user_id=site.owner_user_id,
-                            username=ftp_username,
-                            password=None,
-                            home_directory=ftp_home,
-                            quota_mb=0,
-                            max_files=0,
-                            upload_bandwidth_kbps=0,
-                            download_bandwidth_kbps=0,
-                        )
-                    )
-                if account.status == FtpAccountStatus.ACTIVE:
-                    ftp_password = generated_password
+                ftp_username, ftp_password, ftp_home, ftp_error = await provision_site_ftp_account(
+                    self._database,
+                    self._settings,
+                    tenant_id=site.tenant_id,
+                    owner_user_id=site.owner_user_id,
+                    username=_ftp_username_from_site(site),
+                    home_directory=_ftp_home_for_site(self._settings, site),
+                )
+                if ftp_username:
                     await self._record_step(site, "ftp_ready", f"FTP account created: {ftp_username}")
                 else:
-                    ftp_username = None
-                    ftp_password = None
                     await self._record_step(
                         site,
                         "ftp_warn",
-                        f"FTP account could not be activated: {account.error_message or 'unknown error'}",
+                        f"FTP account could not be created: {ftp_error or 'unknown error'}",
                     )
 
             set_provision_credentials(

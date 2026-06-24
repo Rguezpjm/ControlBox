@@ -24,6 +24,9 @@ export interface Website extends SiteMonitoringFields {
   disk_limit_mb: number;
   error_message: string | null;
   ssl_days_remaining?: number | null;
+  ftp_username?: string | null;
+  ftp_password?: string | null;
+  ftp_home?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -53,6 +56,7 @@ export interface CreateWebsitePayload {
   database_engine: string;
   ssl_enabled?: boolean;
   disk_limit_mb?: number;
+  create_ftp_account?: boolean;
 }
 
 function authRequest<T>(endpoint: string, init: RequestInit = {}): Promise<T> {

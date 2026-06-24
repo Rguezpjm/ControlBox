@@ -1,4 +1,5 @@
 import { request } from "@/lib/api-client";
+import { API_BASE } from "@/lib/api-base";
 
 export interface PanelConfig {
   panel_port: number;
@@ -218,6 +219,11 @@ export interface PanelSettings {
   controlbox_profile: string;
   os_label: string;
   sidebar_hidden_items: string[];
+  has_custom_logo: boolean;
+  logo_version: number;
+  panel_ip_whitelist: string[];
+  panel_ip_whitelist_active: boolean;
+  panel_ip_whitelist_supported: boolean;
 }
 
 export type UpdatePanelSettingsPayload = Partial<
@@ -244,6 +250,7 @@ export type UpdatePanelSettingsPayload = Partial<
     | "telegram_alerts_enabled"
     | "telegram_chat_id"
     | "sidebar_hidden_items"
+    | "panel_ip_whitelist"
   > & {
     telegram_bot_token?: string;
   }
@@ -257,6 +264,33 @@ export function updatePanelSettings(data: UpdatePanelSettingsPayload) {
   return request<PanelSettings>("/api/v1/platform/panel-settings", {
     method: "PATCH",
     body: JSON.stringify(data),
+  });
+}
+
+/** Public URL of the active panel logo (404 when none → use the bundled fallback). */
+export function panelLogoUrl(version?: number) {
+  const suffix = version ? `?v=${version}` : "";
+  return `${API_BASE}/api/v1/platform/branding/logo${suffix}`;
+}
+
+export async function uploadPanelLogo(file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${API_BASE}/api/v1/platform/branding/logo`, {
+    method: "POST",
+    credentials: "include",
+    body,
+  });
+  const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string; detail?: string };
+  if (!res.ok) {
+    throw new Error(data.detail || data.message || "No se pudo subir el logo");
+  }
+  return { success: data.success ?? true, message: data.message ?? "Logo actualizado" };
+}
+
+export function deletePanelLogo() {
+  return request<{ success: boolean; message: string }>("/api/v1/platform/branding/logo", {
+    method: "DELETE",
   });
 }
 

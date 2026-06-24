@@ -12,6 +12,7 @@ def create_celery_app() -> Celery:
         include=[
             "controlbox.modules.wordpress.workers.tasks",
             "controlbox.modules.staging_sites.workers.tasks",
+            "controlbox.modules.security.workers.tasks",
         ],
     )
     app.conf.update(

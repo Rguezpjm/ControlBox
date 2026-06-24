@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Bell,
@@ -14,6 +14,9 @@ import {
   Send,
   Server,
   Settings2,
+  Shield,
+  Trash2,
+  Upload,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { PageHeader } from "@/components/shared/page-header";
@@ -38,11 +41,14 @@ import {
   SettingsSection,
 } from "@/components/settings/panel-setting-row";
 import {
+  deletePanelLogo,
   getPanelSettings,
+  panelLogoUrl,
   shutdownPanelService,
   syncPanelServerTime,
   testTelegramAlerts,
   updatePanelSettings,
+  uploadPanelLogo,
   type PanelSettings,
 } from "@/lib/platform";
 import { useI18n } from "@/providers/i18n-provider";
@@ -95,6 +101,35 @@ function SettingsContent() {
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramBotToken, setTelegramBotToken] = useState("");
   const [telegramChatId, setTelegramChatId] = useState("");
+  const [ipWhitelist, setIpWhitelist] = useState("");
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleLogoUpload(file: File) {
+    setSavingKey("logo");
+    try {
+      await uploadPanelLogo(file);
+      toast.success("Logo actualizado. Recargue la página para verlo en todo el panel.");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo subir el logo");
+    } finally {
+      setSavingKey(null);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  }
+
+  async function handleLogoReset() {
+    setSavingKey("logoReset");
+    try {
+      await deletePanelLogo();
+      toast.success("Logo restablecido. Recargue la página para aplicarlo.");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo restablecer el logo");
+    } finally {
+      setSavingKey(null);
+    }
+  }
 
   const syncForm = useCallback((settings: PanelSettings) => {
     setData(settings);
@@ -114,6 +149,7 @@ function SettingsContent() {
     setTelegramEnabled(settings.telegram_alerts_enabled);
     setTelegramChatId(settings.telegram_chat_id);
     setTelegramBotToken("");
+    setIpWhitelist((settings.panel_ip_whitelist ?? []).join("\n"));
   }, []);
 
   const load = useCallback(async () => {
@@ -602,6 +638,122 @@ function SettingsContent() {
                   <SelectItem value="es">Español</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </PanelSettingRow>
+
+          <PanelSettingRow
+            label="Logo del sistema"
+            hint="PNG, JPG, WEBP, GIF o SVG · máx. 2 MB. Se muestra en el login y la barra lateral."
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex h-12 w-12 items-center justify-center overflow-hidden rounded-md border bg-white p-1">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  key={data.logo_version}
+                  src={data.has_custom_logo ? panelLogoUrl(data.logo_version) : "/logo.png"}
+                  alt="Logo actual"
+                  className="h-full w-full object-contain"
+                />
+              </span>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleLogoUpload(file);
+                }}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={savingKey === "logo"}
+                onClick={() => logoInputRef.current?.click()}
+              >
+                {savingKey === "logo" ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="mr-2 h-4 w-4" />
+                )}
+                Subir logo
+              </Button>
+              {data.has_custom_logo && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:bg-destructive/10"
+                  disabled={savingKey === "logoReset"}
+                  onClick={() => void handleLogoReset()}
+                >
+                  {savingKey === "logoReset" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-2 h-4 w-4" />
+                  )}
+                  Restablecer
+                </Button>
+              )}
+            </div>
+          </PanelSettingRow>
+        </SettingsSection>
+
+        <SettingsSection
+          icon={<Shield className="h-4 w-4" />}
+          title="Whitelist de IPs"
+          description="Restringe el acceso al panel para que solo las IPs autorizadas puedan abrirlo"
+        >
+          <PanelSettingRow
+            label="IPs / rangos permitidos"
+            hint="Una por línea. Acepta IPv4, IPv6 y CIDR (ej. 203.0.113.5 o 203.0.113.0/24). Vacío = sin restricción."
+          >
+            <div className="space-y-3">
+              <textarea
+                value={ipWhitelist}
+                onChange={(e) => setIpWhitelist(e.target.value)}
+                rows={4}
+                spellCheck={false}
+                placeholder={"203.0.113.5\n198.51.100.0/24"}
+                className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 font-mono text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <SaveButton
+                  label="Aplicar whitelist"
+                  saving={savingKey === "ipWhitelist"}
+                  onClick={() => {
+                    const list = ipWhitelist
+                      .split(/[\n,;]+/)
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    patch(
+                      "ipWhitelist",
+                      { panel_ip_whitelist: list },
+                      list.length ? "Whitelist aplicada" : "Whitelist desactivada"
+                    );
+                  }}
+                />
+                {data.panel_ip_whitelist_active ? (
+                  <Badge variant="outline" className="text-[10px] text-emerald-700">
+                    Activa · {data.panel_ip_whitelist.length} IP/rangos
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                    Sin restricción
+                  </Badge>
+                )}
+              </div>
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+                Tu IP actual se añade automáticamente al activar la lista para no perder acceso. Si te
+                bloqueas, ejecuta en el servidor:{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono">sudo controlbox repair --apply-panel</code>
+              </div>
+              {!data.panel_ip_whitelist_supported && (
+                <p className="text-[11px] text-muted-foreground">
+                  La aplicación de la whitelist requiere el modo de acceso por IP (Traefik en puerto 80).
+                  Tras configurar puerto/ruta, ejecuta{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono">sudo controlbox repair --apply-panel</code>.
+                </p>
+              )}
             </div>
           </PanelSettingRow>
         </SettingsSection>

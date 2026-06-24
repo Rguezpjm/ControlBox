@@ -87,6 +87,8 @@ def _modification_schema(view) -> SiteModificationSchema:
         runtime=view.runtime,
         runtime_version=view.runtime_version,
         php_version=view.php_version,
+        php_extensions=view.php_extensions,
+        php_extensions_available=view.php_extensions_available,
         ssl_enabled=view.ssl_enabled,
         ssl_status=view.ssl_status,
         ssl_config=SiteSslConfigSchema(**view.ssl_config.__dict__) if view.ssl_config else None,
@@ -168,12 +170,13 @@ async def list_websites(
 async def create_website(
     payload: CreateWebsiteRequest,
     context: Annotated[RequestContext, Depends(require_permission("websites.manage"))],
+    container: Annotated[AppState, Depends(get_app_state)],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> WebsiteResponseSchema:
     tenant_id = _require_tenant(context)
     settings = get_settings()
     try:
-        handler = CreateWebsiteHandler(uow=uow, settings=settings)
+        handler = CreateWebsiteHandler(uow=uow, settings=settings, database=container.database)
         website = await handler.handle(
             CreateWebsiteCommand(
                 tenant_id=tenant_id,
@@ -185,6 +188,7 @@ async def create_website(
                 database_engine=payload.database_engine,
                 ssl_enabled=payload.ssl_enabled,
                 disk_limit_mb=payload.disk_limit_mb,
+                create_ftp_account=payload.create_ftp_account,
             )
         )
         return WebsiteResponseSchema(**website.__dict__)
@@ -254,6 +258,7 @@ async def update_website_modification(
             vhost_config=payload.vhost_config,
             ssl_enabled=payload.ssl_enabled,
             runtime_version=payload.runtime_version,
+            php_extensions=payload.php_extensions,
             ssl_provider=payload.ssl_provider,
             ssl_certificate_pem=payload.ssl_certificate_pem,
             ssl_private_key_pem=payload.ssl_private_key_pem,

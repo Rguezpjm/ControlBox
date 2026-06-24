@@ -27,6 +27,71 @@ export interface SecuritySettings {
   brute_force_protection: boolean;
   enforce_mfa: boolean;
   malware_scanner: boolean;
+  web_vuln_scan: boolean;
+}
+
+export interface VulnerabilityFinding {
+  id: string;
+  category: "server" | "website" | string;
+  title: string;
+  severity: "high" | "medium" | "low" | "critical" | "info" | string;
+  status: string;
+  target: string;
+  detail: string;
+  recommendation: string;
+}
+
+export interface VulnerabilityAssessment {
+  score: number;
+  score_label: string;
+  total: number;
+  high: number;
+  medium: number;
+  low: number;
+  web_scan_enabled: boolean;
+  findings: VulnerabilityFinding[];
+}
+
+export interface ScanTool {
+  id: string;
+  label: string;
+  description: string;
+  bruteforce: boolean;
+  available: boolean;
+}
+
+export interface ScanToolResult {
+  tool: string;
+  label: string;
+  available: boolean;
+  status: string;
+  summary: string;
+  findings_count: number;
+}
+
+export interface ScanResultFinding {
+  title: string;
+  severity: string;
+  detail: string;
+  recommendation: string;
+  tool: string;
+}
+
+export interface VulnerabilityScan {
+  id: string;
+  target: string;
+  tools: string[];
+  status: "queued" | "running" | "completed" | "failed" | string;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  score: number | null;
+  high: number | null;
+  medium: number | null;
+  low: number | null;
+  error: string | null;
+  findings: ScanResultFinding[];
+  tools_result: ScanToolResult[];
 }
 
 export interface TrustedDevice {
@@ -71,6 +136,25 @@ export const securityApi = {
     request<SecuritySettings>("/api/v1/security/settings", {
       ...authOpts(),
       method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  vulnerabilities: () =>
+    request<VulnerabilityAssessment>("/api/v1/security/vulnerabilities", authOpts()),
+
+  scanTools: () =>
+    request<ScanTool[]>("/api/v1/security/scan-tools", authOpts()),
+
+  scans: () =>
+    request<VulnerabilityScan[]>("/api/v1/security/scans", authOpts()),
+
+  scan: (id: string) =>
+    request<VulnerabilityScan>(`/api/v1/security/scans/${id}`, authOpts()),
+
+  startScan: (data: { target: string; tools?: string[]; bruteforce?: boolean }) =>
+    request<VulnerabilityScan>("/api/v1/security/scans", {
+      ...authOpts(),
+      method: "POST",
       body: JSON.stringify(data),
     }),
 

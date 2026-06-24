@@ -29,6 +29,14 @@ interface CreateDatabaseDialogProps {
   onCreated: () => void;
 }
 
+function sanitizeDatabaseName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "_")
+    .replace(/^[^a-z]+/, "")
+    .slice(0, 63);
+}
+
 export function CreateDatabaseDialog({ open, onOpenChange, onCreated }: CreateDatabaseDialogProps) {
   const [options, setOptions] = useState<DatabaseOptions | null>(null);
   const [loading, setLoading] = useState(false);
@@ -84,10 +92,14 @@ export function CreateDatabaseDialog({ open, onOpenChange, onCreated }: CreateDa
               id="db-name"
               placeholder="myapp_db"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => setName(sanitizeDatabaseName(e.target.value))}
               required
-              pattern="[a-z][a-z0-9_]{1,62}"
+              minLength={2}
+              maxLength={63}
             />
+            <p className="text-xs text-muted-foreground">
+              Use letters, numbers and underscores. Uppercase letters and spaces are converted automatically.
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Engine</Label>

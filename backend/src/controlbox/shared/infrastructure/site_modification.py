@@ -10,8 +10,14 @@ from typing import Any
 from uuid import UUID
 
 from controlbox.config.settings import Settings
+from controlbox.modules.platform.infrastructure.runtime_catalog import RUNTIME_IMAGE_MAP
 from controlbox.modules.websites.domain.entities import Website, WebsiteRuntime, SslStatus
 from controlbox.modules.websites.infrastructure.provisioner import DockerProvisioner, RUNTIME_PORTS
+from controlbox.shared.infrastructure.php_extensions import (
+    PHP_EXTENSION_CATALOG,
+    build_php_extension_image,
+    normalize_extensions,
+)
 from controlbox.modules.wordpress.domain.entities import WordPressSite, WordPressSslStatus
 from controlbox.modules.wordpress.infrastructure.provisioner import (
     WordPressProvisioner,
@@ -69,6 +75,8 @@ class SiteModificationView:
     runtime: str | None
     runtime_version: str | None
     php_version: str | None
+    php_extensions: list[str]
+    php_extensions_available: list[dict[str, str]]
     ssl_enabled: bool
     ssl_status: str
     ssl_config: CustomSslInfo | None
@@ -418,6 +426,61 @@ RewriteRule . /index.php [L]
             out.append(line)
         return "\n".join(out) + ("\n" if compose_text.endswith("\n") else "")
 
+    def _patch_service_image(self, compose_text: str, service_name: str, new_image: str) -> str:
+        """Replace the ``image:`` of a single top-level compose service in place."""
+        lines = compose_text.splitlines()
+        out: list[str] = []
+        in_service = False
+        replaced = False
+        for line in lines:
+            stripped = line.strip()
+            is_top_service = (
+                line.startswith("  ")
+                and not line.startswith("   ")
+                and stripped.endswith(":")
+                and " " not in stripped[:-1]
+            )
+            if is_top_service:
+                in_service = stripped == f"{service_name}:"
+            if in_service and not replaced and stripped.startswith("image:"):
+                indent = line[: len(line) - len(line.lstrip())]
+                out.append(f"{indent}image: {new_image}")
+                replaced = True
+                continue
+            out.append(line)
+        return "\n".join(out) + ("\n" if compose_text.endswith("\n") else "")
+
+    async def _resolve_php_image(
+        self,
+        site_path: Path,
+        base_image: str,
+        site_short: str,
+        extensions: list[str],
+        settings: dict[str, Any],
+    ) -> str:
+        """Build (or reuse) the effective PHP image for the selected extensions.
+
+        Persists the resulting image/extension list into ``settings`` and returns
+        the image reference the compose service should use.
+        """
+        normalized = normalize_extensions(extensions)
+        settings["php_extensions"] = normalized
+        if not normalized:
+            settings.pop("php_image", None)
+            return base_image
+        try:
+            tag = await build_php_extension_image(
+                self._settings, site_path, base_image, site_short, normalized
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(str(exc)) from exc
+        effective = tag or base_image
+        if tag:
+            settings["php_image"] = tag
+        else:
+            settings.pop("php_image", None)
+        return effective
+
     def _resolve_document_root(self, site_path: Path, document_root: str) -> Path:
         raw = Path(str(document_root).replace("\\", "/"))
         if not raw.is_absolute():
@@ -455,6 +518,10 @@ RewriteRule . /index.php [L]
             runtime=website.runtime.value,
             runtime_version=website.runtime_version,
             php_version=website.runtime_version if website.runtime == WebsiteRuntime.PHP else None,
+            php_extensions=normalize_extensions(settings.get("php_extensions"))
+            if website.runtime == WebsiteRuntime.PHP
+            else [],
+            php_extensions_available=PHP_EXTENSION_CATALOG if website.runtime == WebsiteRuntime.PHP else [],
             ssl_enabled=website.ssl_enabled,
             ssl_status=website.ssl_status.value,
             ssl_config=ssl_info,
@@ -503,6 +570,8 @@ RewriteRule . /index.php [L]
             runtime="wordpress",
             runtime_version=None,
             php_version=site.php_version,
+            php_extensions=normalize_extensions(settings.get("php_extensions")),
+            php_extensions_available=PHP_EXTENSION_CATALOG,
             ssl_enabled=site.ssl_enabled,
             ssl_status=site.ssl_status.value,
             ssl_config=ssl_info,
@@ -531,6 +600,7 @@ RewriteRule . /index.php [L]
         vhost_config: str | None = None,
         ssl_enabled: bool | None = None,
         runtime_version: str | None = None,
+        php_extensions: list[str] | None = None,
         ssl_provider: str | None = None,
         ssl_certificate_pem: str | None = None,
         ssl_private_key_pem: str | None = None,
@@ -582,17 +652,35 @@ RewriteRule . /index.php [L]
         if runtime_version:
             website.runtime_version = runtime_version
 
+        php_ext_changed = php_extensions is not None and website.runtime == WebsiteRuntime.PHP
+        if php_ext_changed:
+            base_image = RUNTIME_IMAGE_MAP.get(
+                ("php", website.runtime_version or "")
+            ) or RUNTIME_IMAGE_MAP.get(("php", ""))
+            await self._resolve_php_image(
+                site_path,
+                str(base_image or "php:8.3-apache"),
+                str(website.id).split("-")[0],
+                php_extensions or [],
+                settings,
+            )
+            website.settings = settings
+
         compose_path = site_path / "docker-compose.yml"
+
+        runtime_rerender = (
+            (runtime_version and website.runtime != WebsiteRuntime.PYTHON) or php_ext_changed
+        )
 
         if vhost_config is not None:
             compose_path.write_text(vhost_config, encoding="utf-8")
-        elif settings_patch and settings.get("domains"):
-            if compose_path.is_file():
+        else:
+            if runtime_rerender:
+                self._docker._write_compose(site_path, website)
+            if settings_patch and settings.get("domains") and compose_path.is_file():
                 host_rule = self._traefik_host_rule(settings["domains"])
                 updated = self._patch_compose_hosts(compose_path.read_text(encoding="utf-8"), host_rule)
                 compose_path.write_text(updated, encoding="utf-8")
-        elif runtime_version and website.runtime != WebsiteRuntime.PYTHON:
-            self._docker._write_compose(site_path, website)
 
         self._patch_compose_for_ssl(compose_path, "website", settings, website.ssl_enabled)
 
@@ -639,6 +727,7 @@ RewriteRule . /index.php [L]
         nginx_config: str | None = None,
         ssl_enabled: bool | None = None,
         php_version: str | None = None,
+        php_extensions: list[str] | None = None,
         ssl_provider: str | None = None,
         ssl_certificate_pem: str | None = None,
         ssl_private_key_pem: str | None = None,
@@ -691,6 +780,19 @@ RewriteRule . /index.php [L]
         if php_version:
             site.php_version = php_version
 
+        php_effective_image: str | None = None
+        if php_version is not None or php_extensions is not None:
+            base_image = f"wordpress:php{site.php_version}-fpm"
+            exts = php_extensions if php_extensions is not None else settings.get("php_extensions")
+            php_effective_image = await self._resolve_php_image(
+                site_path,
+                base_image,
+                f"wp-{str(site.id).split('-')[0]}",
+                list(exts or []),
+                settings,
+            )
+            site.settings = settings
+
         compose_path = site_path / "docker-compose.yml"
         nginx_path = site_path / "nginx" / "default.conf"
 
@@ -702,6 +804,12 @@ RewriteRule . /index.php [L]
             compose_path.write_text(updated, encoding="utf-8")
 
         self._patch_compose_for_ssl(compose_path, "wordpress", settings, site.ssl_enabled)
+
+        if php_effective_image is not None and compose_path.is_file():
+            patched = self._patch_service_image(
+                compose_path.read_text(encoding="utf-8"), "php", php_effective_image
+            )
+            compose_path.write_text(patched, encoding="utf-8")
 
         if nginx_config is not None:
             nginx_path.write_text(nginx_config, encoding="utf-8")

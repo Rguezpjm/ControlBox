@@ -44,6 +44,12 @@ export interface SiteSslConfig {
   certificate_pem: string;
 }
 
+export interface PhpExtensionOption {
+  id: string;
+  label: string;
+  group: string;
+}
+
 export interface SiteModification {
   site_type: SiteType;
   site_id: string;
@@ -54,6 +60,8 @@ export interface SiteModification {
   runtime?: string | null;
   runtime_version?: string | null;
   php_version?: string | null;
+  php_extensions?: string[];
+  php_extensions_available?: PhpExtensionOption[];
   ssl_enabled: boolean;
   ssl_status: string;
   ssl_config?: SiteSslConfig | null;
@@ -104,6 +112,7 @@ export interface UpdateSiteModificationPayload {
   ssl_enabled?: boolean;
   runtime_version?: string;
   php_version?: string;
+  php_extensions?: string[];
   ssl_provider?: "letsencrypt" | "custom" | "none";
   ssl_certificate_pem?: string;
   ssl_private_key_pem?: string;

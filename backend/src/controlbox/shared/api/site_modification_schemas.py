@@ -38,6 +38,8 @@ class SiteModificationSchema(BaseModel):
     runtime: str | None = None
     runtime_version: str | None = None
     php_version: str | None = None
+    php_extensions: list[str] = Field(default_factory=list)
+    php_extensions_available: list[dict[str, str]] = Field(default_factory=list)
     ssl_enabled: bool
     ssl_status: str
     ssl_config: SiteSslConfigSchema | None = None
@@ -65,6 +67,7 @@ class UpdateSiteModificationRequest(BaseModel):
     ssl_enabled: bool | None = None
     runtime_version: str | None = None
     php_version: str | None = None
+    php_extensions: list[str] | None = None
     ssl_provider: Literal["letsencrypt", "custom", "none"] | None = None
     ssl_certificate_pem: str | None = None
     ssl_private_key_pem: str | None = None

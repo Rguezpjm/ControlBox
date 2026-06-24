@@ -6,7 +6,7 @@ import { Globe, Database, HardDrive, Network, Radio } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { MetricsChart } from "@/components/dashboard/metrics-chart";
-import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { ServerVulnerabilities } from "@/components/dashboard/server-vulnerabilities";
 import { ResourceMeters } from "@/components/dashboard/resource-meters";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -136,7 +136,7 @@ function DashboardContent() {
             }}
             connected={connected}
           />
-          <ActivityFeed />
+          <ServerVulnerabilities />
         </div>
       </div>
 

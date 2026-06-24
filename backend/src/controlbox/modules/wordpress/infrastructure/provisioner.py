@@ -101,6 +101,7 @@ def _render_compose(
     ssl_enabled: bool,
     site_uid: int,
     site_gid: int,
+    php_image_override: str | None = None,
 ) -> str:
     label_map = traefik_router_labels(
         router_name,
@@ -113,6 +114,7 @@ def _render_compose(
         },
     )
     tls_labels = "\n" + "\n".join(compose_label_lines(label_map)) + "\n"
+    php_source = f"image: {php_image_override or php_image}"
     return f"""services:
   nginx:
     image: nginx:1.27-alpine
@@ -132,7 +134,7 @@ def _render_compose(
       - "traefik.enable=true"
 {tls_labels}
   php:
-    image: {php_image}
+    {php_source}
     container_name: {php_name}
     restart: unless-stopped
     volumes:
@@ -153,6 +155,10 @@ def _render_compose(
       - wp_internal
     user: "{site_uid}:{site_gid}"
     working_dir: /var/www/html
+    environment:
+      HOME: /tmp
+      WP_CLI_CACHE_DIR: /tmp/.wp-cli/cache
+      WP_CLI_PHP_ARGS: "-d memory_limit=512M"
 
 networks:
   controlbox:
@@ -258,10 +264,23 @@ class WordPressProvisioner:
         return stdout.decode()
 
     async def _run_wp_cli(self, compose_path: Path, *args: str) -> str:
+        # The official `wordpress:cli` image runs the WP-CLI phar through its shebang,
+        # so it ignores WP_CLI_PHP_ARGS and keeps the image's 128M CLI memory_limit,
+        # which OOMs while extracting the WordPress download. Invoke the phar through
+        # php explicitly so we can raise memory_limit / execution time reliably.
+        run_args: tuple[str, ...] = args
+        if args and args[0] == "wp":
+            run_args = (
+                "php",
+                "-d", "memory_limit=512M",
+                "-d", "max_execution_time=600",
+                "/usr/local/bin/wp",
+                *args[1:],
+            )
         return await self._exec(
             "docker", "compose", "-f", str(compose_path),
             "--profile", "cli", "run", "--rm", "wp-cli",
-            *args,
+            *run_args,
             cwd=compose_path.parent,
         )
 

@@ -41,6 +41,8 @@ export function CreateWebsiteDialog({ open, onOpenChange, onCreated }: CreateWeb
   const [runtimeVersion, setRuntimeVersion] = useState("");
   const [databaseEngine, setDatabaseEngine] = useState("none");
   const [sslEnabled, setSslEnabled] = useState(true);
+  const [createFtpAccount, setCreateFtpAccount] = useState(false);
+  const [createdFtp, setCreatedFtp] = useState<{ username: string; password: string; home: string } | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -59,25 +61,44 @@ export function CreateWebsiteDialog({ open, onOpenChange, onCreated }: CreateWeb
     }
   }, [runtime, selectedRuntime, versions]);
 
+  function resetForm() {
+    setName("");
+    setDomain("");
+    setRuntime("html");
+    setDatabaseEngine("none");
+    setCreateFtpAccount(false);
+    setCreatedFtp(null);
+  }
+
+  function handleClose() {
+    resetForm();
+    onOpenChange(false);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await websitesApi.create({
+      const site = await websitesApi.create({
         name,
         domain,
         runtime,
         runtime_version: runtimeVersion || null,
         database_engine: databaseEngine,
         ssl_enabled: sslEnabled,
+        create_ftp_account: createFtpAccount,
       });
-      onOpenChange(false);
-      setName("");
-      setDomain("");
-      setRuntime("html");
-      setDatabaseEngine("none");
       onCreated();
+      if (createFtpAccount && site.ftp_password) {
+        setCreatedFtp({
+          username: site.ftp_username || "",
+          password: site.ftp_password,
+          home: site.ftp_home || "",
+        });
+      } else {
+        handleClose();
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create website");
     } finally {
@@ -86,8 +107,48 @@ export function CreateWebsiteDialog({ open, onOpenChange, onCreated }: CreateWeb
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : handleClose())}>
       <DialogContent className="sm:max-w-md">
+        {createdFtp ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Website created</DialogTitle>
+              <DialogDescription>
+                Save these FTP credentials now — the password won&apos;t be shown again.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="space-y-2 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">FTP user</p>
+                  <p className="font-mono text-sm break-all">{createdFtp.username}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">FTP password</p>
+                  <p className="font-mono text-sm break-all">{createdFtp.password}</p>
+                </div>
+                {createdFtp.home ? (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">FTP directory</p>
+                    <p className="font-mono text-sm break-all">{createdFtp.home}</p>
+                  </div>
+                ) : null}
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => navigator.clipboard?.writeText(`${createdFtp.username} / ${createdFtp.password}`)}
+                >
+                  Copy
+                </Button>
+                <Button type="button" onClick={handleClose}>Done</Button>
+              </DialogFooter>
+            </div>
+          </>
+        ) : (
+        <>
         <DialogHeader>
           <DialogTitle>Create Website</DialogTitle>
           <DialogDescription>
@@ -178,16 +239,28 @@ export function CreateWebsiteDialog({ open, onOpenChange, onCreated }: CreateWeb
             <Switch checked={sslEnabled} onCheckedChange={setSslEnabled} />
           </div>
 
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Create FTP account</p>
+              <p className="text-xs text-muted-foreground">
+                Auto-create an FTP/SFTP account for this site after deployment.
+              </p>
+            </div>
+            <Switch checked={createFtpAccount} onCheckedChange={setCreateFtpAccount} />
+          </div>
+
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={handleClose}>Cancel</Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               {loading ? "Provisioning..." : "Create Website"}
             </Button>
           </DialogFooter>
         </form>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   );

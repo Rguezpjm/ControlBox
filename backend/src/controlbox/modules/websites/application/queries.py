@@ -51,6 +51,9 @@ class WebsiteResponse:
     error_message: str | None
     created_at: datetime
     updated_at: datetime
+    ftp_username: str | None = None
+    ftp_password: str | None = None
+    ftp_home: str | None = None
 
 
 @dataclass(frozen=True)

@@ -26,10 +26,15 @@ from controlbox.modules.security.api.schemas import (
     MfaVerifyRequest,
     PasskeySchema,
     SecurityEventSchema,
+    ScanSchema,
+    ScanToolSchema,
     SecurityOverviewSchema,
     SecuritySettingsSchema,
+    StartScanRequest,
     TrustedDeviceSchema,
     UpdateSecuritySettingsRequest,
+    VulnerabilityAssessmentSchema,
+    VulnerabilityFindingSchema,
     WebAuthnLoginBeginRequest,
     WebAuthnLoginVerifyRequest,
     WebAuthnRegisterRequest,
@@ -170,6 +175,162 @@ async def update_security_settings(
         return SecuritySettingsSchema(**settings)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
+
+
+@router.get("/vulnerabilities", response_model=VulnerabilityAssessmentSchema)
+async def get_vulnerabilities(
+    context: Annotated[RequestContext, Depends(require_permission("security.read"))],
+    container: Annotated[AppState, Depends(get_app_state)],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> VulnerabilityAssessmentSchema:
+    if not context.tenant_id:
+        raise map_domain_exception(NotFoundError("Tenant not found"))
+    from dataclasses import asdict
+
+    from controlbox.modules.security.infrastructure.vulnerability_assessment import (
+        VulnerabilityAssessmentService,
+    )
+
+    service = VulnerabilityAssessmentService(uow, container.settings)
+    assessment = await service.assess(context.tenant_id)
+    return VulnerabilityAssessmentSchema(
+        score=assessment.score,
+        score_label=assessment.score_label,
+        total=assessment.total,
+        high=assessment.high,
+        medium=assessment.medium,
+        low=assessment.low,
+        web_scan_enabled=assessment.web_scan_enabled,
+        findings=[VulnerabilityFindingSchema(**asdict(f)) for f in assessment.findings],
+    )
+
+
+@router.get("/scan-tools", response_model=list[ScanToolSchema])
+async def list_scan_tools(
+    context: Annotated[RequestContext, Depends(require_permission("security.read"))],
+) -> list[ScanToolSchema]:
+    from controlbox.modules.security.infrastructure.scanner import catalog_with_availability
+
+    return [
+        ScanToolSchema(
+            id=t["id"],
+            label=t["label"],
+            description=t["description"],
+            bruteforce=t["bruteforce"],
+            available=t["available"],
+        )
+        for t in catalog_with_availability()
+    ]
+
+
+def _normalize_domain(target: str) -> str:
+    t = (target or "").strip().lower()
+    for scheme in ("https://", "http://"):
+        if t.startswith(scheme):
+            t = t[len(scheme):]
+    return t.split("/")[0].split(":")[0].strip()
+
+
+@router.get("/scans", response_model=list[ScanSchema])
+async def list_scans(
+    context: Annotated[RequestContext, Depends(require_permission("security.read"))],
+    container: Annotated[AppState, Depends(get_app_state)],
+) -> list[ScanSchema]:
+    if not context.tenant_id:
+        raise map_domain_exception(NotFoundError("Tenant not found"))
+    from controlbox.modules.security.infrastructure.scan_store import ScanStore
+
+    store = ScanStore(container.settings)
+    try:
+        items = await store.list(str(context.tenant_id))
+    finally:
+        await store.close()
+    return [ScanSchema(**item) for item in items]
+
+
+@router.get("/scans/{scan_id}", response_model=ScanSchema)
+async def get_scan(
+    scan_id: str,
+    context: Annotated[RequestContext, Depends(require_permission("security.read"))],
+    container: Annotated[AppState, Depends(get_app_state)],
+) -> ScanSchema:
+    if not context.tenant_id:
+        raise map_domain_exception(NotFoundError("Tenant not found"))
+    from controlbox.modules.security.infrastructure.scan_store import ScanStore
+
+    store = ScanStore(container.settings)
+    try:
+        item = await store.get(str(context.tenant_id), scan_id)
+    finally:
+        await store.close()
+    if item is None:
+        raise map_domain_exception(NotFoundError("Scan not found"))
+    return ScanSchema(**item)
+
+
+@router.post("/scans", response_model=ScanSchema, status_code=status.HTTP_202_ACCEPTED)
+async def start_scan(
+    payload: StartScanRequest,
+    context: Annotated[RequestContext, Depends(require_permission("security.manage"))],
+    container: Annotated[AppState, Depends(get_app_state)],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> ScanSchema:
+    if not context.tenant_id:
+        raise map_domain_exception(NotFoundError("Tenant not found"))
+    from uuid import uuid4
+
+    domain = _normalize_domain(payload.target)
+    if not domain:
+        raise map_domain_exception(NotFoundError("Dominio inválido"))
+
+    # Ownership: only domains managed by this tenant may be scanned.
+    websites = await uow.websites.list_by_tenant(context.tenant_id, limit=200)
+    wp_sites = await uow.wordpress_sites.list_by_tenant(context.tenant_id, limit=200)
+    managed = {(w.domain or "").lower() for w in websites if w.domain}
+    managed |= {(w.domain or "").lower() for w in wp_sites if w.domain}
+    if domain not in managed:
+        raise map_domain_exception(
+            NotFoundError("El dominio no pertenece a un sitio administrado por ControlBox")
+        )
+
+    from controlbox.modules.security.infrastructure.scan_store import ScanStore
+    from controlbox.modules.security.infrastructure.scanner import SCAN_TOOLS
+
+    valid_ids = {t["id"] for t in SCAN_TOOLS}
+    if payload.tools:
+        tools = [t for t in payload.tools if t in valid_ids]
+    else:
+        tools = [t["id"] for t in SCAN_TOOLS if not t["bruteforce"]]
+    if not payload.bruteforce:
+        tools = [t for t in tools if t != "hydra"]
+    if not tools:
+        raise map_domain_exception(NotFoundError("No se seleccionaron herramientas válidas"))
+
+    scan_id = uuid4().hex
+    created = utc_now().isoformat()
+    scan = {
+        "id": scan_id,
+        "tenant_id": str(context.tenant_id),
+        "target": domain,
+        "tools": tools,
+        "status": "queued",
+        "created_at": created,
+        "findings": [],
+        "tools_result": [],
+    }
+    store = ScanStore(container.settings)
+    try:
+        await store.save(str(context.tenant_id), scan)
+        await store.add_to_index(str(context.tenant_id), scan_id)
+    finally:
+        await store.close()
+
+    from controlbox.modules.security.workers.tasks import run_vulnerability_scan
+
+    run_vulnerability_scan.delay(
+        scan_id, str(context.tenant_id), domain, tools, {"bruteforce": bool(payload.bruteforce)}
+    )
+    return ScanSchema(**scan)
 
 
 @router.get("/blocked-ips", response_model=list[BlockedIpSchema])

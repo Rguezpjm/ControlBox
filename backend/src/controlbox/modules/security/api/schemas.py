@@ -88,6 +88,7 @@ class SecuritySettingsSchema(BaseModel):
     brute_force_protection: bool = True
     enforce_mfa: bool = False
     malware_scanner: bool = False
+    web_vuln_scan: bool = False
 
 
 class UpdateSecuritySettingsRequest(BaseModel):
@@ -95,6 +96,60 @@ class UpdateSecuritySettingsRequest(BaseModel):
     brute_force_protection: bool | None = None
     enforce_mfa: bool | None = None
     malware_scanner: bool | None = None
+    web_vuln_scan: bool | None = None
+
+
+class VulnerabilityFindingSchema(BaseModel):
+    id: str
+    category: str
+    title: str
+    severity: str
+    status: str
+    target: str
+    detail: str
+    recommendation: str
+
+
+class VulnerabilityAssessmentSchema(BaseModel):
+    score: int
+    score_label: str
+    total: int
+    high: int
+    medium: int
+    low: int
+    web_scan_enabled: bool
+    findings: list[VulnerabilityFindingSchema] = []
+
+
+class ScanToolSchema(BaseModel):
+    id: str
+    label: str
+    description: str
+    bruteforce: bool
+    available: bool
+
+
+class StartScanRequest(BaseModel):
+    target: str
+    tools: list[str] | None = None
+    bruteforce: bool = False
+
+
+class ScanSchema(BaseModel):
+    id: str
+    target: str
+    tools: list[str] = []
+    status: str
+    created_at: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    score: int | None = None
+    high: int | None = None
+    medium: int | None = None
+    low: int | None = None
+    error: str | None = None
+    findings: list[dict] = []
+    tools_result: list[dict] = []
 
 
 class BlockedIpSchema(BaseModel):

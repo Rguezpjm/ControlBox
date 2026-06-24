@@ -13,6 +13,7 @@ class CreateWebsiteCommand:
     database_engine: str
     ssl_enabled: bool = True
     disk_limit_mb: int = 5120
+    create_ftp_account: bool = False
 
 
 @dataclass(frozen=True)

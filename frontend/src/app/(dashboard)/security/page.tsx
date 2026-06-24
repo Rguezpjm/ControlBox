@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Shield, Lock, AlertTriangle, Eye, Ban, KeyRound } from "lucide-react";
+import { Shield, ShieldAlert, Lock, AlertTriangle, Eye, Ban, KeyRound } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,14 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/skeletons";
-import { securityApi, registerPasskey, type SecurityEvent, type SecuritySettings } from "@/lib/security";
+import {
+  securityApi,
+  registerPasskey,
+  type SecurityEvent,
+  type SecuritySettings,
+  type VulnerabilityAssessment,
+} from "@/lib/security";
+import { VulnerabilitySummaryModal } from "@/components/security/vulnerability-summary-modal";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
@@ -31,9 +38,20 @@ export default function SecurityPage() {
     brute_force_protection: true,
     enforce_mfa: false,
     malware_scanner: false,
+    web_vuln_scan: false,
   });
   const [mfaSetup, setMfaSetup] = useState<{ secret: string; otpauth_url: string; backup_codes: string[] } | null>(null);
   const [mfaCode, setMfaCode] = useState("");
+  const [assessment, setAssessment] = useState<VulnerabilityAssessment | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+
+  const loadAssessment = useCallback(async () => {
+    try {
+      setAssessment(await securityApi.vulnerabilities());
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -45,12 +63,13 @@ export default function SecurityPage() {
       setOverview(ov);
       setEvents(ev);
       setSettings(st);
+      loadAssessment();
     } catch {
       toast.error("Failed to load security data");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadAssessment]);
 
   useEffect(() => {
     load();
@@ -113,6 +132,10 @@ export default function SecurityPage() {
         description="WAF, MFA, passkeys, and threat monitoring"
         action={
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setSummaryOpen(true)}>
+              <ShieldAlert className="mr-2 h-4 w-4" />
+              Vulnerabilidades
+            </Button>
             <Button variant="outline" size="sm" onClick={handleMfaSetup}>
               <Lock className="mr-2 h-4 w-4" />
               Enable MFA
@@ -174,6 +197,7 @@ export default function SecurityPage() {
               { id: "waf_enabled" as const, label: "Web Application Firewall", desc: "Block malicious requests" },
               { id: "brute_force_protection" as const, label: "Brute Force Protection", desc: "Auto-block failed logins" },
               { id: "malware_scanner" as const, label: "Malware Scanner", desc: "Daily file scans" },
+              { id: "web_vuln_scan" as const, label: "Vulnerability Web Scan", desc: "NMAP, WPScan, nuclei, Gobuster sobre los dominios" },
               { id: "enforce_mfa" as const, label: "Enforce MFA", desc: "Require for all users" },
             ].map((setting) => (
               <div key={setting.id} className="flex items-center justify-between">
@@ -214,6 +238,13 @@ export default function SecurityPage() {
           </CardContent>
         </Card>
       )}
+
+      <VulnerabilitySummaryModal
+        open={summaryOpen}
+        onOpenChange={setSummaryOpen}
+        assessment={assessment}
+        onRefresh={loadAssessment}
+      />
     </div>
   );
 }

@@ -181,8 +181,13 @@ class DockerProvisioner:
 """
         else:
             volume_mount = "./public:/var/www/html" if website.runtime == WebsiteRuntime.PHP else "./public:/usr/share/nginx/html"
+            web_image = image
+            if website.runtime == WebsiteRuntime.PHP:
+                override = str((website.settings or {}).get("php_image") or "").strip()
+                if override:
+                    web_image = override
             service_yaml = f"""  web:
-    image: {image}
+    image: {web_image}
     container_name: {website.container_name}
     restart: unless-stopped
     environment:

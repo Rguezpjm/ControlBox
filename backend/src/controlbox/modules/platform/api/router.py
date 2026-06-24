@@ -3,7 +3,8 @@ from uuid import UUID
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse
 
 from controlbox.config.settings import Settings, get_settings
 from controlbox.shared.infrastructure.version_info import resolve_controlbox_version
@@ -82,6 +83,17 @@ def _require_tenant(context: RequestContext) -> UUID:
     if not context.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant context required")
     return context.tenant_id
+
+
+def _requester_ip(request: Request) -> str | None:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first
+    if request.client and request.client.host:
+        return request.client.host
+    return None
 
 
 def _patch_setup_checklist(checklist: dict | None, **updates: bool) -> dict[str, bool]:
@@ -178,6 +190,7 @@ async def get_panel_settings(
 @router.patch("/panel-settings", response_model=PanelSettingsSchema)
 async def update_panel_settings(
     payload: UpdatePanelSettingsRequest,
+    request: Request,
     context: Annotated[RequestContext, Depends(require_platform_admin())],
     _: Annotated[None, Depends(require_permission("platform.manage"))],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
@@ -186,6 +199,14 @@ async def update_panel_settings(
     tenant_id = _require_tenant(context)
     service = PanelSettingsService(settings)
     platform_settings = await uow.tenant_platform_settings.get_or_create(tenant_id)
+
+    # Safety net: when enabling the IP whitelist, always include the IP making the
+    # request so the admin cannot lock themselves out of the panel.
+    whitelist = payload.panel_ip_whitelist
+    if whitelist:
+        requester_ip = _requester_ip(request)
+        if requester_ip:
+            whitelist = [*whitelist, requester_ip]
 
     service.apply_preferences(
         platform_settings,
@@ -198,6 +219,7 @@ async def update_panel_settings(
         auto_backup_panel=payload.auto_backup_panel,
         auto_backup_retention=payload.auto_backup_retention,
         server_ip=payload.server_ip,
+        panel_ip_whitelist=whitelist if payload.panel_ip_whitelist is not None else None,
         site_monitor_enabled=payload.site_monitor_enabled,
         cpu_threshold_percent=payload.cpu_threshold_percent,
         memory_threshold_percent=payload.memory_threshold_percent,
@@ -208,6 +230,9 @@ async def update_panel_settings(
         telegram_chat_id=payload.telegram_chat_id,
         sidebar_hidden_items=payload.sidebar_hidden_items,
     )
+
+    if payload.panel_ip_whitelist is not None:
+        service.apply_ip_whitelist(platform_settings)
 
     if payload.panel_port is not None or payload.panel_base_path is not None:
         await PanelConfigService(settings).update_config(
@@ -268,6 +293,49 @@ async def shutdown_panel_service(
 ) -> PanelActionResponse:
     result = await PanelSettingsService(settings).shutdown_panel_only()
     return PanelActionResponse(success=result["success"], message=result["message"])
+
+
+@router.post("/branding/logo", response_model=PanelActionResponse)
+async def upload_panel_logo(
+    file: Annotated[UploadFile, File(...)],
+    _: Annotated[RequestContext, Depends(require_platform_admin())],
+    __: Annotated[None, Depends(require_permission("platform.manage"))],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PanelActionResponse:
+    content = await file.read()
+    ok, message = PanelSettingsService(settings).save_logo(content, file.content_type or "")
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+    return PanelActionResponse(success=True, message=message)
+
+
+@router.delete("/branding/logo", response_model=PanelActionResponse)
+async def delete_panel_logo(
+    _: Annotated[RequestContext, Depends(require_platform_admin())],
+    __: Annotated[None, Depends(require_permission("platform.manage"))],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PanelActionResponse:
+    removed = PanelSettingsService(settings).remove_logo()
+    return PanelActionResponse(
+        success=True,
+        message="Logo restablecido al predeterminado" if removed else "No había logo personalizado",
+    )
+
+
+@router.get("/branding/logo")
+async def get_panel_logo(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FileResponse:
+    """Public endpoint: serves the custom panel logo so the login page can show it."""
+    service = PanelSettingsService(settings)
+    logo = service.find_logo()
+    if logo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No custom logo")
+    return FileResponse(
+        path=str(logo),
+        media_type=service.logo_media_type(logo),
+        headers={"Cache-Control": "public, max-age=60"},
+    )
 
 
 @router.get("/overview", response_model=PlatformOverviewSchema)

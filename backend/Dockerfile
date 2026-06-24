@@ -20,6 +20,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-mysql-client postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
+# Vulnerability scanning tools (run against domains, not from inside the host).
+# Each download is best-effort so a transient release URL change never breaks the build;
+# the scanner detects tool availability at runtime and degrades gracefully.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nmap hydra wget unzip tar \
+    && rm -rf /var/lib/apt/lists/* \
+    && ARCH="$(dpkg --print-architecture)" \
+    && NUCLEI_VER=3.3.7 \
+    && GOBUSTER_VER=3.6.0 \
+    && case "$ARCH" in amd64) GBARCH=x86_64 ;; arm64) GBARCH=arm64 ;; *) GBARCH=x86_64 ;; esac \
+    && ( wget -qO /tmp/nuclei.zip "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VER}/nuclei_${NUCLEI_VER}_linux_${ARCH}.zip" \
+         && unzip -o /tmp/nuclei.zip -d /usr/local/bin nuclei \
+         && chmod +x /usr/local/bin/nuclei || echo "nuclei install skipped" ) \
+    && ( wget -qO /tmp/gobuster.tar.gz "https://github.com/OJ/gobuster/releases/download/v${GOBUSTER_VER}/gobuster_Linux_${GBARCH}.tar.gz" \
+         && tar -xzf /tmp/gobuster.tar.gz -C /usr/local/bin gobuster \
+         && chmod +x /usr/local/bin/gobuster || echo "gobuster install skipped" ) \
+    && rm -f /tmp/nuclei.zip /tmp/gobuster.tar.gz
+
+# WPScan (WordPress scanner) — best-effort Ruby gem install.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ruby ruby-dev build-essential libcurl4-openssl-dev \
+    && ( gem install wpscan --no-document || echo "wpscan install skipped" ) \
+    && apt-get purge -y build-essential ruby-dev \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM base AS builder
 
 COPY requirements.txt .

@@ -23,8 +23,10 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   siteModificationApi,
+  type PhpExtensionOption,
   type SiteModification,
   type SiteSettings,
   type SiteType,
@@ -127,6 +129,8 @@ export function SiteModificationModal({
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [phpVersions, setPhpVersions] = useState<string[]>([]);
   const [websiteRuntimeVersions, setWebsiteRuntimeVersions] = useState<string[]>([]);
+  const [phpExtensions, setPhpExtensions] = useState<string[]>([]);
+  const [initialPhpExtensions, setInitialPhpExtensions] = useState<string[]>([]);
 
   const sidebarSections = useMemo(() => sectionsForType(siteType), [siteType]);
 
@@ -142,6 +146,9 @@ export function SiteModificationModal({
     const provider = mod.ssl_config?.provider ?? "letsencrypt";
     setSslTab(provider === "custom" ? "deployed" : provider === "letsencrypt" ? "letsencrypt" : "deployed");
     setRuntimeVersion(mod.php_version || mod.runtime_version || "");
+    const exts = mod.php_extensions ?? [];
+    setPhpExtensions(exts);
+    setInitialPhpExtensions(exts);
   }, []);
 
   const load = useCallback(async () => {
@@ -196,6 +203,10 @@ export function SiteModificationModal({
         ssl_enabled: activeSection === "ssl" ? sslEnabled : undefined,
         php_version: siteType === "wordpress" && activeSection === "runtime" ? runtimeVersion : undefined,
         runtime_version: siteType === "website" && activeSection === "runtime" ? runtimeVersion : undefined,
+        php_extensions:
+          activeSection === "runtime" && (siteType === "wordpress" || data?.runtime === "php")
+            ? phpExtensions
+            : undefined,
       };
       const mod = await siteModificationApi.update(siteType, siteId, payload);
       syncFromData(mod);
@@ -587,6 +598,24 @@ export function SiteModificationModal({
           );
         }
 
+        const phpApplies = siteType === "wordpress" || data.runtime === "php";
+        const extensionCatalog = data.php_extensions_available ?? [];
+        const groupedExtensions = extensionCatalog.reduce<Record<string, PhpExtensionOption[]>>(
+          (acc, ext) => {
+            (acc[ext.group] ??= []).push(ext);
+            return acc;
+          },
+          {},
+        );
+        const toggleExtension = (id: string, checked: boolean) => {
+          setPhpExtensions((prev) =>
+            checked ? Array.from(new Set([...prev, id])) : prev.filter((e) => e !== id),
+          );
+        };
+        const extensionsDirty =
+          phpExtensions.length !== initialPhpExtensions.length ||
+          phpExtensions.some((e) => !initialPhpExtensions.includes(e));
+
         return (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -607,6 +636,54 @@ export function SiteModificationModal({
                 Solo se muestran versiones instaladas/habilitadas en el sistema.
               </p>
             </div>
+
+            {phpApplies && extensionCatalog.length > 0 && (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="space-y-1">
+                  <Label>Extensiones PHP</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Active las extensiones que necesite. Al guardar se reconstruye la imagen PHP del
+                    sitio e instala las extensiones seleccionadas (puede tardar 1-2 minutos).
+                  </p>
+                </div>
+                {Object.entries(groupedExtensions).map(([group, exts]) => (
+                  <div key={group} className="space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {group}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {exts.map((ext) => {
+                        const checked = phpExtensions.includes(ext.id);
+                        return (
+                          <div
+                            key={ext.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggleExtension(ext.id, !checked)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleExtension(ext.id, !checked);
+                              }
+                            }}
+                            className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent"
+                          >
+                            <Checkbox checked={checked} />
+                            <span className="truncate">{ext.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                {extensionsDirty && (
+                  <p className="text-xs text-amber-600">
+                    Hay cambios de extensiones sin guardar. Guarde para aplicarlos.
+                  </p>
+                )}
+              </div>
+            )}
+
             <SaveBar saving={saving} onSave={() => handleSave()} />
           </div>
         );

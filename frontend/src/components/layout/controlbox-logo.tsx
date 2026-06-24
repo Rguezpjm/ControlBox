@@ -1,6 +1,9 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { panelLogoUrl } from "@/lib/platform";
 import logoImage from "../../../public/logo.png";
 
 interface ControlBoxLogoProps {
@@ -12,6 +15,8 @@ interface ControlBoxLogoProps {
   markOnly?: boolean;
 }
 
+const FALLBACK_SRC = (logoImage as unknown as { src: string }).src;
+
 export function ControlBoxLogo({
   className,
   size = 40,
@@ -19,6 +24,10 @@ export function ControlBoxLogo({
   href,
   markOnly = true,
 }: ControlBoxLogoProps) {
+  // Try the admin-configured logo first; fall back to the bundled asset when the
+  // public branding endpoint has no custom logo (404) or fails to load.
+  const [src, setSrc] = useState<string>(panelLogoUrl());
+
   const image = (
     <span
       className={cn(
@@ -27,11 +36,16 @@ export function ControlBoxLogo({
       )}
       style={markOnly && size <= 48 ? { width: size, height: size } : undefined}
     >
-      <Image
-        src={logoImage}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
         alt="ControlBox — Manage. Deploy. Scale."
         width={600}
         height={600}
+        onError={() => {
+          if (src !== FALLBACK_SRC) setSrc(FALLBACK_SRC);
+        }}
+        loading={priority ? "eager" : "lazy"}
         className={cn(
           markOnly && size <= 48 ? "h-auto w-full object-cover object-top" : "object-contain",
           className
@@ -41,7 +55,6 @@ export function ControlBoxLogo({
             ? undefined
             : { width: size, height: size }
         }
-        priority={priority}
       />
     </span>
   );

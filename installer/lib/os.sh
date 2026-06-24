@@ -283,6 +283,9 @@ cb_os_create_directories() {
 
     chown -R controlbox:controlbox "${CONTROLBOX_INSTALL_DIR}" "${CONTROLBOX_DATA_DIR}" "${CONTROLBOX_LOG_DIR}" 2>/dev/null || true
     chmod 750 "${CONTROLBOX_CONFIG_DIR}"
+    # SQL Server runs as the non-root "mssql" user (UID 10001); its data dir must be owned by it
+    chown -R 10001:0 "${CONTROLBOX_DATA_DIR}/mssql" 2>/dev/null || true
+    chmod -R 770 "${CONTROLBOX_DATA_DIR}/mssql" 2>/dev/null || true
     cb_ssl_fix_acme_permissions 2>/dev/null || {
         chmod 755 "${CONTROLBOX_DATA_DIR}/letsencrypt"
         touch "${CONTROLBOX_DATA_DIR}/letsencrypt/acme.json"

@@ -392,6 +392,27 @@ class FtpServiceManager:
         )
         return ok, message
 
+    async def ensure_running(self) -> tuple[bool, str]:
+        """Enable (with current/default settings) and start the FTP service if needed.
+
+        Used when auto-creating FTP accounts for sites so the account is actually
+        provisioned in Pure-FTPd/SFTP instead of being a silent no-op.
+        """
+        config = await self.get_config()
+        if not config.can_manage:
+            return False, config.message or "Gestión FTP no disponible en este entorno"
+        if config.enabled and config.running:
+            return True, "running"
+        ok, message, _ = await self.apply_config(
+            enabled=True,
+            protocol=config.protocol,
+            port=config.port,
+            passive_port_min=config.passive_port_min,
+            passive_port_max=config.passive_port_max,
+            public_host=config.public_host,
+        )
+        return ok, message
+
     async def stop(self) -> tuple[bool, str]:
         ok, msg = await self._run_compose(["--profile", "ftp", "stop", "pureftpd", "sftp"], optional=True)
         return ok, "Servicio FTP detenido" if ok else msg

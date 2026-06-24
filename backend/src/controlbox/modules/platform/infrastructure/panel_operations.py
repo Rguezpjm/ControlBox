@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 
 from controlbox.config.settings import Settings
+from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
 from controlbox.shared.infrastructure.version_info import resolve_controlbox_version
 
 logger = logging.getLogger("controlbox.platform")
@@ -72,6 +73,7 @@ class PanelOperationsService:
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            env=docker_subprocess_env(self._settings),
         )
         try:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -82,38 +84,41 @@ class PanelOperationsService:
         return proc.returncode or 0, output
 
     async def restart_panel(self) -> OperationResult:
-        cmd = self._compose_cmd("restart", "panel")
-        code, output = await self._run(cmd, timeout=120)
+        # Restart the panel container directly via the Docker proxy. We avoid
+        # `docker compose restart` because compose interpolates the *entire*
+        # platform compose file and aborts if any optional service has an unset
+        # `:?required` variable (e.g. MSSQL_ADMIN_PASSWORD on older installs).
+        code, output = await self._run(["docker", "restart", "controlbox-panel"], timeout=120)
         if code == 0:
-            return OperationResult(True, "Panel restarted successfully")
+            return OperationResult(True, "Panel reiniciado correctamente")
         logger.error("Panel restart failed: %s", output)
-        return OperationResult(False, "Failed to restart panel", output)
+        return OperationResult(False, "No se pudo reiniciar el panel", output)
 
     async def fix_stack(self) -> OperationResult:
-        repair_script = self._install_dir() / "repair.sh"
-        if not repair_script.exists():
-            cmd = self._compose_cmd("up", "-d", "--remove-orphans", "panel", "api")
-            code, output = await self._run(cmd, timeout=600)
-            if code == 0:
-                return OperationResult(True, "Services restarted")
-            return OperationResult(False, "Repair failed", output)
+        # IMPORTANT: the host repair.sh requires root and host-only paths
+        # (e.g. /var/log/controlbox); it cannot run inside the api container.
+        # From the panel we perform a container-safe recovery through the Docker
+        # socket proxy: bring up the proxy and the panel/worker services. The api
+        # container is intentionally not recreated so the request that triggered
+        # this operation can complete.
+        deeper = "Para una reparación completa ejecute 'controlbox repair' en el servidor."
 
-        proc = await asyncio.create_subprocess_exec(
-            "bash",
-            str(repair_script),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+        cmd = self._compose_cmd("up", "-d", "--remove-orphans", "docker-socket-proxy", "panel", "worker")
+        code, output = await self._run(cmd, timeout=600)
+        if code == 0:
+            return OperationResult(True, "Servicios verificados y reiniciados", deeper)
+
+        # Fallback: restart the known core containers directly (no compose
+        # interpolation), which works even when platform.env is incomplete.
+        code2, output2 = await self._run(
+            ["docker", "restart", "controlbox-panel", "controlbox-worker"], timeout=180
         )
-        try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=900)
-        except asyncio.TimeoutError:
-            proc.kill()
-            return OperationResult(False, "Repair timed out (still running on server)")
+        if code2 == 0:
+            return OperationResult(True, "Servicios reiniciados (recuperación básica)", deeper)
 
-        output = (stdout or b"").decode("utf-8", errors="replace")[-4000:]
-        if proc.returncode == 0:
-            return OperationResult(True, "Repair completed successfully")
-        return OperationResult(False, "Repair failed", output)
+        detail = "\n".join(part for part in (output, output2) if part).strip()
+        logger.error("Fix stack failed: %s", detail)
+        return OperationResult(False, "No se pudo reparar el stack desde el panel", f"{detail}\n{deeper}".strip())
 
     async def _fetch_install_sh_version(self, client: httpx.AsyncClient) -> str | None:
         url = f"{self._settings.controlbox_install_url.rstrip('/')}/install.sh"
