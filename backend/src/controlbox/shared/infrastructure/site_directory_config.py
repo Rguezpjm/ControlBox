@@ -183,6 +183,54 @@ def render_wordpress_nginx(settings: dict[str, Any], site_directory: Path) -> st
     return "\n\n".join(blocks) + "\n"
 
 
+def render_joomla_nginx(settings: dict[str, Any], site_directory: Path) -> str:
+    running_directory = normalize_running_directory(str(settings.get("running_directory") or "/"))
+    index_files = list(settings.get("index_files") or ["index.php", "index.html", "index.htm"])
+    logs_enabled = settings.get("logs_enabled", True) is not False
+    auth_enabled = bool(settings.get("limit_access_enabled"))
+
+    extra_locs = """
+    location /api/ {
+        try_files $uri $uri/ /api/index.php?$args;
+    }
+
+    location ~* /(images|cache|media|logs|tmp)/.*\\.(php|pl|py|jsp|asp|sh|cgi)$ {
+        deny all;
+    }
+"""
+
+    root = container_web_root(site_directory, running_directory, Path("/var/www/html"))
+    blocks = [
+        _server_block(
+            server_name="_",
+            root=root,
+            index_files=index_files,
+            logs_enabled=logs_enabled,
+            auth_enabled=auth_enabled,
+            extra_locations=extra_locs,
+        )
+    ]
+
+    for binding in settings.get("subdirectory_bindings") or []:
+        domain = str(binding.get("domain") or "").strip().lower()
+        directory = normalize_running_directory(str(binding.get("directory") or "/"))
+        if not domain:
+            continue
+        binding_root = container_web_root(site_directory, directory, Path("/var/www/html"))
+        blocks.append(
+            _server_block(
+                server_name=domain,
+                root=binding_root,
+                index_files=index_files,
+                logs_enabled=logs_enabled,
+                auth_enabled=auth_enabled,
+                extra_locations=extra_locs,
+            )
+        )
+
+    return "\n\n".join(blocks) + "\n"
+
+
 def render_php_open_basedir_ini(enabled: bool, web_root: str) -> str:
     if not enabled:
         return "; open_basedir disabled\n"

@@ -1,16 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Circle, Loader2, Server } from "lucide-react";
+import {
+  CheckCircle2,
+  Circle,
+  Loader2,
+  Server,
+  Eye,
+  EyeOff,
+  Copy,
+  KeyRound,
+  Check,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { mailApi, type DnsRecordHint, type TenantMailService } from "@/lib/mail";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface MailServiceSetupProps {
   service: TenantMailService;
@@ -40,7 +52,10 @@ export function MailServiceSetup({ service, onUpdated }: MailServiceSetupProps) 
   const [totalQuota, setTotalQuota] = useState(String(service.total_quota_mb));
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [forceActivate, setForceActivate] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     mailApi.dnsHints().then(setDnsHints).catch(() => setDnsHints([]));
@@ -57,7 +72,34 @@ export function MailServiceSetup({ service, onUpdated }: MailServiceSetupProps) 
   const outgoingDone = Boolean(smtpHost.trim() && adminUser.trim());
   const verified = service.status === "active";
 
-  async function saveSettings() {
+  function generateStrongPassword() {
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+~`|}{[]:;?><,./-=";
+    let newPassword = "";
+    const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const lower = "abcdefghijklmnopqrstuvwxyz";
+    const nums = "0123456789";
+    const syms = "!@#$%^&*()_+-=";
+    newPassword += upper[Math.floor(Math.random() * upper.length)];
+    newPassword += lower[Math.floor(Math.random() * lower.length)];
+    newPassword += nums[Math.floor(Math.random() * nums.length)];
+    newPassword += syms[Math.floor(Math.random() * syms.length)];
+    for (let i = 0; i < 12; i++) {
+      newPassword += chars[Math.floor(Math.random() * chars.length)];
+    }
+    newPassword = newPassword.split('').sort(() => 0.5 - Math.random()).join('');
+    setAdminPassword(newPassword);
+    setShowPassword(true);
+  }
+
+  function copyPasswordToClipboard() {
+    if (!adminPassword) return;
+    navigator.clipboard.writeText(adminPassword);
+    setCopied(true);
+    toast.success("Password copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function saveSettings(shouldRethrow = false) {
     setSaving(true);
     setError(null);
     try {
@@ -75,10 +117,14 @@ export function MailServiceSetup({ service, onUpdated }: MailServiceSetupProps) 
         total_quota_mb: Number(totalQuota),
         webmail_url: webmailUrl || undefined,
       });
-      setAdminPassword("");
+      if (!shouldRethrow) {
+        setAdminPassword("");
+      }
       onUpdated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save settings");
+      const msg = err instanceof ApiError ? err.message : "Failed to save settings";
+      setError(msg);
+      if (shouldRethrow) throw err;
     } finally {
       setSaving(false);
     }
@@ -88,10 +134,11 @@ export function MailServiceSetup({ service, onUpdated }: MailServiceSetupProps) 
     setVerifying(true);
     setError(null);
     try {
-      await saveSettings();
-      await mailApi.verifyService(adminPassword || undefined);
+      await saveSettings(true);
+      await mailApi.verifyService(adminPassword || undefined, forceActivate);
       setAdminPassword("");
       onUpdated();
+      toast.success("Mail service activated successfully");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Connection verification failed");
       onUpdated();
@@ -221,8 +268,47 @@ export function MailServiceSetup({ service, onUpdated }: MailServiceSetupProps) 
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Admin password {service.has_admin_password && "(leave blank to keep saved)"}</Label>
-                  <Input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+                  <div className="flex justify-between items-center">
+                    <Label>Admin password {service.has_admin_password && "(leave blank to keep saved)"}</Label>
+                    <button
+                      type="button"
+                      onClick={generateStrongPassword}
+                      className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer select-none"
+                    >
+                      <KeyRound className="h-3 w-3" />
+                      Generate strong password
+                    </button>
+                  </div>
+                  <div className="relative flex items-center">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      value={adminPassword}
+                      onChange={(e) => setAdminPassword(e.target.value)}
+                      className="pr-20"
+                    />
+                    <div className="absolute right-2 flex items-center gap-1">
+                      {adminPassword && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={copyPasswordToClipboard}
+                            className="text-muted-foreground hover:text-foreground p-1 rounded cursor-pointer"
+                            title="Copy password"
+                          >
+                            {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="text-muted-foreground hover:text-foreground p-1 rounded cursor-pointer"
+                            title={showPassword ? "Hide password" : "Show password"}
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
@@ -243,6 +329,29 @@ export function MailServiceSetup({ service, onUpdated }: MailServiceSetupProps) 
             </section>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
+
+            {!verified && (
+              <div
+                onClick={() => setForceActivate(!forceActivate)}
+                className="flex items-start space-x-3 rounded-lg border border-warning/20 bg-warning/5 p-4 text-warning cursor-pointer select-none"
+              >
+                <Checkbox
+                  id="force-activate"
+                  checked={forceActivate}
+                  onCheckedChange={(checked) => setForceActivate(!!checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="mt-0.5 border-warning/50"
+                />
+                <div className="grid gap-1.5 leading-none">
+                  <span className="text-sm font-medium leading-none text-warning">
+                    Bypass connection validation (Force activation)
+                  </span>
+                  <p className="text-xs text-muted-foreground">
+                    Activate the mail service even if the connection test fails (e.g. DNS propagation delays or local offline testing).
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => void saveSettings()} disabled={saving || verified}>

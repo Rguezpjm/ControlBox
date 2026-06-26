@@ -154,6 +154,10 @@ export const wordpressApi = {
     authRequest<{ status: string }>(`/api/v1/wordpress/${siteId}/backups/${backupId}/restore`, {
       method: "POST",
     }),
+  publish: (id: string) =>
+    authRequest<{ success: boolean; message: string; url: string }>(`/api/v1/wordpress/${id}/publish`, {
+      method: "POST",
+    }),
 };
 
 export { ApiError };

@@ -104,7 +104,12 @@ class MailApplicationService:
         await self._uow.commit()
         return service
 
-    async def verify_service(self, tenant_id: UUID, admin_password: str | None = None) -> TenantMailService:
+    async def verify_service(
+        self,
+        tenant_id: UUID,
+        admin_password: str | None = None,
+        force: bool = False,
+    ) -> TenantMailService:
         service = await self._require_service(tenant_id)
         password = admin_password
         if not password:
@@ -126,12 +131,21 @@ class MailApplicationService:
             password=password,
         )
         if not ok:
-            service.mark_error(message)
-            await self._uow.tenant_mail_services.save(service)
-            await self._uow.commit()
-            raise ValidationError(message)
+            if force:
+                service.mark_active()
+                service.error_message = f"Warning: Connection check failed ({message}). Running in fallback mode."
+                service.connection_verified_at = utc_now()
+                await self._uow.tenant_mail_services.save(service)
+                await self._uow.commit()
+                return service
+            else:
+                service.mark_error(message)
+                await self._uow.tenant_mail_services.save(service)
+                await self._uow.commit()
+                raise ValidationError(message)
 
         service.mark_active()
+        service.error_message = None
         service.connection_verified_at = utc_now()
         await self._uow.tenant_mail_services.save(service)
         await self._uow.commit()

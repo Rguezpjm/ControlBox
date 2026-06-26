@@ -148,7 +148,7 @@ async def verify_mail_service(
     tenant_id = _require_tenant(context)
     service = MailApplicationService(uow, get_settings())
     try:
-        row = await service.verify_service(tenant_id, body.admin_password)
+        row = await service.verify_service(tenant_id, body.admin_password, body.force)
         return _service_schema(row)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc

@@ -29,6 +29,7 @@ from controlbox.modules.wordpress.infrastructure.provisioner import (
     WordPressProvisioner,
     _render_wp_config,
 )
+from controlbox.modules.joomla.infrastructure.provisioner import JoomlaProvisioner
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env, validate_container_name
 
 
@@ -41,6 +42,8 @@ class StagingProvisioner:
         self._db = DatabaseProvisioner(settings)
         self._crypto = SecretEncryptor(settings)
         self._wp = WordPressProvisioner(settings)
+        self._joomla = JoomlaProvisioner(settings)
+
 
     def get_staging_path(self, tenant_id: UUID, staging_id: UUID) -> Path:
         return Path(self._settings.sites_base_path) / str(tenant_id) / "staging" / str(staging_id)
@@ -264,7 +267,132 @@ class StagingProvisioner:
         (site_path / "docker-compose.yml").write_text(compose, encoding="utf-8")
         await self._exec("docker", "compose", "-f", str(site_path / "docker-compose.yml"), "up", "-d", cwd=site_path)
 
+    async def deploy_joomla_staging(self, staging: StagingSite, db_name: str, db_user: str, db_password: str) -> None:
+        site_path = Path(staging.site_path)
+        site_path.mkdir(parents=True, exist_ok=True)
+        (site_path / "nginx").mkdir(exist_ok=True)
+        (site_path / "logs").mkdir(exist_ok=True)
+
+        ip_block, auth_block, middleware_chain = self._security_blocks(staging)
+        nginx_template = self._load_template("nginx.joomla.conf")
+        if not nginx_template:
+            nginx_template = """server {
+    listen 80;
+    server_name _;
+    root /var/www/html;
+    index index.php index.html;
+    client_max_body_size 128M;
+
+    {{IP_RESTRICTION}}
+
+    {{AUTH_BLOCK}}
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location /api/ {
+        try_files $uri $uri/ /api/index.php?$args;
+    }
+
+    location ~ \\.php$ {
+        fastcgi_pass php:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 300;
+    }
+
+    location ~* /(images|cache|media|logs|tmp)/.*\\.(php|pl|py|jsp|asp|sh|cgi)$ {
+        deny all;
+    }
+
+    location ~ /\\.ht {
+        deny all;
+    }
+}
+"""
+        nginx_conf = self._render(nginx_template, {
+            "IP_RESTRICTION": ip_block,
+            "AUTH_BLOCK": auth_block,
+        })
+        (site_path / "nginx" / "default.conf").write_text(nginx_conf, encoding="utf-8")
+
+        security = staging.settings.get("security", {})
+        if auth_block:
+            user = security.get("password_protection", {}).get("username", "staging")
+            password = security.get("password_protection", {}).get("password", secrets.token_urlsafe(12))
+            (site_path / "nginx" / ".htpasswd").write_text(
+                self._build_htpasswd(user, password) + "\n",
+                encoding="utf-8",
+            )
+        else:
+            (site_path / "nginx" / ".htpasswd").write_text("blocked:blocked\n", encoding="utf-8")
+
+        php_version = staging.runtime_version or "8.3"
+        compose_template = self._load_template("docker-compose.joomla.yml")
+        if not compose_template:
+            compose_template = """services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: {{NGINX_CONTAINER}}
+    restart: unless-stopped
+    volumes:
+      - ./joomla:/var/www/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+    depends_on:
+      - php
+    networks:
+      - controlbox
+      - stg_internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{{ROUTER_NAME}}.rule=Host(`{{DOMAIN}}`)"
+      - "traefik.http.routers.{{ROUTER_NAME}}.entrypoints=websecure"
+      - "traefik.http.services.{{ROUTER_NAME}}.loadbalancer.server.port=80"
+      - "traefik.http.routers.{{ROUTER_NAME}}.tls=true"
+      - "traefik.http.routers.{{ROUTER_NAME}}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.{{ROUTER_NAME}}.middlewares={{MIDDLEWARE_NAME}}"
+      - "controlbox.staging=true"
+      - "controlbox.staging.id={{STAGING_ID}}"
+      - "controlbox.tenant.id={{TENANT_ID}}"
+      - "controlbox.monitoring.scrape=true"
+      - "controlbox.monitoring.port=80"
+      - "controlbox.logs.enabled=true"
+
+  php:
+    image: wordpress:php{{PHP_VERSION}}-fpm
+    container_name: {{PHP_CONTAINER}}
+    restart: unless-stopped
+    volumes:
+      - ./joomla:/var/www/html
+    networks:
+      - controlbox
+      - stg_internal
+    user: "33:33"
+
+networks:
+  controlbox:
+    external: true
+  stg_internal:
+    driver: bridge
+"""
+        compose = self._render(compose_template, {
+            "NGINX_CONTAINER": staging.nginx_container_name or "",
+            "PHP_CONTAINER": staging.php_container_name or "",
+            "PHP_VERSION": php_version,
+            "DOMAIN": staging.domain,
+            "ROUTER_NAME": staging.traefik_router or "",
+            "MIDDLEWARE_NAME": middleware_chain.split(",")[0] if middleware_chain else f"{staging.traefik_router}-noop",
+            "STAGING_ID": str(staging.id),
+            "TENANT_ID": str(staging.tenant_id),
+        })
+        (site_path / "docker-compose.yml").write_text(compose, encoding="utf-8")
+        await self._exec("docker", "compose", "-f", str(site_path / "docker-compose.yml"), "up", "-d", cwd=site_path)
+
     async def deploy_website(self, staging: StagingSite) -> None:
+
         site_path = Path(staging.site_path)
         site_path.mkdir(parents=True, exist_ok=True)
         (site_path / "public").mkdir(exist_ok=True)
@@ -317,7 +445,7 @@ class StagingProvisioner:
         target_path = self.get_staging_path(staging.tenant_id, staging.id)
         staging.site_path = str(target_path)
 
-        has_database = staging.stack_type in (StagingStackType.WORDPRESS, StagingStackType.PHP)
+        has_database = staging.stack_type in (StagingStackType.WORDPRESS, StagingStackType.JOOMLA, StagingStackType.PHP)
         db_name = db_user = db_password = ""
         if has_database:
             db_id, user_id, db_name, db_user, db_password = await self.provision_database(
@@ -349,6 +477,26 @@ class StagingProvisioner:
                 )
             staging.runtime_version = source.php_version
             await self.deploy_wordpress(staging, db_name, db_user, db_password)
+        elif staging.source_type == StagingSourceType.JOOMLA:
+            source = await uow.joomla_sites.get_by_id_and_tenant(staging.source_id, staging.tenant_id)
+            if source is None:
+                raise RuntimeError("Source Joomla site not found")
+            source_path = Path(source.site_path)
+            await self._joomla.clone_site_files(source, target_path)
+            if source.settings.get("db_name"):
+                src_password = self._joomla.decrypt_db_password(source.settings["db_password_enc"])
+                await self.clone_database_from_source(
+                    source.settings["db_name"],
+                    source.settings["db_user"],
+                    src_password,
+                    db_name,
+                    db_user,
+                    db_password,
+                )
+            staging.runtime_version = source.php_version
+            staging.settings["cms_version"] = source.joomla_version
+            await self.deploy_joomla_staging(staging, db_name, db_user, db_password)
+
         else:
             source = await uow.websites.get_by_id_and_tenant(staging.source_id, staging.tenant_id)
             if source is None:
@@ -413,6 +561,41 @@ class StagingProvisioner:
                     )
                 elif source.settings.get("db_name"):
                     src_password = self._wp.decrypt_db_password(source.settings["db_password_enc"])
+                    await self.clone_database_from_source(
+                        source.settings["db_name"],
+                        source.settings["db_user"],
+                        src_password,
+                        staging.settings["db_name"],
+                        staging.settings["db_user"],
+                        stg_password,
+        elif staging.source_type == StagingSourceType.JOOMLA:
+            source = await uow.joomla_sites.get_by_id_and_tenant(staging.source_id, staging.tenant_id)
+            if source is None:
+                raise RuntimeError("Source not found")
+            source_path = Path(source.site_path)
+            if sync_type in (SyncType.FILES, SyncType.FULL):
+                if to_production:
+                    if (target_path / "joomla").exists():
+                        prod_jm = source_path / "joomla"
+                        if prod_jm.exists():
+                            shutil.rmtree(prod_jm)
+                        shutil.copytree(target_path / "joomla", prod_jm)
+                else:
+                    await self._joomla.clone_site_files(source, target_path)
+            if sync_type in (SyncType.DATABASE, SyncType.FULL) and staging.settings.get("db_name"):
+                stg_password = self._crypto.decrypt(staging.settings["db_password_enc"])
+                if to_production and source.settings.get("db_name"):
+                    src_password = self._joomla.decrypt_db_password(source.settings["db_password_enc"])
+                    await self.clone_database_from_source(
+                        staging.settings["db_name"],
+                        staging.settings["db_user"],
+                        stg_password,
+                        source.settings["db_name"],
+                        source.settings["db_user"],
+                        src_password,
+                    )
+                elif source.settings.get("db_name"):
+                    src_password = self._joomla.decrypt_db_password(source.settings["db_password_enc"])
                     await self.clone_database_from_source(
                         source.settings["db_name"],
                         source.settings["db_user"],

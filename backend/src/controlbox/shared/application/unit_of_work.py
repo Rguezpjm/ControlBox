@@ -35,12 +35,24 @@ if TYPE_CHECKING:
         WordPressBackupRepository,
         WordPressSiteRepository,
     )
+    from controlbox.modules.joomla.infrastructure.repositories import (
+        JoomlaBackupRepository,
+        JoomlaSiteRepository,
+    )
     from controlbox.modules.staging_sites.domain.repositories import StagingSiteRepository
     from controlbox.modules.platform.domain.repositories import ResourceAlertRepository, TenantPlatformSettingsRepository
     from controlbox.modules.team_members.domain.repositories import (
         TeamInvitationRepository,
         TeamMemberRepository,
         TeamRoleRepository,
+    )
+    from controlbox.modules.streaming.domain.repositories import (
+        StreamingSourceRepository,
+        StreamingCategoryRepository,
+        StreamingChannelRepository,
+        StreamingClientRepository,
+        StreamingConnectionRepository,
+        EpgProgramRepository,
     )
 
 
@@ -70,12 +82,20 @@ class UnitOfWork(ABC):
     backup_jobs: "BackupJobRepository"
     wordpress_sites: "WordPressSiteRepository"
     wordpress_backups: "WordPressBackupRepository"
+    joomla_sites: "JoomlaSiteRepository"
+    joomla_backups: "JoomlaBackupRepository"
     staging_sites: "StagingSiteRepository"
     tenant_platform_settings: "TenantPlatformSettingsRepository"
     resource_alerts: "ResourceAlertRepository"
     team_roles: "TeamRoleRepository"
     team_members: "TeamMemberRepository"
     team_invitations: "TeamInvitationRepository"
+    streaming_sources: "StreamingSourceRepository"
+    streaming_categories: "StreamingCategoryRepository"
+    streaming_channels: "StreamingChannelRepository"
+    streaming_clients: "StreamingClientRepository"
+    streaming_connections: "StreamingConnectionRepository"
+    epg_programs: "EpgProgramRepository"
     user_mfa: "SqlAlchemyUserMfaRepository"
     webauthn_credentials: "SqlAlchemyWebAuthnCredentialRepository"
     trusted_devices: "SqlAlchemyTrustedDeviceRepository"

@@ -229,7 +229,7 @@ cb_platform_env_repair() {
     local tmp changed=0
     tmp="$(mktemp)"
     while IFS= read -r line || [[ -n "${line}" ]]; do
-        if [[ "${line}" =~ ^[^=]*@redis:6379/[0-9]+$ ]]; then
+        if [[ "${line}" =~ ^[^=]*@redis:6379/[0-9]+\"?$ ]]; then
             changed=1
             continue
         fi

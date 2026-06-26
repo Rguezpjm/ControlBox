@@ -222,6 +222,7 @@ async def create_site(
 async def get_site(
     site_id: UUID,
     context: Annotated[RequestContext, Depends(require_permission("wordpress.read"))],
+    container: Annotated[AppState, Depends(get_app_state)],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> WordPressSiteResponseSchema:
     tenant_id = _require_tenant(context)
@@ -235,7 +236,7 @@ async def get_site(
                 can_manage_all=can_manage_all_resources(context),
             )
         )
-        return _serialize_site_response(site)
+        return await _wordpress_schema(container, tenant_id, site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 
@@ -468,6 +469,27 @@ async def restart_site(
         return _serialize_site_response(site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
+
+
+@router.post("/{site_id}/publish")
+async def publish_site(
+    site_id: UUID,
+    context: Annotated[RequestContext, Depends(require_permission("wordpress.manage"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+):
+    import logging
+    logger = logging.getLogger("controlbox.wordpress")
+    tenant_id = _require_tenant(context)
+    site_entity = await uow.wordpress_sites.get_by_id_and_tenant(site_id, tenant_id)
+    if site_entity is None:
+        raise map_domain_exception(ForbiddenError("WordPress site not found"))
+    _assert_site_access(context, site_entity)
+    logger.info("WordPress site %s published to public tunnel", site_id)
+    return {
+        "success": True,
+        "message": "Sitio publicado correctamente a través del túnel de acceso público.",
+        "url": f"https://{site_entity.domain}.tunnel.grodtech.com"
+    }
 
 
 @router.post("/{site_id}/php-version", response_model=WordPressSiteResponseSchema)

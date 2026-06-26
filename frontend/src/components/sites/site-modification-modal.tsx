@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
 import { websitesApi } from "@/lib/websites";
 import { wordpressApi } from "@/lib/wordpress";
+import { joomlaApi } from "@/lib/joomla";
 import { SiteAccessLogViewer } from "@/components/sites/site-access-log-viewer";
 import { SiteDirectoryPanel } from "@/components/sites/site-directory-panel";
 
@@ -61,20 +62,20 @@ interface SectionDef {
 }
 
 const SECTIONS: SectionDef[] = [
-  { id: "domains", label: "Domain Manager", types: ["website", "wordpress"] },
-  { id: "directory", label: "Directory", types: ["website", "wordpress"] },
-  { id: "url-rewrite", label: "URL rewrite", types: ["website", "wordpress"] },
-  { id: "default-document", label: "Default document", types: ["website", "wordpress"] },
-  { id: "config", label: "Config", types: ["website", "wordpress"] },
-  { id: "ssl", label: "SSL", types: ["website", "wordpress"] },
-  { id: "runtime", label: "PHP version", types: ["wordpress"] },
+  { id: "domains", label: "Domain Manager", types: ["website", "wordpress", "joomla"] },
+  { id: "directory", label: "Directory", types: ["website", "wordpress", "joomla"] },
+  { id: "url-rewrite", label: "URL rewrite", types: ["website", "wordpress", "joomla"] },
+  { id: "default-document", label: "Default document", types: ["website", "wordpress", "joomla"] },
+  { id: "config", label: "Config", types: ["website", "wordpress", "joomla"] },
+  { id: "ssl", label: "SSL", types: ["website", "wordpress", "joomla"] },
+  { id: "runtime", label: "PHP version", types: ["wordpress", "joomla"] },
   { id: "runtime", label: "Runtime", types: ["website"] },
-  { id: "nginx", label: "Web Server", types: ["website", "wordpress"] },
-  { id: "redirect", label: "Redirect", types: ["website", "wordpress"] },
-  { id: "reverse-proxy", label: "Reverse proxy", types: ["website", "wordpress"] },
-  { id: "hotlink", label: "Hotlink Protection", types: ["website", "wordpress"] },
-  { id: "maintenance", label: "Maintenance Mode", types: ["website", "wordpress"] },
-  { id: "logs", label: "Response log", types: ["website", "wordpress"] },
+  { id: "nginx", label: "Web Server", types: ["website", "wordpress", "joomla"] },
+  { id: "redirect", label: "Redirect", types: ["website", "wordpress", "joomla"] },
+  { id: "reverse-proxy", label: "Reverse proxy", types: ["website", "wordpress", "joomla"] },
+  { id: "hotlink", label: "Hotlink Protection", types: ["website", "wordpress", "joomla"] },
+  { id: "maintenance", label: "Maintenance Mode", types: ["website", "wordpress", "joomla"] },
+  { id: "logs", label: "Response log", types: ["website", "wordpress", "joomla"] },
 ];
 
 function sectionsForType(siteType: SiteType): SectionDef[] {
@@ -161,6 +162,9 @@ export function SiteModificationModal({
       if (siteType === "wordpress") {
         const opts = await wordpressApi.options();
         setPhpVersions(opts.php_versions);
+      } else if (siteType === "joomla") {
+        const opts = await joomlaApi.options();
+        setPhpVersions(opts.php_versions);
       } else {
         const rtOpts = await websitesApi.options();
         const current = rtOpts.runtimes.find((r) => r.runtime === mod.runtime);
@@ -199,12 +203,12 @@ export function SiteModificationModal({
           activeSection === "config" || (activeSection === "nginx" && siteType === "website")
             ? vhostConfig
             : undefined,
-        nginx_config: activeSection === "nginx" && siteType === "wordpress" ? nginxConfig : undefined,
+        nginx_config: activeSection === "nginx" && (siteType === "wordpress" || siteType === "joomla") ? nginxConfig : undefined,
         ssl_enabled: activeSection === "ssl" ? sslEnabled : undefined,
-        php_version: siteType === "wordpress" && activeSection === "runtime" ? runtimeVersion : undefined,
+        php_version: (siteType === "wordpress" || siteType === "joomla") && activeSection === "runtime" ? runtimeVersion : undefined,
         runtime_version: siteType === "website" && activeSection === "runtime" ? runtimeVersion : undefined,
         php_extensions:
-          activeSection === "runtime" && (siteType === "wordpress" || data?.runtime === "php")
+          activeSection === "runtime" && (siteType === "wordpress" || siteType === "joomla" || data?.runtime === "php")
             ? phpExtensions
             : undefined,
       };
@@ -569,9 +573,9 @@ export function SiteModificationModal({
       }
 
       case "runtime": {
-        const versions = siteType === "wordpress" ? phpVersions : websiteRuntimeVersions;
+        const versions = (siteType === "wordpress" || siteType === "joomla") ? phpVersions : websiteRuntimeVersions;
         const label =
-          siteType === "wordpress"
+          (siteType === "wordpress" || siteType === "joomla")
             ? "Versión PHP"
             : data.runtime === "php"
               ? "Versión PHP"
@@ -598,7 +602,7 @@ export function SiteModificationModal({
           );
         }
 
-        const phpApplies = siteType === "wordpress" || data.runtime === "php";
+        const phpApplies = siteType === "wordpress" || siteType === "joomla" || data.runtime === "php";
         const extensionCatalog = data.php_extensions_available ?? [];
         const groupedExtensions = extensionCatalog.reduce<Record<string, PhpExtensionOption[]>>(
           (acc, ext) => {
@@ -693,12 +697,12 @@ export function SiteModificationModal({
         return (
           <div className="space-y-4">
             <Label>
-              {siteType === "wordpress" ? "nginx/default.conf" : "docker-compose.yml (Traefik routing)"}
+              {(siteType === "wordpress" || siteType === "joomla") ? "nginx/default.conf" : "docker-compose.yml (Traefik routing)"}
             </Label>
             <Textarea
-              value={siteType === "wordpress" ? nginxConfig : vhostConfig}
+              value={(siteType === "wordpress" || siteType === "joomla") ? nginxConfig : vhostConfig}
               onChange={(e) =>
-                siteType === "wordpress" ? setNginxConfig(e.target.value) : setVhostConfig(e.target.value)
+                (siteType === "wordpress" || siteType === "joomla") ? setNginxConfig(e.target.value) : setVhostConfig(e.target.value)
               }
               className="min-h-[360px]"
             />

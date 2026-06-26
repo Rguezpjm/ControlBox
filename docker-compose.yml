@@ -176,7 +176,11 @@ services:
       DATABASE_BACKUPS_PATH: /var/lib/controlbox/backups/databases
       BACKUPS_BASE_PATH: /var/lib/controlbox/backups
       MYSQL_HOST: mysql
+      PUREFTPD_HOST: pureftpd
+      PUREFTPD_LOG_PATH: /var/log/pure-ftpd/transfer.log
       DOCKER_HOST: tcp://docker-socket-proxy:2375
+      HOST_PROC: /host/proc
+      HOST_ROOT: /host/root
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
     command: ["celery", "-A", "controlbox.shared.infrastructure.celery.app:celery_app", "worker", "--loglevel=info", "--concurrency=2"]
@@ -184,6 +188,10 @@ services:
       - sites_data:/var/lib/controlbox/sites
       - database_backups:/var/lib/controlbox/backups/databases
       - backups_data:/var/lib/controlbox/backups
+      - pureftpd_logs:/var/log/pure-ftpd
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
     depends_on:
       docker-socket-proxy:
         condition: service_started

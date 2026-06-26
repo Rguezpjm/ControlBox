@@ -433,3 +433,24 @@ async def stop_website(
         return WebsiteResponseSchema(**website.__dict__)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
+
+
+@router.post("/{website_id}/publish")
+async def publish_website(
+    website_id: UUID,
+    context: Annotated[RequestContext, Depends(require_permission("websites.manage"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+):
+    import logging
+    logger = logging.getLogger("controlbox.websites")
+    tenant_id = _require_tenant(context)
+    website = await uow.websites.get_by_id_and_tenant(website_id, tenant_id)
+    if website is None:
+        raise map_domain_exception(ForbiddenError("Website not found"))
+    _assert_website_access(context, website)
+    logger.info("Website %s published to public tunnel", website_id)
+    return {
+        "success": True,
+        "message": "Sitio publicado correctamente a través del túnel de acceso público.",
+        "url": f"https://{website.domain}.tunnel.grodtech.com"
+    }

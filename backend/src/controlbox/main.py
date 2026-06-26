@@ -23,6 +23,8 @@ from controlbox.modules.monitoring.infrastructure.broadcaster import MonitoringB
 from controlbox.modules.monitoring.infrastructure.service import MonitoringCollectorTask
 from controlbox.modules.mail.api.router import router as mail_router
 from controlbox.modules.wordpress.api.router import router as wordpress_router
+from controlbox.modules.joomla.api.router import router as joomla_router
+from controlbox.modules.streaming.api.router import router as streaming_router
 from controlbox.modules.team_members.api.router import router as team_router
 from controlbox.modules.staging_sites.api.router import router as staging_router
 from controlbox.modules.platform.api.router import router as platform_router
@@ -221,6 +223,8 @@ def create_app() -> FastAPI:
     app.include_router(monitoring_router, prefix=settings.app_api_prefix)
     app.include_router(security_router, prefix=settings.app_api_prefix)
     app.include_router(wordpress_router, prefix=settings.app_api_prefix)
+    app.include_router(joomla_router, prefix=settings.app_api_prefix)
+    app.include_router(streaming_router, prefix=settings.app_api_prefix)
     app.include_router(team_router, prefix=settings.app_api_prefix)
     app.include_router(staging_router, prefix=settings.app_api_prefix)
     app.include_router(platform_router, prefix=settings.app_api_prefix)

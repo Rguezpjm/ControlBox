@@ -73,11 +73,13 @@ class FtpServiceManager:
     def _compose_base_cmd(self) -> list[str]:
         install_dir = self._install_dir()
         env_file = self._env_file()
+        if env_file.is_file():
+            repair_celery_redis_urls(env_file)
         cmd = [
             "docker",
             "compose",
             "--env-file",
-            str(env_file),
+            str(env_file) if env_file.is_file() else "/dev/null",
             "-f",
             str(install_dir / "docker-compose.yml"),
         ]
@@ -246,7 +248,9 @@ class FtpServiceManager:
     async def get_config(self) -> FtpServiceConfigView:
         compose = self._install_dir() / "docker-compose.yml"
         env_file = self._env_file()
-        can_manage = compose.is_file() and env_file.is_file()
+        compose_ok = compose.is_file()
+        env_ok = env_file.is_file()
+        can_manage = compose_ok and env_ok
 
         enabled = self._read_env_value("PUREFTPD_ENABLED", "false").lower() == "true"
         protocol = self._read_env_value("PUREFTPD_PROTOCOL", "ftp").lower()
@@ -267,6 +271,13 @@ class FtpServiceManager:
 
         message = ""
         if not can_manage:
+            missing = []
+            if not compose_ok:
+                missing.append("docker-compose.yml")
+            if not env_ok:
+                missing.append("platform.env")
+            parts = ", ".join(missing)
+            logger.warning("FTP get_config: missing files at %s: %s", self._install_dir(), parts)
             message = "Gestión FTP no disponible desde este entorno (requiere instalación en VPS)."
         elif not enabled:
             message = "Servicio FTP deshabilitado. Actívelo abajo para crear cuentas."

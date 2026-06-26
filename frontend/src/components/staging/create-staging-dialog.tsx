@@ -24,6 +24,7 @@ import { ApiError } from "@/lib/api-client";
 import { stagingApi } from "@/lib/staging";
 import { wordpressApi, type WordPressSite } from "@/lib/wordpress";
 import { websitesApi, type Website } from "@/lib/websites";
+import { joomlaApi, type JoomlaSite } from "@/lib/joomla";
 
 interface CreateStagingDialogProps {
   open: boolean;
@@ -34,28 +35,31 @@ interface CreateStagingDialogProps {
 export function CreateStagingDialog({ open, onOpenChange, onCreated }: CreateStagingDialogProps) {
   const [websites, setWebsites] = useState<Website[]>([]);
   const [wpSites, setWpSites] = useState<WordPressSite[]>([]);
+  const [joomlaSites, setJoomlaSites] = useState<JoomlaSite[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sourceType, setSourceType] = useState<"website" | "wordpress">("wordpress");
+  const [sourceType, setSourceType] = useState<"website" | "wordpress" | "joomla">("wordpress");
   const [sourceId, setSourceId] = useState("");
   const [domainMode, setDomainMode] = useState<"subdomain" | "random">("subdomain");
   const [name, setName] = useState("");
 
   useEffect(() => {
     if (open) {
-      Promise.all([websitesApi.list(), wordpressApi.list()])
-        .then(([w, wp]) => {
+      Promise.all([websitesApi.list(), wordpressApi.list(), joomlaApi.list()])
+        .then(([w, wp, jm]) => {
           setWebsites(w.filter((s) => s.status === "running"));
           setWpSites(wp.filter((s) => s.status === "running" && !s.is_staging));
+          setJoomlaSites(jm.filter((s) => s.status === "running" && !s.is_staging));
         })
         .catch(() => {
           setWebsites([]);
           setWpSites([]);
+          setJoomlaSites([]);
         });
     }
   }, [open]);
 
-  const sources = sourceType === "wordpress" ? wpSites : websites;
+  const sources = sourceType === "wordpress" ? wpSites : (sourceType === "joomla" ? joomlaSites : websites);
 
   useEffect(() => {
     if (sources.length > 0) setSourceId(sources[0].id);
@@ -96,16 +100,18 @@ export function CreateStagingDialog({ open, onOpenChange, onCreated }: CreateSta
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label>Source Type</Label>
-            <Select value={sourceType} onValueChange={(v) => setSourceType(v as "website" | "wordpress")}>
+            <Select value={sourceType} onValueChange={(v) => setSourceType(v as "website" | "wordpress" | "joomla")}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="wordpress">WordPress</SelectItem>
+                <SelectItem value="joomla">Joomla</SelectItem>
                 <SelectItem value="website">Website</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
           <div className="space-y-2">
             <Label>Production Site</Label>
             <Select value={sourceId} onValueChange={setSourceId}>

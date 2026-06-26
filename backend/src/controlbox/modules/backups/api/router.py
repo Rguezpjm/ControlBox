@@ -1,7 +1,10 @@
+import os
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
+from controlbox.config.settings import get_settings
 
 from controlbox.modules.backups.api.schemas import (
     BackupDestinationSchema,
@@ -400,3 +403,46 @@ async def download_job(
     job = await GetBackupJobHandler(uow).handle(GetBackupJobQuery(tenant_id=tenant_id, job_id=job_id))
     url = await GetBackupDownloadUrlHandler(uow).handle(tenant_id, job_id)
     return BackupDownloadSchema(download_url=url, storage_path=job.storage_path)
+
+
+@router.get("/browse-local")
+async def browse_local(
+    context: Annotated[RequestContext, Depends(get_current_context)],
+    _: Annotated[None, Depends(require_permission("backups.manage"))],
+    path: str = Query(default=""),
+):
+    _require_tenant(context)
+    settings = get_settings()
+    
+    if not path:
+        path = settings.backups_base_path
+        
+    path_obj = Path(path).resolve()
+    
+    if not path_obj.exists():
+        try:
+            path_obj.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Path '{path}' does not exist and cannot be created")
+            
+    if not path_obj.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path '{path}' is not a directory")
+        
+    subdirs = []
+    try:
+        for entry in os.scandir(path_obj):
+            if entry.is_dir():
+                subdirs.append(entry.name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading directory: {str(e)}")
+        
+    subdirs.sort()
+    
+    parent_path = str(path_obj.parent) if path_obj != path_obj.parent else str(path_obj)
+    
+    return {
+        "current_path": path_obj.as_posix(),
+        "parent_path": Path(parent_path).as_posix(),
+        "directories": subdirs
+    }
+

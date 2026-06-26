@@ -45,6 +45,7 @@ PHP_EXTENSION_CATALOG: list[dict[str, str]] = [
     {"id": "gmp", "label": "gmp", "group": "Utilities"},
     {"id": "calendar", "label": "calendar", "group": "Utilities"},
     {"id": "mbstring", "label": "mbstring", "group": "Utilities"},
+    {"id": "curl", "label": "curl", "group": "Network"},
     {"id": "soap", "label": "soap", "group": "Network"},
     {"id": "sockets", "label": "sockets", "group": "Network"},
     {"id": "ldap", "label": "ldap", "group": "Network"},

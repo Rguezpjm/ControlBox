@@ -31,12 +31,11 @@ function EmailContent() {
   const [overview, setOverview] = useState<MailOverview | null>(null);
   const [service, setService] = useState<TenantMailService | null>(null);
   const [accounts, setAccounts] = useState<MailAccount[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [createTenantOpen, setCreateTenantOpen] = useState(false);
   const [createMailboxOpen, setCreateMailboxOpen] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [overviewData, serviceData] = await Promise.all([
         mailApi.overview(),
@@ -56,7 +55,7 @@ function EmailContent() {
       setService(null);
       setAccounts([]);
     } finally {
-      setLoading(false);
+      setInitialLoad(false);
     }
   }, []);
 
@@ -70,7 +69,7 @@ function EmailContent() {
     await load();
   }
 
-  if (loading) return <TableSkeleton />;
+  if (initialLoad) return <TableSkeleton />;
 
   if (!service) {
     return (

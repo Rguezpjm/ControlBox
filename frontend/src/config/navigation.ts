@@ -14,6 +14,7 @@ import {
   Blocks,
   Users,
   GitBranch,
+  Video,
   type LucideIcon,
 } from "lucide-react";
 import type { TranslationKey } from "@/lib/i18n/translations";
@@ -32,6 +33,7 @@ export const mainNav: NavItem[] = [
   { id: "dashboard", titleKey: "nav.dashboard", href: "/", icon: LayoutDashboard, locked: true, requiredPermissions: ["platform.read"] },
   { id: "websites", titleKey: "nav.websites", href: "/websites", icon: Globe, badgeKey: "websites", requiredPermissions: ["websites.read"] },
   { id: "wordpress", titleKey: "nav.wordpress", href: "/wordpress", icon: Blocks, requiredPermissions: ["wordpress.read"] },
+  { id: "joomla", titleKey: "nav.joomla", href: "/joomla", icon: Blocks, requiredPermissions: ["joomla.read"] },
   { id: "staging", titleKey: "nav.staging", href: "/staging", icon: GitBranch, requiredPermissions: ["websites.read", "wordpress.read"] },
   { id: "domains", titleKey: "nav.domains", href: "/domains", icon: Link2, requiredPermissions: ["dns.read"] },
   { id: "dns", titleKey: "nav.dns", href: "/dns", icon: Server, requiredPermissions: ["dns.read"] },
@@ -40,6 +42,7 @@ export const mainNav: NavItem[] = [
   { id: "files", titleKey: "nav.files", href: "/files", icon: Files, requiredPermissions: ["files.read"] },
   { id: "ftp", titleKey: "nav.ftp", href: "/ftp", icon: FolderOpen, requiredPermissions: ["ftp.read"] },
   { id: "backups", titleKey: "nav.backups", href: "/backups", icon: Archive, requiredPermissions: ["backups.read"] },
+  { id: "streaming", titleKey: "nav.streaming", href: "/streaming", icon: Video, requiredPermissions: ["streaming.read"] },
   { id: "monitoring", titleKey: "nav.monitoring", href: "/monitoring", icon: Activity, requiredPermissions: ["monitoring.read"] },
   { id: "security", titleKey: "nav.security", href: "/security", icon: Shield, requiredPermissions: ["security.read"] },
   { id: "team", titleKey: "nav.team", href: "/sub-accounts", icon: Users, requiredPermissions: ["team_members.read"] },

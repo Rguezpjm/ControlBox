@@ -38,6 +38,10 @@ from controlbox.modules.wordpress.infrastructure.repositories import (
     SqlAlchemyWordPressBackupRepository,
     SqlAlchemyWordPressSiteRepository,
 )
+from controlbox.modules.joomla.infrastructure.repositories import (
+    SqlAlchemyJoomlaBackupRepository,
+    SqlAlchemyJoomlaSiteRepository,
+)
 from controlbox.modules.staging_sites.infrastructure.repositories import SqlAlchemyStagingSiteRepository
 from controlbox.modules.platform.infrastructure.repositories import (
     SqlAlchemyResourceAlertRepository,
@@ -53,6 +57,14 @@ from controlbox.modules.security.infrastructure.repositories import (
     SqlAlchemyTrustedDeviceRepository,
     SqlAlchemyUserMfaRepository,
     SqlAlchemyWebAuthnCredentialRepository,
+)
+from controlbox.modules.streaming.infrastructure.repositories import (
+    SqlAlchemyStreamingSourceRepository,
+    SqlAlchemyStreamingCategoryRepository,
+    SqlAlchemyStreamingChannelRepository,
+    SqlAlchemyStreamingClientRepository,
+    SqlAlchemyStreamingConnectionRepository,
+    SqlAlchemyEpgProgramRepository,
 )
 from controlbox.shared.application.unit_of_work import UnitOfWork
 
@@ -89,12 +101,20 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
         self.backup_jobs = SqlAlchemyBackupJobRepository(self._session)
         self.wordpress_sites = SqlAlchemyWordPressSiteRepository(self._session)
         self.wordpress_backups = SqlAlchemyWordPressBackupRepository(self._session)
+        self.joomla_sites = SqlAlchemyJoomlaSiteRepository(self._session)
+        self.joomla_backups = SqlAlchemyJoomlaBackupRepository(self._session)
         self.staging_sites = SqlAlchemyStagingSiteRepository(self._session)
         self.tenant_platform_settings = SqlAlchemyTenantPlatformSettingsRepository(self._session)
         self.resource_alerts = SqlAlchemyResourceAlertRepository(self._session)
         self.team_roles = SqlAlchemyTeamRoleRepository(self._session)
         self.team_members = SqlAlchemyTeamMemberRepository(self._session)
         self.team_invitations = SqlAlchemyTeamInvitationRepository(self._session)
+        self.streaming_sources = SqlAlchemyStreamingSourceRepository(self._session)
+        self.streaming_categories = SqlAlchemyStreamingCategoryRepository(self._session)
+        self.streaming_channels = SqlAlchemyStreamingChannelRepository(self._session)
+        self.streaming_clients = SqlAlchemyStreamingClientRepository(self._session)
+        self.streaming_connections = SqlAlchemyStreamingConnectionRepository(self._session)
+        self.epg_programs = SqlAlchemyEpgProgramRepository(self._session)
         self.user_mfa = SqlAlchemyUserMfaRepository(self._session)
         self.webauthn_credentials = SqlAlchemyWebAuthnCredentialRepository(self._session)
         self.trusted_devices = SqlAlchemyTrustedDeviceRepository(self._session)

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { FolderOpen, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { backupsApi, type BackupDestination } from "@/lib/backups";
 import { ApiError } from "@/lib/api-client";
+import { getPanelSettings } from "@/lib/platform";
+import { LocalDirectoryPickerDialog } from "./local-directory-picker-dialog";
 
 interface CreateDestinationDialogProps {
   open: boolean;
@@ -52,6 +54,23 @@ export function CreateDestinationDialog({
   const [accessKey, setAccessKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
   const [localPath, setLocalPath] = useState("");
+  const [defaultPath, setDefaultPath] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      getPanelSettings()
+        .then((settings) => {
+          if (settings.default_backup_folder) {
+            setDefaultPath(settings.default_backup_folder);
+            setLocalPath((prev) => prev || settings.default_backup_folder);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load panel settings", err);
+        });
+    }
+  }, [open]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -71,6 +90,7 @@ export function CreateDestinationDialog({
       });
       onOpenChange(false);
       setName("");
+      setLocalPath("");
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create destination");
@@ -107,7 +127,23 @@ export function CreateDestinationDialog({
           {destType === "local" ? (
             <div className="space-y-2">
               <Label>Local path (optional)</Label>
-              <Input value={localPath} onChange={(e) => setLocalPath(e.target.value)} placeholder="/var/lib/controlbox/backups" />
+              <div className="flex gap-2">
+                <Input
+                  value={localPath}
+                  onChange={(e) => setLocalPath(e.target.value)}
+                  placeholder={defaultPath || "/var/lib/controlbox/backups"}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Browse local folders"
+                  onClick={() => setPickerOpen(true)}
+                >
+                  <FolderOpen className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ) : (
             <>
@@ -154,6 +190,13 @@ export function CreateDestinationDialog({
           </DialogFooter>
         </form>
       </DialogContent>
+      <LocalDirectoryPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        initialPath={localPath || defaultPath}
+        onSelect={setLocalPath}
+      />
     </Dialog>
   );
 }
+

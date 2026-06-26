@@ -301,6 +301,15 @@ class WordPressProvisioner:
         compose_path = site_path / "docker-compose.yml"
         await self._exec("docker", "compose", "-f", str(compose_path), "up", "-d", cwd=site_path)
 
+        # Esperar a que el contenedor de PHP termine de copiar los archivos de WordPress al volumen.
+        # El entrypoint oficial de wordpress copia los archivos al iniciar si no existen en el volumen.
+        wp_settings = site_path / "wordpress" / "wp-settings.php"
+        for _ in range(60):  # Esperar hasta 30 segundos
+            if wp_settings.exists() and wp_settings.stat().st_size > 0:
+                await asyncio.sleep(1)  # Margen de seguridad para asegurar la escritura completa
+                break
+            await asyncio.sleep(0.5)
+
         await self._run_wp_cli(compose_path, "wp", "core", "download", "--force")
         await self._run_wp_cli(
             compose_path,

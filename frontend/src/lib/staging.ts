@@ -35,12 +35,15 @@ export interface StagingSite {
   task_id: string | null;
   created_at: string;
   updated_at: string;
+  cms_version: string | null;
+  migration_progress: number | null;
+  migration_status: string | null;
 }
 
 export type SyncType = "files" | "database" | "full";
 
 export interface CreateStagingPayload {
-  source_type: "website" | "wordpress";
+  source_type: "website" | "wordpress" | "joomla";
   source_id: string;
   domain_mode?: "subdomain" | "random";
   name?: string;
@@ -55,6 +58,10 @@ export interface UpdateStagingSecurityPayload {
   temp_access_enabled?: boolean;
   temp_access_hours?: number;
 }
+
+import { ensureCsrfToken, getAuthHeaders } from "@/lib/auth";
+import { API_BASE } from "@/lib/api-base";
+import { ApiError } from "@/lib/api-client";
 
 export const stagingApi = {
   list: (sourceType?: string, sourceId?: string) => {
@@ -94,4 +101,30 @@ export const stagingApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+  changeVersion: (id: string, cms_version: string, php_version: string) =>
+    request<StagingSite>(`/api/v1/staging/${id}/change-version`, {
+      method: "POST",
+      body: JSON.stringify({ cms_version, php_version }),
+    }),
+  importBlogger: async (id: string, file: File) => {
+    await ensureCsrfToken();
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/api/v1/staging/${id}/import-blogger`, {
+      method: "POST",
+      credentials: "include",
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new ApiError(err.error || "Blogger import failed", res.status);
+    }
+    return res.json() as Promise<StagingSite>;
+  },
+  migrateJoomlaToWp: (id: string) =>
+    request<StagingSite>(`/api/v1/staging/${id}/migrate-joomla-to-wp`, {
+      method: "POST",
+    }),
 };
+

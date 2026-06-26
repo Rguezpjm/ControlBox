@@ -173,6 +173,13 @@ export function ManageFtpAccountDialog({
           </div>
         </DialogHeader>
 
+        {account.status === "error" && account.error_message && (
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
+            <p className="font-semibold mb-1">Provisioning Error:</p>
+            <p className="font-mono break-all">{account.error_message}</p>
+          </div>
+        )}
+
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {newPassword && (

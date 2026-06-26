@@ -27,6 +27,7 @@ class UpdateTenantMailServiceRequest(BaseModel):
 
 class VerifyTenantMailServiceRequest(BaseModel):
     admin_password: str | None = None
+    force: bool = False
 
 
 class TenantMailServiceSchema(BaseModel):

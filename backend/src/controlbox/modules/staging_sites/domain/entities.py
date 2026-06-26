@@ -10,6 +10,7 @@ from controlbox.shared.domain.base import Entity
 class StagingSourceType(StrEnum):
     WEBSITE = "website"
     WORDPRESS = "wordpress"
+    JOOMLA = "joomla"
 
 
 class StagingStackType(StrEnum):
@@ -18,6 +19,8 @@ class StagingStackType(StrEnum):
     NODEJS = "nodejs"
     PYTHON = "python"
     WORDPRESS = "wordpress"
+    JOOMLA = "joomla"
+
 
 
 class StagingStatus(StrEnum):

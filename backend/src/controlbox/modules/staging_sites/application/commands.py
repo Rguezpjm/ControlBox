@@ -67,3 +67,28 @@ class RunStagingSyncCommand:
     staging_id: UUID
     sync_type: str
     direction: str
+
+
+@dataclass(frozen=True)
+class ChangeStagingVersionCommand:
+    staging_id: UUID
+    tenant_id: UUID
+    user_id: UUID
+    cms_version: str
+    php_version: str
+
+
+@dataclass(frozen=True)
+class ImportStagingBloggerCommand:
+    staging_id: UUID
+    tenant_id: UUID
+    user_id: UUID
+    xml_file_path: str
+
+
+@dataclass(frozen=True)
+class MigrateJoomlaToWpCommand:
+    staging_id: UUID
+    tenant_id: UUID
+    user_id: UUID
+

@@ -148,7 +148,7 @@ class PureFtpdProvisioner:
             env=docker_subprocess_env(self._settings),
         )
         stdout, stderr = await proc.communicate(
-            input=password.encode() if password else None
+            input=f"{password}\n{password}\n".encode() if password else None
         )
         if proc.returncode != 0:
             message = stderr.decode().strip() or stdout.decode().strip() or f"pure-pw {action} failed"

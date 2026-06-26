@@ -217,23 +217,70 @@ export default function SecurityPage() {
       </div>
 
       {mfaSetup && (
-        <Card>
+        <Card className="border-primary/20 shadow-md">
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Complete MFA Setup</CardTitle>
+            <CardTitle className="text-lg font-semibold text-primary">Complete MFA Setup</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground break-all">{mfaSetup.otpauth_url}</p>
-            <p className="text-xs text-muted-foreground">
-              Backup codes: {mfaSetup.backup_codes.join(", ")}
-            </p>
-            <div className="flex gap-2">
-              <Input
-                placeholder="000000"
-                value={mfaCode}
-                onChange={(e) => setMfaCode(e.target.value)}
-                maxLength={6}
-              />
-              <Button onClick={handleMfaEnable}>Verify & Enable</Button>
+          <CardContent className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="flex flex-col items-center justify-center p-6 border rounded-xl bg-muted/30">
+                <div className="bg-white p-3 rounded-lg shadow-sm border border-muted">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+                      mfaSetup.otpauth_url
+                    )}`}
+                    alt="MFA QR Code"
+                    className="w-48 h-48 shrink-0 select-none"
+                    loading="lazy"
+                  />
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground text-center max-w-[220px]">
+                  Escanea este código QR con tu aplicación de autenticación (Google, Microsoft, etc.)
+                </p>
+              </div>
+
+              <div className="space-y-4 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Manual Secret Key
+                    </Label>
+                    <p className="font-mono text-sm break-all select-all bg-muted p-2 rounded-lg border">
+                      {mfaSetup.secret}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Backup Codes (Guardar en un lugar seguro)
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2 font-mono text-xs text-muted-foreground bg-muted p-2 rounded-lg border">
+                      {mfaSetup.backup_codes.map((code) => (
+                        <div key={code} className="bg-background px-2 py-1 rounded text-center border shadow-xs select-all">
+                          {code}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 border-t pt-4">
+                  <Label htmlFor="mfa-verification-code">Verification Code</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="mfa-verification-code"
+                      placeholder="000000"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      maxLength={6}
+                      className="font-mono text-center text-lg tracking-widest"
+                    />
+                    <Button onClick={handleMfaEnable} className="px-6">
+                      Verify & Enable
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>

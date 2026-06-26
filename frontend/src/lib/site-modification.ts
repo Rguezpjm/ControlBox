@@ -1,6 +1,6 @@
 import { request } from "@/lib/api-client";
 
-export type SiteType = "website" | "wordpress";
+export type SiteType = "website" | "wordpress" | "joomla";
 
 export interface SiteDomain {
   domain: string;
@@ -120,9 +120,13 @@ export interface UpdateSiteModificationPayload {
 }
 
 function basePath(siteType: SiteType, siteId: string) {
-  return siteType === "wordpress"
-    ? `/api/v1/wordpress/${siteId}`
-    : `/api/v1/websites/${siteId}`;
+  if (siteType === "wordpress") {
+    return `/api/v1/wordpress/${siteId}`;
+  }
+  if (siteType === "joomla") {
+    return `/api/v1/joomla/${siteId}`;
+  }
+  return `/api/v1/websites/${siteId}`;
 }
 
 export const siteModificationApi = {

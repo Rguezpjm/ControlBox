@@ -50,3 +50,7 @@ class StagingSiteResponse:
     task_id: str | None
     created_at: datetime
     updated_at: datetime
+    cms_version: str | None = None
+    migration_progress: int | None = None
+    migration_status: str | None = None
+

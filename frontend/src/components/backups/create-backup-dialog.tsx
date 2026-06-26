@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +22,9 @@ import {
 } from "@/components/ui/select";
 import { backupsApi, type BackupDestination } from "@/lib/backups";
 import { ApiError } from "@/lib/api-client";
+import { websitesApi, type Website } from "@/lib/websites";
+import { databasesApi, type ManagedDatabase } from "@/lib/databases";
+import { dnsApi, type DnsZone } from "@/lib/dns";
 
 interface CreateBackupDialogProps {
   open: boolean;
@@ -51,10 +54,47 @@ export function CreateBackupDialog({
   const [destinationId, setDestinationId] = useState("");
   const [maxVersions, setMaxVersions] = useState("10");
 
+  const [websites, setWebsites] = useState<Website[]>([]);
+  const [databases, setDatabases] = useState<ManagedDatabase[]>([]);
+  const [dnsZones, setDnsZones] = useState<DnsZone[]>([]);
+  const [loadingResources, setLoadingResources] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    
+    async function loadResources() {
+      setLoadingResources(true);
+      try {
+        const [webs, dbs, zones] = await Promise.all([
+          websitesApi.list().catch(() => []),
+          databasesApi.list().catch(() => []),
+          dnsApi.listZones().catch(() => []),
+        ]);
+        setWebsites(webs);
+        setDatabases(dbs);
+        setDnsZones(zones);
+      } catch (err) {
+        console.error("Failed to load resources for backup dialog", err);
+      } finally {
+        setLoadingResources(false);
+      }
+    }
+    
+    loadResources();
+  }, [open]);
+
+  useEffect(() => {
+    setResourceId("");
+  }, [sourceType]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!destinationId) {
       setError("Select a destination");
+      return;
+    }
+    if ((sourceType === "websites" || sourceType === "databases") && !resourceId) {
+      setError(`Please select a ${sourceType === "websites" ? "website" : "database"}`);
       return;
     }
     setLoading(true);
@@ -63,7 +103,7 @@ export function CreateBackupDialog({
       await backupsApi.createJob({
         name: name || undefined,
         source_type: sourceType,
-        resource_id: resourceId || undefined,
+        resource_id: (resourceId && resourceId !== "all-zones") ? resourceId : undefined,
         destination_id: destinationId,
         max_versions: parseInt(maxVersions, 10) || 10,
       });
@@ -101,15 +141,60 @@ export function CreateBackupDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Resource ID (optional)</Label>
-            <Input
-              value={resourceId}
-              onChange={(e) => setResourceId(e.target.value)}
-              placeholder="Leave empty for all resources"
-              className="font-mono text-xs"
-            />
-          </div>
+          {sourceType !== "configurations" && (
+            <div className="space-y-2">
+              <Label>
+                Resource
+                {sourceType === "dns" && " (optional)"}
+              </Label>
+              {loadingResources ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading resources…
+                </div>
+              ) : sourceType === "websites" ? (
+                <Select value={resourceId} onValueChange={setResourceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select website" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {websites.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>
+                        {w.name} ({w.domain})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : sourceType === "databases" ? (
+                <Select value={resourceId} onValueChange={setResourceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select database" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {databases.map((db) => (
+                      <SelectItem key={db.id} value={db.id}>
+                        {db.name} ({db.engine})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : sourceType === "dns" ? (
+                <Select value={resourceId} onValueChange={setResourceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All DNS Zones" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all-zones">All DNS Zones (Default)</SelectItem>
+                    {dnsZones.map((z) => (
+                      <SelectItem key={z.id} value={z.id}>
+                        {z.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+            </div>
+          )}
           <div className="space-y-2">
             <Label>Destination</Label>
             <Select value={destinationId} onValueChange={setDestinationId}>
@@ -138,3 +223,4 @@ export function CreateBackupDialog({
     </Dialog>
   );
 }
+

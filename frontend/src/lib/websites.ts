@@ -78,6 +78,10 @@ export const websitesApi = {
     authRequest<Website>(`/api/v1/websites/${id}/start`, { method: "POST" }),
   stop: (id: string) =>
     authRequest<Website>(`/api/v1/websites/${id}/stop`, { method: "POST" }),
+  publish: (id: string) =>
+    authRequest<{ success: boolean; message: string; url: string }>(`/api/v1/websites/${id}/publish`, {
+      method: "POST",
+    }),
 };
 
 export { ApiError };

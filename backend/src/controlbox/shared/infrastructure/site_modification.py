@@ -23,12 +23,18 @@ from controlbox.modules.wordpress.infrastructure.provisioner import (
     WordPressProvisioner,
     _render_compose as render_wordpress_compose,
 )
+from controlbox.modules.joomla.domain.entities import JoomlaSite, JoomlaSslStatus
+from controlbox.modules.joomla.infrastructure.provisioner import (
+    JoomlaProvisioner,
+    _render_compose as render_joomla_compose,
+)
 from controlbox.shared.infrastructure.custom_ssl import CustomSslInfo, CustomSslManager
 from controlbox.shared.infrastructure.docker.env import docker_subprocess_env
 from controlbox.shared.infrastructure.site_directory_config import (
     list_running_directory_options,
     patch_wordpress_compose_bindings,
     render_wordpress_nginx,
+    render_joomla_nginx,
     validate_site_directory,
     write_directory_security_files,
     write_php_htaccess_security,
@@ -102,7 +108,11 @@ class SiteModificationService:
         self._ssl = CustomSslManager(settings)
 
     def _router_prefix(self, site_type: str) -> str:
-        return "wp-" if site_type == "wordpress" else "site-"
+        if site_type == "wordpress":
+            return "wp-"
+        if site_type == "joomla":
+            return "jm-"
+        return "site-"
 
     def _apply_ssl_settings(
         self,
@@ -251,6 +261,63 @@ class SiteModificationService:
                 pass
         return rendered
 
+    def _joomla_path(self, site: JoomlaSite) -> Path:
+        if site.site_path:
+            stored = Path(site.site_path)
+            if stored.is_dir():
+                return stored
+        if site.tenant_id:
+            fallback = JoomlaProvisioner(self._settings).get_site_path(site.tenant_id, site.id)
+            if fallback.is_dir():
+                return fallback
+            return fallback
+        return Path(site.site_path) if site.site_path else Path("")
+
+    def _ensure_joomla_nginx(self, site_path: Path, settings: dict[str, Any], document_root: str) -> str:
+        nginx_path = site_path / "nginx" / "default.conf"
+        if nginx_path.is_file():
+            content = nginx_path.read_text(encoding="utf-8", errors="replace")
+            if content.strip():
+                return content
+        site_directory = Path(document_root) if document_root else site_path / "joomla"
+        if not site_directory.is_dir():
+            site_directory = site_path / "joomla"
+        rendered = render_joomla_nginx(settings, site_directory)
+        if site_path.is_dir():
+            try:
+                nginx_path.parent.mkdir(parents=True, exist_ok=True)
+                nginx_path.write_text(rendered, encoding="utf-8")
+            except OSError:
+                pass
+        return rendered
+
+    def _ensure_joomla_compose(self, site: JoomlaSite, site_path: Path) -> str:
+        compose_path = site_path / "docker-compose.yml"
+        if compose_path.is_file():
+            content = compose_path.read_text(encoding="utf-8", errors="replace")
+            if content.strip():
+                return content
+        short = str(site.id).split("-")[0]
+        nginx_name = site.nginx_container_name or f"cb-jm-nginx-{short}"
+        php_name = site.php_container_name or f"cb-jm-php-{short}"
+        php_image = f"wordpress:php{site.php_version}-fpm"
+        rendered = render_joomla_compose(
+            nginx_name=nginx_name,
+            php_name=php_name,
+            php_image=php_image,
+            domain=site.domain,
+            router_name=f"jm-{short}",
+            ssl_enabled=site.ssl_enabled,
+            site_uid=1000,
+            site_gid=1000,
+        )
+        if site_path.is_dir():
+            try:
+                compose_path.write_text(rendered, encoding="utf-8")
+            except OSError:
+                pass
+        return rendered
+
     def _read_file(self, path: Path, default: str = "") -> str:
         if path.is_file():
             return path.read_text(encoding="utf-8", errors="replace")
@@ -375,6 +442,37 @@ RewriteRule . /index.php [L]
         compose_path = site_path / "docker-compose.yml"
         if compose_path.is_file():
             router_prefix = f"wp-{str(site.id).split('-')[0]}"
+            updated = patch_wordpress_compose_bindings(
+                compose_path.read_text(encoding="utf-8"),
+                settings.get("subdirectory_bindings") or [],
+                router_prefix,
+            )
+            compose_path.write_text(updated, encoding="utf-8")
+
+    def _apply_joomla_directory(self, site: JoomlaSite, settings: dict[str, Any]) -> None:
+        site_path = self._joomla_path(site)
+        if not site_path.is_dir():
+            return
+        site_directory = Path(settings.get("document_root") or str(site_path / "joomla"))
+        try:
+            site_directory = validate_site_directory(site_path, str(site_directory))
+        except ValueError:
+            site_directory = site_path / "joomla"
+        settings["document_root"] = str(site_directory)
+
+        write_directory_security_files(
+            site_path,
+            settings,
+            site_directory=site_directory,
+            mount_path=Path("/var/www/html"),
+        )
+        nginx_path = site_path / "nginx" / "default.conf"
+        nginx_path.parent.mkdir(parents=True, exist_ok=True)
+        nginx_path.write_text(render_joomla_nginx(settings, site_directory), encoding="utf-8")
+
+        compose_path = site_path / "docker-compose.yml"
+        if compose_path.is_file():
+            router_prefix = f"jm-{str(site.id).split('-')[0]}"
             updated = patch_wordpress_compose_bindings(
                 compose_path.read_text(encoding="utf-8"),
                 settings.get("subdirectory_bindings") or [],
@@ -865,3 +963,188 @@ RewriteRule . /index.php [L]
         domains = [d for d in settings.get("domains", []) if d.get("domain") != domain or d.get("primary")]
         settings["domains"] = domains
         return settings
+
+    async def get_joomla(self, site: JoomlaSite) -> SiteModificationView:
+        site_path = self._joomla_path(site)
+        document_root = str(site_path / "joomla")
+        settings = merge_settings(site.settings, site.domain, document_root)
+        if settings.get("document_root"):
+            document_root = str(settings["document_root"])
+        if not settings.get("url_rewrite"):
+            htaccess = self._read_file(Path(document_root) / ".htaccess", "")
+            settings["url_rewrite"] = htaccess if htaccess.strip() else ""
+        self._sync_logs_enabled(settings)
+        directory = self._directory_fields(
+            site_path,
+            document_root,
+            settings,
+            logs_enabled=bool(settings.get("logs_enabled", True)),
+            site_files_path=self._site_files_path(site.tenant_id, site_path),
+        )
+        compose = self._ensure_joomla_compose(site, site_path)
+        nginx = self._ensure_joomla_nginx(site_path, settings, document_root)
+        ssl_info = self._ssl.build_info("joomla", site.id, settings, site.domain)
+        return SiteModificationView(
+            site_type="joomla",
+            site_id=site.id,
+            name=site.name,
+            primary_domain=site.domain,
+            status=site.status.value,
+            created_at=site.created_at,
+            runtime="joomla",
+            runtime_version=None,
+            php_version=site.php_version,
+            php_extensions=normalize_extensions(settings.get("php_extensions")),
+            php_extensions_available=PHP_EXTENSION_CATALOG,
+            ssl_enabled=site.ssl_enabled,
+            ssl_status=site.ssl_status.value,
+            ssl_config=ssl_info,
+            document_root=document_root,
+            running_directory=directory["running_directory"],
+            running_directory_options=directory["running_directory_options"],
+            open_basedir_enabled=directory["open_basedir_enabled"],
+            logs_enabled=directory["logs_enabled"],
+            site_files_path=directory["site_files_path"],
+            site_path=directory["site_path"],
+            subdirectory_bindings=directory["subdirectory_bindings"],
+            settings=self._public_settings(settings),
+            vhost_config=compose,
+            nginx_config=nginx,
+            access_log=self._tail_log(site_path / "logs" / "access.log"),
+            error_log=self._tail_log(site_path / "logs" / "error.log"),
+        )
+
+    async def update_joomla(
+        self,
+        site: JoomlaSite,
+        *,
+        settings_patch: dict[str, Any] | None = None,
+        document_root: str | None = None,
+        logs_enabled: bool | None = None,
+        vhost_config: str | None = None,
+        nginx_config: str | None = None,
+        ssl_enabled: bool | None = None,
+        php_version: str | None = None,
+        php_extensions: list[str] | None = None,
+        ssl_provider: str | None = None,
+        ssl_certificate_pem: str | None = None,
+        ssl_private_key_pem: str | None = None,
+        ssl_force_https: bool | None = None,
+    ) -> SiteModificationView:
+        site_path = self._joomla_path(site)
+        settings = merge_settings(site.settings, site.domain, str(site_path / "joomla"))
+
+        if document_root is not None:
+            validated = self._resolve_document_root(site_path, document_root)
+            settings["document_root"] = str(validated)
+
+        if logs_enabled is not None:
+            settings["logs_enabled"] = logs_enabled
+
+        if settings_patch:
+            settings.update(settings_patch)
+            site.settings = settings
+            if "maintenance_mode" in settings_patch:
+                site.maintenance_mode = bool(settings_patch["maintenance_mode"])
+
+        try:
+            settings = self._apply_ssl_settings(
+                "joomla",
+                site.id,
+                site.domain,
+                settings,
+                ssl_enabled=ssl_enabled,
+                ssl_provider=ssl_provider,
+                ssl_certificate_pem=ssl_certificate_pem,
+                ssl_private_key_pem=ssl_private_key_pem,
+                ssl_force_https=ssl_force_https,
+            )
+            site.settings = settings
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        if ssl_enabled is not None:
+            site.ssl_enabled = ssl_enabled
+            if ssl_enabled:
+                site.ssl_status = JoomlaSslStatus.ACTIVE
+            else:
+                site.ssl_status = JoomlaSslStatus.PENDING
+
+        ssl_cfg = self._ssl.get_ssl_settings(settings)
+        if ssl_cfg.get("provider") == "custom" and ssl_enabled is not False:
+            site.ssl_enabled = True
+            site.ssl_status = JoomlaSslStatus.ACTIVE
+
+        if php_version:
+            site.php_version = php_version
+
+        php_effective_image: str | None = None
+        if php_version is not None or php_extensions is not None:
+            base_image = f"wordpress:php{site.php_version}-fpm"
+            exts = php_extensions if php_extensions is not None else settings.get("php_extensions")
+            php_effective_image = await self._resolve_php_image(
+                site_path,
+                base_image,
+                f"jm-{str(site.id).split('-')[0]}",
+                list(exts or []),
+                settings,
+            )
+            site.settings = settings
+
+        compose_path = site_path / "docker-compose.yml"
+        nginx_path = site_path / "nginx" / "default.conf"
+
+        if vhost_config is not None:
+            compose_path.write_text(vhost_config, encoding="utf-8")
+        elif settings_patch and settings.get("domains") and compose_path.is_file():
+            host_rule = self._traefik_host_rule(settings["domains"])
+            updated = self._patch_compose_hosts(compose_path.read_text(encoding="utf-8"), host_rule, "jm-")
+            compose_path.write_text(updated, encoding="utf-8")
+
+        self._patch_compose_for_ssl(compose_path, "joomla", settings, site.ssl_enabled)
+
+        if php_effective_image is not None and compose_path.is_file():
+            patched = self._patch_service_image(
+                compose_path.read_text(encoding="utf-8"), "php", php_effective_image
+            )
+            compose_path.write_text(patched, encoding="utf-8")
+
+        if nginx_config is not None:
+            nginx_path.write_text(nginx_config, encoding="utf-8")
+        elif settings.get("url_rewrite"):
+            try:
+                jm_root = Path(settings.get("document_root") or str(site_path / "joomla"))
+                jm_root.mkdir(parents=True, exist_ok=True)
+                (jm_root / ".htaccess").write_text(settings["url_rewrite"], encoding="utf-8")
+            except OSError:
+                pass
+            custom = site_path / "nginx" / "rewrite.conf"
+            custom.write_text(settings["url_rewrite"], encoding="utf-8")
+        else:
+            directory_touched = document_root is not None or logs_enabled is not None or (
+                settings_patch
+                and any(
+                    key in settings_patch
+                    for key in (
+                        "running_directory",
+                        "open_basedir_enabled",
+                        "logs_enabled",
+                        "limit_access_enabled",
+                        "limit_access_user",
+                        "limit_access_password",
+                        "subdirectory_bindings",
+                        "document_root",
+                    )
+                )
+            )
+            if directory_touched:
+                try:
+                    self._apply_joomla_directory(site, settings)
+                    site.settings = settings
+                except ValueError as exc:
+                    raise RuntimeError(str(exc)) from exc
+
+        if compose_path.is_file():
+            await self._exec_compose(compose_path, "up", "-d", "--force-recreate")
+
+        return await self.get_joomla(site)

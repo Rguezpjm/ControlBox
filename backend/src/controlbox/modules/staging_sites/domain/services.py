@@ -40,11 +40,12 @@ class StagingDomainService:
 
     def build_container_names(self, staging_id: UUID, stack_type: str) -> tuple[str, str | None, str | None]:
         short = staging_id.hex[:12]
-        if stack_type == "wordpress":
+        if stack_type in ("wordpress", "joomla"):
+            prefix = "wp" if stack_type == "wordpress" else "jm"
             return (
-                f"cb-stg-wp-{short}",
-                f"cb-stg-nginx-{short}",
-                f"cb-stg-php-{short}",
+                f"cb-stg-{prefix}-{short}",
+                f"cb-stg-{prefix}-nginx-{short}",
+                f"cb-stg-{prefix}-php-{short}",
             )
         return f"cb-stg-{short}", None, None
 
@@ -70,7 +71,13 @@ class StagingDomainService:
             if site is None:
                 raise NotFoundError("Source website not found")
             return site.domain
+        elif source_type == StagingSourceType.JOOMLA:
+            site = await uow.joomla_sites.get_by_id_and_tenant(source_id, tenant_id)
+            if site is None:
+                raise NotFoundError("Source Joomla site not found")
+            return site.domain
         site = await uow.wordpress_sites.get_by_id_and_tenant(source_id, tenant_id)
         if site is None:
             raise NotFoundError("Source WordPress site not found")
         return site.domain
+

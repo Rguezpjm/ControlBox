@@ -145,4 +145,15 @@ export const backupsApi = {
     authRequest<{ download_url: string | null; storage_path: string }>(
       `/api/v1/backups/jobs/${id}/download`
     ),
+  browseLocal: (path?: string) =>
+    authRequest<LocalDirectoryBrowseResult>(
+      `/api/v1/backups/browse-local${path ? `?path=${encodeURIComponent(path)}` : ""}`
+    ),
 };
+
+export interface LocalDirectoryBrowseResult {
+  current_path: string;
+  parent_path: string;
+  directories: string[];
+}
+

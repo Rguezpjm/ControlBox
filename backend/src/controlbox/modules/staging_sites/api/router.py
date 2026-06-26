@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, UploadFile, File
 
 from controlbox.config.settings import get_settings
 from controlbox.modules.identity.api.dependencies import (
@@ -17,6 +17,7 @@ from controlbox.modules.staging_sites.api.schemas import (
     SyncStagingRequest,
     SyncTypeRequest,
     UpdateStagingSecurityRequest,
+    ChangeVersionRequest,
 )
 from controlbox.modules.staging_sites.application.command_handlers import (
     BlockStagingAccessHandler,
@@ -27,6 +28,9 @@ from controlbox.modules.staging_sites.application.command_handlers import (
     RestartStagingSiteHandler,
     SyncStagingHandler,
     UpdateStagingSecurityHandler,
+    ChangeStagingVersionHandler,
+    ImportStagingBloggerHandler,
+    MigrateJoomlaToWpHandler,
 )
 from controlbox.modules.staging_sites.application.commands import (
     BlockStagingAccessCommand,
@@ -35,7 +39,11 @@ from controlbox.modules.staging_sites.application.commands import (
     RestartStagingSiteCommand,
     SyncStagingCommand,
     UpdateStagingSecurityCommand,
+    ChangeStagingVersionCommand,
+    ImportStagingBloggerCommand,
+    MigrateJoomlaToWpCommand,
 )
+
 from controlbox.modules.staging_sites.application.queries import (
     GetStagingSiteQuery,
     ListStagingSitesQuery,
@@ -284,3 +292,79 @@ async def update_staging_security(
         return _to_schema(site)
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
+
+
+@router.post("/{staging_id}/import-blogger", response_model=StagingSiteResponseSchema)
+async def import_blogger(
+    staging_id: UUID,
+    file: UploadFile = File(...),
+    context: Annotated[RequestContext, Depends(require_permission("staging.manage"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> StagingSiteResponseSchema:
+    import shutil
+    import tempfile
+    from pathlib import Path
+    
+    tenant_id = _require_tenant(context)
+    temp_dir = Path(tempfile.gettempdir()) / "controlbox_blogger"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_file_path = temp_dir / f"{staging_id}_{file.filename}"
+    with open(temp_file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    try:
+        site = await ImportStagingBloggerHandler(uow).handle(
+            ImportStagingBloggerCommand(
+                staging_id=staging_id,
+                tenant_id=tenant_id,
+                user_id=context.user_id,
+                xml_file_path=str(temp_file_path)
+            )
+        )
+        return _to_schema(site)
+    except DomainException as exc:
+        raise map_domain_exception(exc) from exc
+
+
+@router.post("/{staging_id}/migrate-joomla-to-wp", response_model=StagingSiteResponseSchema)
+async def migrate_joomla_to_wp(
+    staging_id: UUID,
+    context: Annotated[RequestContext, Depends(require_permission("staging.manage"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> StagingSiteResponseSchema:
+    tenant_id = _require_tenant(context)
+    try:
+        site = await MigrateJoomlaToWpHandler(uow).handle(
+            MigrateJoomlaToWpCommand(
+                staging_id=staging_id,
+                tenant_id=tenant_id,
+                user_id=context.user_id,
+            )
+        )
+        return _to_schema(site)
+    except DomainException as exc:
+        raise map_domain_exception(exc) from exc
+
+
+@router.post("/{staging_id}/change-version", response_model=StagingSiteResponseSchema)
+async def change_version(
+    staging_id: UUID,
+    payload: ChangeVersionRequest,
+    context: Annotated[RequestContext, Depends(require_permission("staging.manage"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> StagingSiteResponseSchema:
+    tenant_id = _require_tenant(context)
+    try:
+        site = await ChangeStagingVersionHandler(uow).handle(
+            ChangeStagingVersionCommand(
+                staging_id=staging_id,
+                tenant_id=tenant_id,
+                user_id=context.user_id,
+                cms_version=payload.cms_version,
+                php_version=payload.php_version,
+            )
+        )
+        return _to_schema(site)
+    except DomainException as exc:
+        raise map_domain_exception(exc) from exc
+

@@ -11,6 +11,9 @@ from controlbox.modules.staging_sites.application.commands import (
     RestartStagingSiteCommand,
     SyncStagingCommand,
     UpdateStagingSecurityCommand,
+    ChangeStagingVersionCommand,
+    ImportStagingBloggerCommand,
+    MigrateJoomlaToWpCommand,
 )
 from controlbox.modules.staging_sites.application.queries import (
     GetStagingSiteQuery,
@@ -82,7 +85,11 @@ def _to_response(staging: StagingSite) -> StagingSiteResponse:
         task_id=staging.task_id,
         created_at=staging.created_at,
         updated_at=staging.updated_at,
+        cms_version=staging.settings.get("cms_version"),
+        migration_progress=staging.settings.get("migration_progress"),
+        migration_status=staging.settings.get("migration_status"),
     )
+
 
 
 class CreateStagingSiteHandler(CommandHandler[CreateStagingSiteCommand, StagingSiteResponse]):
@@ -114,12 +121,20 @@ class CreateStagingSiteHandler(CommandHandler[CreateStagingSiteCommand, StagingS
             stack_type = StagingStackType(domain_service.resolve_stack_from_website_runtime(website.runtime.value))
             runtime_version = website.runtime_version
             source_name = website.name
+        elif source_type == StagingSourceType.JOOMLA:
+            joomla = await self._uow.joomla_sites.get_by_id_and_tenant(command.source_id, command.tenant_id)
+            if joomla is None:
+                raise NotFoundError("Source Joomla site not found")
+            stack_type = StagingStackType.JOOMLA
+            runtime_version = joomla.php_version
+            source_name = joomla.name
         else:
             wp = await self._uow.wordpress_sites.get_by_id_and_tenant(command.source_id, command.tenant_id)
             if wp is None:
                 raise NotFoundError("Source WordPress site not found")
             runtime_version = wp.php_version
             source_name = wp.name
+
 
         name = command.name.strip() or f"{source_name} (Staging)"
 
@@ -272,6 +287,14 @@ class BlockStagingAccessHandler(CommandHandler[BlockStagingAccessCommand, Stagin
                 staging.settings["db_user"],
                 db_password,
             )
+        elif staging.stack_type == StagingStackType.JOOMLA and staging.settings.get("db_name"):
+            db_password = self._provisioner._crypto.decrypt(staging.settings["db_password_enc"])
+            await self._provisioner.deploy_joomla_staging(
+                staging,
+                staging.settings["db_name"],
+                staging.settings["db_user"],
+                db_password,
+            )
         else:
             await self._provisioner.deploy_website(staging)
         await self._uow.staging_sites.save(staging)
@@ -310,6 +333,14 @@ class UpdateStagingSecurityHandler(CommandHandler[UpdateStagingSecurityCommand, 
         if staging.stack_type == StagingStackType.WORDPRESS and staging.settings.get("db_name"):
             db_password = self._provisioner._crypto.decrypt(staging.settings["db_password_enc"])
             await self._provisioner.deploy_wordpress(
+                staging,
+                staging.settings["db_name"],
+                staging.settings["db_user"],
+                db_password,
+            )
+        elif staging.stack_type == StagingStackType.JOOMLA and staging.settings.get("db_name"):
+            db_password = self._provisioner._crypto.decrypt(staging.settings["db_password_enc"])
+            await self._provisioner.deploy_joomla_staging(
                 staging,
                 staging.settings["db_name"],
                 staging.settings["db_user"],
@@ -368,3 +399,100 @@ class GetStagingSiteHandler(QueryHandler[GetStagingSiteQuery, StagingSiteRespons
             cpu, mem, disk = await self._provisioner.collect_metrics(staging)
             staging.update_metrics(cpu, mem, disk)
         return _to_response(staging)
+
+
+class ChangeStagingVersionHandler(CommandHandler[ChangeStagingVersionCommand, StagingSiteResponse]):
+    def __init__(self, uow: UnitOfWork) -> None:
+        self._uow = uow
+
+    async def handle(self, command: ChangeStagingVersionCommand) -> StagingSiteResponse:
+        staging = await self._uow.staging_sites.get_by_id_and_tenant(command.staging_id, command.tenant_id)
+        if staging is None:
+            raise NotFoundError("Staging site not found")
+        
+        staging.status = StagingStatus.SYNCING
+        staging.settings["migration_progress"] = 0
+        staging.settings["migration_status"] = "Preparing version updates..."
+        staging.settings["cms_version"] = command.cms_version
+        staging.runtime_version = command.php_version
+
+        from controlbox.modules.staging_sites.workers.tasks import change_staging_version
+        task = change_staging_version.delay(str(staging.id), command.cms_version, command.php_version)
+        staging.task_id = task.id
+        
+        await self._uow.staging_sites.save(staging)
+        await self._uow.audit_logs.add(
+            AuditLog(
+                tenant_id=command.tenant_id,
+                user_id=command.user_id,
+                action="staging.version_changed",
+                resource_type="staging_site",
+                resource_id=str(staging.id),
+                metadata={"cms_version": command.cms_version, "php_version": command.php_version},
+            )
+        )
+        await self._uow.commit()
+        return _to_response(staging)
+
+
+class ImportStagingBloggerHandler(CommandHandler[ImportStagingBloggerCommand, StagingSiteResponse]):
+    def __init__(self, uow: UnitOfWork) -> None:
+        self._uow = uow
+
+    async def handle(self, command: ImportStagingBloggerCommand) -> StagingSiteResponse:
+        staging = await self._uow.staging_sites.get_by_id_and_tenant(command.staging_id, command.tenant_id)
+        if staging is None:
+            raise NotFoundError("Staging site not found")
+        
+        staging.status = StagingStatus.SYNCING
+        staging.settings["migration_progress"] = 0
+        staging.settings["migration_status"] = "Importing Blogger backup..."
+
+        from controlbox.modules.staging_sites.workers.tasks import import_blogger_backup
+        task = import_blogger_backup.delay(str(staging.id), command.xml_file_path)
+        staging.task_id = task.id
+        
+        await self._uow.staging_sites.save(staging)
+        await self._uow.audit_logs.add(
+            AuditLog(
+                tenant_id=command.tenant_id,
+                user_id=command.user_id,
+                action="staging.blogger_imported",
+                resource_type="staging_site",
+                resource_id=str(staging.id),
+            )
+        )
+        await self._uow.commit()
+        return _to_response(staging)
+
+
+class MigrateJoomlaToWpHandler(CommandHandler[MigrateJoomlaToWpCommand, StagingSiteResponse]):
+    def __init__(self, uow: UnitOfWork) -> None:
+        self._uow = uow
+
+    async def handle(self, command: MigrateJoomlaToWpCommand) -> StagingSiteResponse:
+        staging = await self._uow.staging_sites.get_by_id_and_tenant(command.staging_id, command.tenant_id)
+        if staging is None:
+            raise NotFoundError("Staging site not found")
+        
+        staging.status = StagingStatus.SYNCING
+        staging.settings["migration_progress"] = 0
+        staging.settings["migration_status"] = "Starting migration from Joomla to WordPress..."
+
+        from controlbox.modules.staging_sites.workers.tasks import migrate_joomla_to_wp
+        task = migrate_joomla_to_wp.delay(str(staging.id))
+        staging.task_id = task.id
+        
+        await self._uow.staging_sites.save(staging)
+        await self._uow.audit_logs.add(
+            AuditLog(
+                tenant_id=command.tenant_id,
+                user_id=command.user_id,
+                action="staging.joomla_migrated_to_wp",
+                resource_type="staging_site",
+                resource_id=str(staging.id),
+            )
+        )
+        await self._uow.commit()
+        return _to_response(staging)
+

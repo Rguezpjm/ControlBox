@@ -95,10 +95,10 @@ export const mailApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  verifyService: (admin_password?: string) =>
+  verifyService: (admin_password?: string, force?: boolean) =>
     request<TenantMailService>("/api/v1/mail/service/verify", {
       method: "POST",
-      body: JSON.stringify({ admin_password: admin_password || undefined }),
+      body: JSON.stringify({ admin_password: admin_password || undefined, force: force || false }),
     }),
   deleteService: () => request<void>("/api/v1/mail/service", { method: "DELETE" }),
   dnsHints: () => request<DnsRecordHint[]>("/api/v1/mail/service/dns-hints"),

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class CreateStagingSiteRequest(BaseModel):
-    source_type: str = Field(pattern="^(website|wordpress)$")
+    source_type: str = Field(pattern="^(website|wordpress|joomla)$")
     source_id: UUID
     domain_mode: str = Field(default="subdomain", pattern="^(subdomain|random)$")
     name: str = ""
@@ -32,6 +32,11 @@ class UpdateStagingSecurityRequest(BaseModel):
     allowed_ips: list[str] = Field(default_factory=list)
     temp_access_enabled: bool = False
     temp_access_hours: int = Field(default=24, ge=1, le=168)
+
+
+class ChangeVersionRequest(BaseModel):
+    cms_version: str
+    php_version: str
 
 
 class StagingSecuritySchema(BaseModel):
@@ -71,3 +76,7 @@ class StagingSiteResponseSchema(BaseModel):
     task_id: str | None
     created_at: datetime
     updated_at: datetime
+    cms_version: str | None = None
+    migration_progress: int | None = None
+    migration_status: str | None = None
+

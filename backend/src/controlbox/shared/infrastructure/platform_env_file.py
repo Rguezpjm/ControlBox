@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_ORPHAN_REDIS_LINE = re.compile(r"^[^=]*@redis:6379/\d+\s*$")
+_ORPHAN_REDIS_LINE = re.compile(r'^[^=]*@redis:6379/\d+\s*"?\s*$')
 
 
 def format_env_line(key: str, value: str) -> str:

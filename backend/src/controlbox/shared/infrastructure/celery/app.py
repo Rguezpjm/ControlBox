@@ -11,8 +11,10 @@ def create_celery_app() -> Celery:
         backend=settings.celery_result_backend,
         include=[
             "controlbox.modules.wordpress.workers.tasks",
+            "controlbox.modules.joomla.workers.tasks",
             "controlbox.modules.staging_sites.workers.tasks",
             "controlbox.modules.security.workers.tasks",
+            "controlbox.modules.streaming.workers.tasks",
         ],
     )
     app.conf.update(
