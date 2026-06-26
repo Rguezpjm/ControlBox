@@ -568,6 +568,7 @@ networks:
                         staging.settings["db_name"],
                         staging.settings["db_user"],
                         stg_password,
+                    )
         elif staging.source_type == StagingSourceType.JOOMLA:
             source = await uow.joomla_sites.get_by_id_and_tenant(staging.source_id, staging.tenant_id)
             if source is None:
