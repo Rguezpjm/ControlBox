@@ -297,9 +297,9 @@ async def update_staging_security(
 @router.post("/{staging_id}/import-blogger", response_model=StagingSiteResponseSchema)
 async def import_blogger(
     staging_id: UUID,
-    file: UploadFile = File(...),
     context: Annotated[RequestContext, Depends(require_permission("staging.manage"))],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    file: UploadFile = File(...),
 ) -> StagingSiteResponseSchema:
     import shutil
     import tempfile
