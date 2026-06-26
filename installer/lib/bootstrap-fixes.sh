@@ -366,6 +366,8 @@ services:
     image: controlbox-api:${version}
   bootstrap-tenant:
     image: controlbox-api:${version}
+  worker:
+    image: controlbox-api:${version}
 EOF
     cb_info "Build local configurado (API + Panel desde src/)"
     return 0
