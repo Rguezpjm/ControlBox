@@ -25,6 +25,34 @@ class TenantMailServiceRepository:
         model = result.scalar_one_or_none()
         return service_to_entity(model) if model else None
 
+    async def list_by_tenant(self, tenant_id: UUID) -> list[TenantMailService]:
+        result = await self._session.execute(
+            select(TenantMailServiceModel)
+            .where(TenantMailServiceModel.tenant_id == tenant_id)
+            .order_by(TenantMailServiceModel.created_at.desc())
+        )
+        return [service_to_entity(m) for m in result.scalars().all()]
+
+    async def get_by_id_and_tenant(self, service_id: UUID, tenant_id: UUID) -> TenantMailService | None:
+        result = await self._session.execute(
+            select(TenantMailServiceModel).where(
+                TenantMailServiceModel.id == service_id,
+                TenantMailServiceModel.tenant_id == tenant_id,
+            )
+        )
+        model = result.scalar_one_or_none()
+        return service_to_entity(model) if model else None
+
+    async def get_by_tenant_and_domain(self, tenant_id: UUID, domain: str) -> TenantMailService | None:
+        result = await self._session.execute(
+            select(TenantMailServiceModel).where(
+                TenantMailServiceModel.tenant_id == tenant_id,
+                TenantMailServiceModel.mail_domain == domain.lower(),
+            )
+        )
+        model = result.scalar_one_or_none()
+        return service_to_entity(model) if model else None
+
     async def delete(self, service_id: UUID) -> None:
         await self._session.execute(delete(TenantMailServiceModel).where(TenantMailServiceModel.id == service_id))
 

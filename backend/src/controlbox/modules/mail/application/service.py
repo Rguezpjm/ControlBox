@@ -31,15 +31,18 @@ class MailApplicationService:
             raise ValidationError("Invalid mailbox name (use letters, numbers, dots, dashes)")
         return cleaned
 
-    async def get_service(self, tenant_id: UUID) -> TenantMailService | None:
-        return await self._uow.tenant_mail_services.get_by_tenant(tenant_id)
+    async def list_services(self, tenant_id: UUID) -> list[TenantMailService]:
+        return await self._uow.tenant_mail_services.list_by_tenant(tenant_id)
+
+    async def get_service(self, tenant_id: UUID, service_id: UUID) -> TenantMailService | None:
+        return await self._uow.tenant_mail_services.get_by_id_and_tenant(service_id, tenant_id)
 
     async def create_service(self, tenant_id: UUID, name: str, mail_domain: str) -> TenantMailService:
-        existing = await self._uow.tenant_mail_services.get_by_tenant(tenant_id)
-        if existing:
-            raise ConflictError("A tenant email service already exists for this organization")
-
         domain = self._normalize_domain(mail_domain)
+        existing = await self._uow.tenant_mail_services.get_by_tenant_and_domain(tenant_id, domain)
+        if existing:
+            raise ConflictError(f"A tenant email service with domain '{domain}' already exists")
+
         service = TenantMailService(
             tenant_id=tenant_id,
             name=name.strip(),
@@ -53,6 +56,7 @@ class MailApplicationService:
     async def update_service(
         self,
         tenant_id: UUID,
+        service_id: UUID,
         *,
         name: str | None = None,
         imap_host: str | None = None,
@@ -68,7 +72,7 @@ class MailApplicationService:
         total_quota_mb: int | None = None,
         webmail_url: str | None = None,
     ) -> TenantMailService:
-        service = await self._require_service(tenant_id)
+        service = await self._require_service(tenant_id, service_id)
         if service.status == TenantMailStatus.ACTIVE:
             raise ValidationError("Disconnect the mail service before changing server settings")
 
@@ -107,10 +111,11 @@ class MailApplicationService:
     async def verify_service(
         self,
         tenant_id: UUID,
+        service_id: UUID,
         admin_password: str | None = None,
         force: bool = False,
     ) -> TenantMailService:
-        service = await self._require_service(tenant_id)
+        service = await self._require_service(tenant_id, service_id)
         password = admin_password
         if not password:
             if not service.admin_password_enc:
@@ -151,16 +156,16 @@ class MailApplicationService:
         await self._uow.commit()
         return service
 
-    async def delete_service(self, tenant_id: UUID) -> None:
-        service = await self._require_service(tenant_id)
+    async def delete_service(self, tenant_id: UUID, service_id: UUID) -> None:
+        service = await self._require_service(tenant_id, service_id)
         accounts = await self._uow.mail_accounts.list_by_service(service.id, tenant_id)
         if accounts:
             raise ValidationError("Delete all mailboxes before removing the tenant email service")
         await self._uow.tenant_mail_services.delete(service.id)
         await self._uow.commit()
 
-    async def get_overview(self, tenant_id: UUID) -> dict:
-        service = await self._uow.tenant_mail_services.get_by_tenant(tenant_id)
+    async def get_overview(self, tenant_id: UUID, service_id: UUID) -> dict:
+        service = await self._uow.tenant_mail_services.get_by_id_and_tenant(service_id, tenant_id)
         if not service:
             return {
                 "configured": False,
@@ -176,20 +181,21 @@ class MailApplicationService:
             "total_used_mb": used_mb,
         }
 
-    async def list_accounts(self, tenant_id: UUID) -> list[MailAccount]:
-        service = await self._require_active_service(tenant_id)
+    async def list_accounts(self, tenant_id: UUID, service_id: UUID) -> list[MailAccount]:
+        service = await self._require_active_service(tenant_id, service_id)
         return await self._uow.mail_accounts.list_by_service(service.id, tenant_id)
 
     async def create_account(
         self,
         tenant_id: UUID,
+        service_id: UUID,
         *,
         local_part: str,
         display_name: str,
         password: str | None,
         quota_mb: int | None,
     ) -> tuple[MailAccount, str]:
-        service = await self._require_active_service(tenant_id)
+        service = await self._require_active_service(tenant_id, service_id)
         part = self._normalize_local_part(local_part)
         existing = await self._uow.mail_accounts.get_by_local_part(service.id, part)
         if existing:
@@ -218,6 +224,7 @@ class MailApplicationService:
     async def update_account(
         self,
         tenant_id: UUID,
+        service_id: UUID,
         account_id: UUID,
         *,
         display_name: str | None = None,
@@ -225,7 +232,7 @@ class MailApplicationService:
         status: str | None = None,
         forwarding_to: str | None = None,
     ) -> MailAccount:
-        service = await self._require_active_service(tenant_id)
+        service = await self._require_active_service(tenant_id, service_id)
         account = await self._require_account(tenant_id, account_id)
         if account.mail_service_id != service.id:
             raise NotFoundError("Mailbox not found")
@@ -252,16 +259,16 @@ class MailApplicationService:
         await self._uow.commit()
         return account
 
-    async def delete_account(self, tenant_id: UUID, account_id: UUID) -> None:
-        service = await self._require_active_service(tenant_id)
+    async def delete_account(self, tenant_id: UUID, service_id: UUID, account_id: UUID) -> None:
+        service = await self._require_active_service(tenant_id, service_id)
         account = await self._require_account(tenant_id, account_id)
         if account.mail_service_id != service.id:
             raise NotFoundError("Mailbox not found")
         await self._uow.mail_accounts.delete(account_id)
         await self._uow.commit()
 
-    async def dns_checklist(self, tenant_id: UUID) -> list[dict]:
-        service = await self._require_service(tenant_id)
+    async def dns_checklist(self, tenant_id: UUID, service_id: UUID) -> list[dict]:
+        service = await self._require_service(tenant_id, service_id)
         domain = service.mail_domain
         return [
             {
@@ -290,14 +297,14 @@ class MailApplicationService:
             },
         ]
 
-    async def _require_service(self, tenant_id: UUID) -> TenantMailService:
-        service = await self._uow.tenant_mail_services.get_by_tenant(tenant_id)
+    async def _require_service(self, tenant_id: UUID, service_id: UUID) -> TenantMailService:
+        service = await self._uow.tenant_mail_services.get_by_id_and_tenant(service_id, tenant_id)
         if not service:
             raise NotFoundError("Tenant email service not configured")
         return service
 
-    async def _require_active_service(self, tenant_id: UUID) -> TenantMailService:
-        service = await self._require_service(tenant_id)
+    async def _require_active_service(self, tenant_id: UUID, service_id: UUID) -> TenantMailService:
+        service = await self._require_service(tenant_id, service_id)
         if service.status != TenantMailStatus.ACTIVE:
             raise ForbiddenError("Complete mail server configuration and verify the connection first")
         return service

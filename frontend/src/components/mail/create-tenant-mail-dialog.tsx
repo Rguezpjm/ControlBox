@@ -33,7 +33,7 @@ export function CreateTenantMailDialog({ open, onOpenChange, onCreated }: Create
     setLoading(true);
     setError(null);
     try {
-      await mailApi.createService({ name, mail_domain: mailDomain });
+      await mailApi.createServiceById({ name, mail_domain: mailDomain });
       onOpenChange(false);
       setName("");
       setMailDomain("");

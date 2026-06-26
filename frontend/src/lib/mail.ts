@@ -115,4 +115,39 @@ export const mailApi = {
     }),
   deleteAccount: (id: string) =>
     request<void>(`/api/v1/mail/accounts/${id}`, { method: "DELETE" }),
+
+  // Multi-domain / Multi-service API endpoints
+  listServices: () => request<TenantMailService[]>("/api/v1/mail/services"),
+  getServiceById: (serviceId: string) => request<TenantMailService | null>(`/api/v1/mail/services/${serviceId}`),
+  createServiceById: (data: CreateTenantMailPayload) =>
+    request<TenantMailService>("/api/v1/mail/services", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateServiceById: (serviceId: string, data: UpdateTenantMailPayload) =>
+    request<TenantMailService>(`/api/v1/mail/services/${serviceId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  verifyServiceById: (serviceId: string, admin_password?: string, force?: boolean) =>
+    request<TenantMailService>(`/api/v1/mail/services/${serviceId}/verify`, {
+      method: "POST",
+      body: JSON.stringify({ admin_password: admin_password || undefined, force: force || false }),
+    }),
+  deleteServiceById: (serviceId: string) => request<void>(`/api/v1/mail/services/${serviceId}`, { method: "DELETE" }),
+  dnsHintsById: (serviceId: string) => request<DnsRecordHint[]>(`/api/v1/mail/services/${serviceId}/dns-hints`),
+  overviewById: (serviceId: string) => request<MailOverview>(`/api/v1/mail/services/${serviceId}/overview`),
+  listAccountsById: (serviceId: string) => request<MailAccount[]>(`/api/v1/mail/services/${serviceId}/accounts`),
+  createAccountById: (serviceId: string, data: CreateMailAccountPayload) =>
+    request<MailAccount & { password: string }>(`/api/v1/mail/services/${serviceId}/accounts`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateAccountById: (serviceId: string, id: string, data: { display_name?: string; quota_mb?: number; status?: string }) =>
+    request<MailAccount>(`/api/v1/mail/services/${serviceId}/accounts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteAccountById: (serviceId: string, id: string) =>
+    request<void>(`/api/v1/mail/services/${serviceId}/accounts/${id}`, { method: "DELETE" }),
 };
