@@ -183,7 +183,7 @@ async def import_channels(
 
         # Cargar todos los canales existentes de la fuente en memoria para evitar consultas repetitivas
         from controlbox.modules.streaming.infrastructure.models import StreamingChannelModel
-        from controlbox.modules.streaming.infrastructure.mappers import channel_to_entity
+        from controlbox.modules.streaming.infrastructure.mappers import channel_to_model
         
         result = await uow.session.execute(
             select(StreamingChannelModel).where(
@@ -196,10 +196,9 @@ async def import_channels(
         channels_by_url = {}
         
         for m in db_channel_models:
-            chan_entity = channel_to_entity(m)
-            if chan_entity.stream_id is not None:
-                channels_by_stream_id[chan_entity.stream_id] = chan_entity
-            channels_by_url[chan_entity.stream_url] = chan_entity
+            if m.stream_id is not None:
+                channels_by_stream_id[m.stream_id] = m
+            channels_by_url[m.stream_url] = m
 
         imported_count = 0
         for item in payload.channels:
@@ -224,7 +223,7 @@ async def import_channels(
                 existing.epg_id = item.epg_id
                 existing.logo_url = item.logo_url
                 existing.stream_id = item.stream_id
-                await uow.streaming_channels.save(existing)
+                existing.updated_at = datetime.utcnow()
             else:
                 channel = StreamingChannel(
                     tenant_id=tenant_id,
@@ -237,11 +236,12 @@ async def import_channels(
                     stream_id=item.stream_id,
                     is_active=True,
                 )
-                await uow.streaming_channels.add(channel)
+                m = channel_to_model(channel)
+                uow.session.add(m)
                 # Agregar al caché local para evitar duplicados si vienen en el mismo payload
-                if channel.stream_id is not None:
-                    channels_by_stream_id[channel.stream_id] = channel
-                channels_by_url[channel.stream_url] = channel
+                if m.stream_id is not None:
+                    channels_by_stream_id[m.stream_id] = m
+                channels_by_url[m.stream_url] = m
                 imported_count += 1
 
         source.last_sync_at = datetime.utcnow()
