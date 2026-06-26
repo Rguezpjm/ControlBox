@@ -101,6 +101,11 @@ class UnitOfWork(ABC):
     trusted_devices: "SqlAlchemyTrustedDeviceRepository"
     security_events: "SqlAlchemySecurityEventRepository"
 
+    @property
+    @abstractmethod
+    def session(self):
+        raise NotImplementedError
+
     @abstractmethod
     async def __aenter__(self) -> "UnitOfWork":
         raise NotImplementedError

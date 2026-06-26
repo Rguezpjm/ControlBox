@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ApiError } from "@/lib/api-client";
-import { teamApi, type TeamRole } from "@/lib/team";
+import { teamApi, type LiteUser, type TeamRole } from "@/lib/team";
 
 interface InviteMemberDialogProps {
   open: boolean;
@@ -31,31 +31,65 @@ interface InviteMemberDialogProps {
 
 export function InviteMemberDialog({ open, onOpenChange, onInvited }: InviteMemberDialogProps) {
   const [roles, setRoles] = useState<TeamRole[]>([]);
+  const [tenants, setTenants] = useState<{ id: string; name: string }[]>([]);
+  const [tenantUsers, setTenantUsers] = useState<LiteUser[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingTenants, setLoadingTenants] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [roleSlug, setRoleSlug] = useState("");
   const [message, setMessage] = useState("");
+  const [selectedTenantId, setSelectedTenantId] = useState("");
+  const [selectedSenderUserId, setSelectedSenderUserId] = useState("");
 
   useEffect(() => {
     if (open) {
-      teamApi
-        .listRoles()
-        .then((data) => {
-          const invitable = data.filter((r) => r.slug !== "owner");
-          setRoles(invitable);
-          if (invitable.length > 0) setRoleSlug(invitable[0].slug);
-        })
-        .catch(() => setRoles([]));
+      setError(null);
+      setSelectedTenantId("");
+      setSelectedSenderUserId("");
+      setTenantUsers([]);
+
+      teamApi.listRoles().then((data) => {
+        const invitable = data.filter((r) => r.slug !== "owner");
+        setRoles(invitable);
+        if (invitable.length > 0) setRoleSlug(invitable[0].slug);
+      }).catch(() => setRoles([]));
+
+      setLoadingTenants(true);
+      teamApi.listTenants().then((data) => {
+        setTenants(data);
+      }).catch(() => setTenants([]))
+      .finally(() => setLoadingTenants(false));
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!selectedTenantId) {
+      setTenantUsers([]);
+      setSelectedSenderUserId("");
+      return;
+    }
+    setLoadingUsers(true);
+    setSelectedSenderUserId("");
+    teamApi.listTenantUsers(selectedTenantId).then((data) => {
+      setTenantUsers(data);
+    }).catch(() => setTenantUsers([]))
+    .finally(() => setLoadingUsers(false));
+  }, [selectedTenantId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await teamApi.invite({ email, team_role_slug: roleSlug, message });
+      await teamApi.invite({
+        email,
+        team_role_slug: roleSlug,
+        message,
+        tenant_id: selectedTenantId || undefined,
+        sender_user_id: selectedSenderUserId || undefined,
+      });
       onOpenChange(false);
       setEmail("");
       setMessage("");
@@ -102,6 +136,48 @@ export function InviteMemberDialog({ open, onOpenChange, onInvited }: InviteMemb
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-2">
+            <Label>Tenant (optional)</Label>
+            <Select
+              value={selectedTenantId}
+              onValueChange={setSelectedTenantId}
+              disabled={loadingTenants}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={loadingTenants ? "Loading tenants..." : "All tenants"} />
+              </SelectTrigger>
+              <SelectContent>
+                {tenants.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedTenantId && (
+            <div className="space-y-2">
+              <Label>Sender user (optional)</Label>
+              <Select
+                value={selectedSenderUserId}
+                onValueChange={setSelectedSenderUserId}
+                disabled={loadingUsers}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={loadingUsers ? "Loading users..." : "Select sender"}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {tenantUsers.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.full_name} ({u.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="invite-message">Message (optional)</Label>
             <textarea

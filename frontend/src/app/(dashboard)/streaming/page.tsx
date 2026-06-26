@@ -62,6 +62,7 @@ export default function StreamingPage() {
   const [newClientExpires, setNewClientExpires] = useState("");
 
   const [epgUrl, setEpgUrl] = useState("");
+  const [deliveryDomain, setDeliveryDomain] = useState("");
 
   // Catalog items for the active source
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -108,6 +109,12 @@ export default function StreamingPage() {
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
   }, [loadData]);
+
+  useEffect(() => {
+    streamingApi.getDeliveryDomain().then((res) => {
+      if (res.domain) setDeliveryDomain(res.domain);
+    }).catch(() => {});
+  }, []);
 
   async function handleCreateSource(e: React.FormEvent) {
     e.preventDefault();
@@ -261,7 +268,7 @@ export default function StreamingPage() {
     currentPage * itemsPerPage
   );
 
-  const currentHost = typeof window !== "undefined" ? window.location.origin : "";
+  const currentHost = deliveryDomain || (typeof window !== "undefined" ? window.location.origin : "");
 
   return (
     <div className="space-y-6">
@@ -860,7 +867,7 @@ export default function StreamingPage() {
 
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle>Canales del Catálogo con Guía de EPG</CardTitle>
+                <CardTitle>Guía de EPG para el Usuario Final</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3 rounded-lg border p-4 bg-muted/10">

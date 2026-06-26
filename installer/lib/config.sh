@@ -269,6 +269,7 @@ cb_config_generate() {
         cb_env_emit "PUREFTPD_PASSIVE_MIN" "30000"
         cb_env_emit "PUREFTPD_PASSIVE_MAX" "30009"
         cb_env_emit "PUREFTPD_TLS" "0"
+        cb_env_emit "STREAMING_DOMAIN" "${STREAMING_DOMAIN:-}"
         cb_env_emit "LOG_LEVEL" "INFO"
     } > "${env_file}"
 

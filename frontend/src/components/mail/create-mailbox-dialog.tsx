@@ -37,7 +37,7 @@ export function CreateMailboxDialog({ open, onOpenChange, service, onCreated }: 
     setLoading(true);
     setError(null);
     try {
-      const result = await mailApi.createAccount({
+      const result = await mailApi.createAccountById(service.id, {
         local_part: localPart,
         display_name: displayName,
         password: password || undefined,

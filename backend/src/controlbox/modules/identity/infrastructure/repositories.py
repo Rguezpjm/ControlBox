@@ -77,6 +77,12 @@ class SqlAlchemyTenantRepository(TenantRepository):
         )
         return [row[0] for row in result.all()]
 
+    async def list_all(self) -> list[Tenant]:
+        result = await self._session.execute(
+            select(TenantModel).order_by(TenantModel.name.asc())
+        )
+        return [tenant_to_entity(m) for m in result.scalars().all()]
+
 
 class SqlAlchemyUserRepository(UserRepository):
     def __init__(self, session: AsyncSession) -> None:
@@ -110,6 +116,12 @@ class SqlAlchemyUserRepository(UserRepository):
         )
         model = result.scalar_one_or_none()
         return user_to_entity(model) if model else None
+
+    async def list_by_tenant(self, tenant_id: UUID) -> list[User]:
+        result = await self._session.execute(
+            select(UserModel).where(UserModel.tenant_id == tenant_id).order_by(UserModel.full_name.asc())
+        )
+        return [user_to_entity(m) for m in result.scalars().all()]
 
     async def assign_role(self, user_id: UUID, role_id: UUID) -> None:
         self._session.add(UserRoleModel(user_id=user_id, role_id=role_id))

@@ -28,6 +28,10 @@ class TenantRepository(ABC):
     async def exists_by_slug(self, slug: str) -> bool:
         raise NotImplementedError
 
+    @abstractmethod
+    async def list_all(self) -> list["Tenant"]:
+        raise NotImplementedError
+
 
 class UserRepository(ABC):
     @abstractmethod
@@ -56,6 +60,10 @@ class UserRepository(ABC):
 
     @abstractmethod
     async def get_roles(self, user_id: UUID) -> list[Role]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def list_by_tenant(self, tenant_id: UUID) -> list["User"]:
         raise NotImplementedError
 
     @abstractmethod

@@ -148,11 +148,15 @@ export function CreateJoomlaDialog({ open, onOpenChange, onCreated }: CreateJoom
   const [sslEnabled, setSslEnabled] = useState(true);
   const [createFtpAccount, setCreateFtpAccount] = useState(false);
 
+  const MAX_POLL_RETRIES = 300;
+  const pollRetriesRef = useRef(0);
+
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
+    pollRetriesRef.current = 0;
   }, []);
 
   const resetDialog = useCallback(() => {
@@ -199,7 +203,15 @@ export function CreateJoomlaDialog({ open, onOpenChange, onCreated }: CreateJoom
   const pollProvision = useCallback(
     (siteId: string) => {
       stopPolling();
+      pollRetriesRef.current = 0;
       pollRef.current = setInterval(async () => {
+        pollRetriesRef.current += 1;
+        if (pollRetriesRef.current > MAX_POLL_RETRIES) {
+          stopPolling();
+          setError("El despliegue excedió el tiempo máximo de 10 minutos. Es posible que el sitio aún se esté aprovisionando.");
+          setPhase("error");
+          return;
+        }
         try {
           const status = await joomlaApi.provisionStatus(siteId);
           setSteps(status.steps);
@@ -212,7 +224,7 @@ export function CreateJoomlaDialog({ open, onOpenChange, onCreated }: CreateJoom
             onCreated();
           } else if (status.status === "error") {
             stopPolling();
-            setError(status.error_message || "Joomla deployment failed");
+            setError(status.error_message || "Error en el despliegue de Joomla");
             setPhase("error");
           }
         } catch {

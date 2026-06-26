@@ -56,6 +56,14 @@ export interface InviteMemberPayload {
   email: string;
   team_role_slug: string;
   message?: string;
+  tenant_id?: string;
+  sender_user_id?: string;
+}
+
+export interface LiteUser {
+  id: string;
+  email: string;
+  full_name: string;
 }
 
 export interface AcceptInvitationPayload {
@@ -65,6 +73,9 @@ export interface AcceptInvitationPayload {
 }
 
 export const teamApi = {
+  listTenants: () => request<{ id: string; name: string; slug: string }[]>("/api/v1/identity/tenants"),
+  listTenantUsers: (tenantId: string) =>
+    request<LiteUser[]>(`/api/v1/identity/tenants/${tenantId}/lite-users`),
   listMembers: () => request<TeamMember[]>("/api/v1/team/members"),
   listInvitations: () => request<TeamInvitation[]>("/api/v1/team/invitations"),
   listRoles: () => request<TeamRole[]>("/api/v1/team/roles"),

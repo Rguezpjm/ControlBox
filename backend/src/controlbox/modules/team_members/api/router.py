@@ -125,7 +125,7 @@ async def invite_member(
     context: Annotated[RequestContext, Depends(require_permission("team_members.manage"))],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> InviteTeamMemberResponseSchema:
-    tenant_id = _require_tenant(context)
+    tenant_id = payload.tenant_id or _require_tenant(context)
     settings = get_settings()
     try:
         invitation, raw_token = await InviteTeamMemberHandler(uow, settings).handle(
@@ -135,6 +135,7 @@ async def invite_member(
                 email=str(payload.email),
                 team_role_slug=payload.team_role_slug,
                 message=payload.message,
+                sender_user_id=payload.sender_user_id,
             )
         )
         invite_url = f"{settings.webauthn_origin}/accept-invite?token={raw_token}"

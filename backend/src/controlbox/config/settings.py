@@ -145,6 +145,11 @@ class Settings(BaseSettings):
     controlbox_os_label: str = Field(default="Linux", alias="CONTROLBOX_OS_LABEL")
     controlbox_install_url: str = Field(default="https://install.grodtech.com", alias="CONTROLBOX_INSTALL_URL")
     controlbox_github_repo: str = Field(default="Rguezpjm/ControlBox", alias="CONTROLBOX_GITHUB_REPO")
+    streaming_domain: str = Field(
+        default="",
+        alias="STREAMING_DOMAIN",
+        description="Public domain for streaming delivery URLs (M3U, EPG, playback). Empty uses request host.",
+    )
     controlbox_server_ip: str = Field(default="", alias="CONTROLBOX_SERVER_IP")
     controlbox_enabled_profiles: str = Field(default="databases,backups", alias="CONTROLBOX_ENABLED_PROFILES")
     controlbox_enabled_runtimes: str = Field(

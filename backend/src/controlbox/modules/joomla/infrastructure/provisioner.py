@@ -192,7 +192,7 @@ class JoomlaProvisioner:
         )
         (site_path / "docker-compose.yml").write_text(compose, encoding="utf-8")
 
-    async def _exec(self, *args: str, cwd: Path | None = None) -> str:
+    async def _exec(self, *args: str, cwd: Path | None = None, timeout: int = 600) -> str:
         proc = await asyncio.create_subprocess_exec(
             *args,
             cwd=str(cwd) if cwd else None,
@@ -200,7 +200,12 @@ class JoomlaProvisioner:
             stderr=asyncio.subprocess.PIPE,
             env=docker_subprocess_env(self._settings),
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise RuntimeError(f"Command timed out after {timeout}s: {' '.join(args)}")
         if proc.returncode != 0:
             raise RuntimeError(stderr.decode() or stdout.decode() or f"Command failed: {' '.join(args)}")
         return stdout.decode()

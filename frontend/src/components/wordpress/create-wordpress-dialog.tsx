@@ -148,11 +148,15 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
   const [sslEnabled, setSslEnabled] = useState(true);
   const [createFtpAccount, setCreateFtpAccount] = useState(false);
 
+  const MAX_POLL_RETRIES = 300;
+  const pollRetriesRef = useRef(0);
+
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
+    pollRetriesRef.current = 0;
   }, []);
 
   const resetDialog = useCallback(() => {
@@ -199,7 +203,15 @@ export function CreateWordPressDialog({ open, onOpenChange, onCreated }: CreateW
   const pollProvision = useCallback(
     (siteId: string) => {
       stopPolling();
+      pollRetriesRef.current = 0;
       pollRef.current = setInterval(async () => {
+        pollRetriesRef.current += 1;
+        if (pollRetriesRef.current > MAX_POLL_RETRIES) {
+          stopPolling();
+          setError("Deployment timed out after 10 minutes. The site may still be provisioning.");
+          setPhase("error");
+          return;
+        }
         try {
           const status = await wordpressApi.provisionStatus(siteId);
           setSteps(status.steps);

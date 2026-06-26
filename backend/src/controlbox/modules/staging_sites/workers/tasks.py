@@ -295,6 +295,7 @@ def import_blogger_backup(self, staging_id: str, xml_file_path: str) -> None:
 def migrate_joomla_to_wp(self, staging_id: str) -> None:
     import asyncio
     import re
+    import time
     import zipfile
     import urllib.request
     from uuid import UUID
@@ -369,7 +370,7 @@ def migrate_joomla_to_wp(self, staging_id: str) -> None:
         compose_path = site_path / "docker-compose.yml"
         if compose_path.exists():
             try:
-                await provisioner._exec("docker", "compose", "-f", str(compose_path), "down", "-v", "--remove-orphans", cwd=site_path)
+                asyncio.run(provisioner._exec("docker", "compose", "-f", str(compose_path), "down", "-v", "--remove-orphans", cwd=site_path))
             except Exception:
                 pass
 
@@ -388,9 +389,9 @@ def migrate_joomla_to_wp(self, staging_id: str) -> None:
 
         asyncio.run(_update_status(70, "Installing WordPress core..."))
         compose_path = site_path / "docker-compose.yml"
-        await asyncio.sleep(5)
+        time.sleep(5)
         try:
-            await provisioner._wp._run_wp_cli(
+            asyncio.run(provisioner._wp._run_wp_cli(
                 compose_path,
                 "wp", "core", "install",
                 f"--url=https://{staging.domain}",
@@ -399,7 +400,7 @@ def migrate_joomla_to_wp(self, staging_id: str) -> None:
                 "--admin_password=admin_password_strong",
                 "--admin_email=admin@example.com",
                 "--skip-email"
-            )
+            ))
         except Exception:
             pass
 

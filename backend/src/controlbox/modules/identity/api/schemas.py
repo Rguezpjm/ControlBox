@@ -82,6 +82,12 @@ class TenantResponseSchema(BaseModel):
     settings: dict
 
 
+class LiteUserResponseSchema(BaseModel):
+    id: UUID
+    email: str
+    full_name: str
+
+
 class RegisterTenantResponseSchema(BaseModel):
     tenant: TenantResponseSchema
     user: UserResponseSchema

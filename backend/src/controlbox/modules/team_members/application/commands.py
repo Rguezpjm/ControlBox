@@ -10,6 +10,7 @@ class InviteTeamMemberCommand:
     email: str
     team_role_slug: str
     message: str = ""
+    sender_user_id: UUID | None = None
 
 
 @dataclass(frozen=True)

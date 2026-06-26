@@ -20,6 +20,16 @@ class GetTenantBySlugQuery:
 
 
 @dataclass(frozen=True)
+class ListTenantsQuery:
+    pass
+
+
+@dataclass(frozen=True)
+class ListUsersByTenantQuery:
+    tenant_id: UUID
+
+
+@dataclass(frozen=True)
 class ListSessionsQuery:
     user_id: UUID
 
@@ -90,6 +100,13 @@ class AuditLogResponse:
     ip_address: str | None
     user_agent: str | None
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class LiteUserResponse:
+    id: UUID
+    email: str
+    full_name: str
 
 
 @dataclass(frozen=True)

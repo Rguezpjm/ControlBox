@@ -58,7 +58,7 @@ export function MailServiceSetup({ service, onUpdated }: MailServiceSetupProps) 
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    mailApi.dnsHints().then(setDnsHints).catch(() => setDnsHints([]));
+    mailApi.dnsHintsById(service.id).then(setDnsHints).catch(() => setDnsHints([]));
   }, [service.id]);
 
   useEffect(() => {
@@ -103,7 +103,7 @@ export function MailServiceSetup({ service, onUpdated }: MailServiceSetupProps) 
     setSaving(true);
     setError(null);
     try {
-      await mailApi.updateService({
+      await mailApi.updateServiceById(service.id, {
         imap_host: imapHost,
         imap_port: Number(imapPort),
         imap_use_ssl: imapSsl,
@@ -135,7 +135,7 @@ export function MailServiceSetup({ service, onUpdated }: MailServiceSetupProps) 
     setError(null);
     try {
       await saveSettings(true);
-      await mailApi.verifyService(adminPassword || undefined, forceActivate);
+      await mailApi.verifyServiceById(service.id, adminPassword || undefined, forceActivate);
       setAdminPassword("");
       onUpdated();
       toast.success("Mail service activated successfully");

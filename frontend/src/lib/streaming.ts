@@ -112,4 +112,6 @@ export const streamingApi = {
       { method: "POST" }
     ),
   getStats: () => request<StreamingStats>("/api/v1/streaming/stats"),
+  getDeliveryDomain: () =>
+    request<{ domain: string }>("/api/v1/streaming/delivery-domain"),
 };

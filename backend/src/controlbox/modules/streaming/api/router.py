@@ -6,8 +6,9 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse, PlainTextResponse
+from sqlalchemy import select
 
-from controlbox.config.settings import get_settings
+from controlbox.config.settings import Settings, get_settings
 from controlbox.modules.identity.api.dependencies import (
     RequestContext,
     get_unit_of_work,
@@ -38,6 +39,13 @@ from controlbox.modules.streaming.domain.entities import (
 from controlbox.modules.streaming.infrastructure.m3u_parser import M3uParser
 from controlbox.modules.streaming.infrastructure.xtream_codes import XtreamCodesClient
 from controlbox.modules.streaming.infrastructure.stream_relay import StreamRelayManager
+from controlbox.modules.streaming.infrastructure.models import (
+    StreamingChannelModel,
+    StreamingClientModel,
+    StreamingCategoryModel,
+    StreamingConnectionModel,
+    EpgProgramModel,
+)
 from controlbox.modules.streaming.workers.tasks import sync_epg
 
 logger = logging.getLogger("controlbox.streaming.api")
@@ -182,7 +190,6 @@ async def import_channels(
         categories_by_name = {c.name.lower(): c for c in db_categories}
 
         # Cargar todos los canales existentes de la fuente en memoria para evitar consultas repetitivas
-        from controlbox.modules.streaming.infrastructure.models import StreamingChannelModel
         from controlbox.modules.streaming.infrastructure.mappers import channel_to_model
         
         result = await uow.session.execute(
@@ -223,7 +230,7 @@ async def import_channels(
                 existing.epg_id = item.epg_id
                 existing.logo_url = item.logo_url
                 existing.stream_id = item.stream_id
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = datetime.now(timezone.utc)
             else:
                 channel = StreamingChannel(
                     tenant_id=tenant_id,
@@ -244,7 +251,7 @@ async def import_channels(
                 channels_by_url[m.stream_url] = m
                 imported_count += 1
 
-        source.last_sync_at = datetime.utcnow()
+        source.last_sync_at = datetime.now(timezone.utc)
         await uow.streaming_sources.save(source)
         await uow.commit()
 
@@ -397,6 +404,14 @@ async def trigger_epg_sync(
     return {"status": "sync_queued"}
 
 
+@router.get("/delivery-domain")
+async def get_delivery_domain(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict:
+    """Returns the configured streaming delivery domain for end-users."""
+    return {"domain": settings.streaming_domain}
+
+
 @router.get("/stats", response_model=StreamingStatsResponse)
 async def get_dashboard_stats(
     context: Annotated[RequestContext, Depends(require_permission("streaming.read"))],
@@ -433,6 +448,7 @@ async def generate_m3u_list(
     username: str,
     password: str,
     request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ):
     """Exposes a custom M3U playlist file for authorized streaming clients."""
@@ -462,7 +478,10 @@ async def generate_m3u_list(
         channels = chan_res.scalars().all()
 
         # Build custom M3U redirecting back to our server
-        host_url = f"{request.url.scheme}://{request.url.netloc}"
+        if settings.streaming_domain:
+            host_url = settings.streaming_domain.rstrip("/")
+        else:
+            host_url = f"{request.url.scheme}://{request.url.netloc}"
         lines = ["#EXTM3U"]
         for chan in channels:
             # Resolve category name
@@ -527,7 +546,7 @@ async def xtream_codes_emulation(
                 },
                 "server_info": {
                     "server_timezone": "UTC",
-                    "time_now": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                    "time_now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
                 }
             }
 
@@ -616,25 +635,23 @@ async def play_stream(
         await uow.commit()
 
     conn_id = conn.id
+    database = request.app.state.container.database
 
     async def update_traffic(bytes_read: int):
-        # Background write update stats in db
-        async with get_unit_of_work() as inner_uow:
+        async with database.unit_of_work() as inner_uow:
             db_conn = await inner_uow.streaming_connections.get_by_id(conn_id)
             if db_conn:
                 db_conn.bytes_transferred += bytes_read
                 await inner_uow.streaming_connections.save(db_conn)
                 await inner_uow.commit()
 
-    # Generator helper that cleans up on finish
     async def stream_wrapper():
         try:
             generator = relay_manager.ts_proxy_generator(channel.stream_url, on_chunk_read=update_traffic)
             async for chunk in generator:
                 yield chunk
         finally:
-            # Client disconnected: Delete connection record
-            async with get_unit_of_work() as final_uow:
+            async with database.unit_of_work() as final_uow:
                 await final_uow.streaming_connections.delete(conn_id)
                 await final_uow.commit()
 

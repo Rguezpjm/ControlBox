@@ -6,6 +6,9 @@ from controlbox.modules.identity.application.queries import (
     ListAuditLogsQuery,
     ListPermissionsQuery,
     ListSessionsQuery,
+    ListTenantsQuery,
+    ListUsersByTenantQuery,
+    LiteUserResponse,
     PermissionResponse,
     SessionResponse,
     TenantResponse,
@@ -136,4 +139,38 @@ class ListPermissionsHandler(QueryHandler[ListPermissionsQuery, list[PermissionR
                 module=permission.module,
             )
             for permission in permissions
+        ]
+
+
+class ListTenantsHandler(QueryHandler[ListTenantsQuery, list[TenantResponse]]):
+    def __init__(self, uow: UnitOfWork) -> None:
+        self._uow = uow
+
+    async def handle(self, query: ListTenantsQuery) -> list[TenantResponse]:
+        tenants = await self._uow.tenants.list_all()
+        return [
+            TenantResponse(
+                id=t.id,
+                name=t.name,
+                slug=t.slug,
+                status=t.status.value,
+                settings=t.settings,
+            )
+            for t in tenants
+        ]
+
+
+class ListUsersByTenantHandler(QueryHandler[ListUsersByTenantQuery, list[LiteUserResponse]]):
+    def __init__(self, uow: UnitOfWork) -> None:
+        self._uow = uow
+
+    async def handle(self, query: ListUsersByTenantQuery) -> list[LiteUserResponse]:
+        users = await self._uow.users.list_by_tenant(query.tenant_id)
+        return [
+            LiteUserResponse(
+                id=u.id,
+                email=u.email,
+                full_name=u.full_name,
+            )
+            for u in users
         ]

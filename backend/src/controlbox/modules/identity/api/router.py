@@ -19,6 +19,7 @@ from controlbox.modules.identity.api.schemas import (
     AuditLogResponseSchema,
     CreateRoleRequest,
     CreateUserRequest,
+    LiteUserResponseSchema,
     LoginRequest,
     PermissionResponseSchema,
     RefreshTokenRequest,
@@ -68,6 +69,8 @@ from controlbox.modules.identity.application.query_handlers import (
     ListAuditLogsHandler,
     ListPermissionsHandler,
     ListSessionsHandler,
+    ListTenantsHandler,
+    ListUsersByTenantHandler,
 )
 from controlbox.modules.identity.application.queries import (
     GetCurrentUserQuery,
@@ -75,6 +78,8 @@ from controlbox.modules.identity.application.queries import (
     ListAuditLogsQuery,
     ListPermissionsQuery,
     ListSessionsQuery,
+    ListTenantsQuery,
+    ListUsersByTenantQuery,
 )
 from controlbox.modules.identity.domain.services import PasswordService, SessionService
 from controlbox.shared.application.unit_of_work import UnitOfWork
@@ -315,6 +320,35 @@ async def get_tenant(
         handler = GetTenantHandler(uow=uow)
         tenant = await handler.handle(GetTenantQuery(tenant_id=tenant_id))
         return TenantResponseSchema(**tenant.__dict__)
+    except DomainException as exc:
+        raise map_domain_exception(exc) from exc
+
+
+@router.get("/tenants", response_model=list[TenantResponseSchema])
+async def list_tenants(
+    context: Annotated[RequestContext, Depends(require_permission("tenants.read"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> list[TenantResponseSchema]:
+    try:
+        handler = ListTenantsHandler(uow=uow)
+        tenants = await handler.handle(ListTenantsQuery())
+        return [TenantResponseSchema(**t.__dict__) for t in tenants]
+    except DomainException as exc:
+        raise map_domain_exception(exc) from exc
+
+
+@router.get("/tenants/{tenant_id}/lite-users", response_model=list[LiteUserResponseSchema])
+async def list_tenant_users(
+    tenant_id: UUID,
+    context: Annotated[RequestContext, Depends(require_permission("tenants.read"))],
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> list[LiteUserResponseSchema]:
+    if context.tenant_id and context.tenant_id != tenant_id and "admin" not in context.roles:
+        raise map_domain_exception(ForbiddenError("Forbidden"))
+    try:
+        handler = ListUsersByTenantHandler(uow=uow)
+        users = await handler.handle(ListUsersByTenantQuery(tenant_id=tenant_id))
+        return [LiteUserResponseSchema(**u.__dict__) for u in users]
     except DomainException as exc:
         raise map_domain_exception(exc) from exc
 

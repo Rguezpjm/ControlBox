@@ -74,6 +74,12 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
         self._session_factory = session_factory
         self._session: AsyncSession | None = None
 
+    @property
+    def session(self) -> AsyncSession:
+        if self._session is None:
+            raise RuntimeError("Session not initialized. Use 'async with uow' first.")
+        return self._session
+
     async def __aenter__(self) -> "SqlAlchemyUnitOfWork":
         self._session = self._session_factory()
         self.tenants = SqlAlchemyTenantRepository(self._session)

@@ -10,6 +10,8 @@ class InviteTeamMemberRequest(BaseModel):
     email: PanelEmail
     team_role_slug: str = Field(min_length=1, max_length=64)
     message: str = ""
+    tenant_id: UUID | None = None
+    sender_user_id: UUID | None = None
 
 
 class AcceptInvitationRequest(BaseModel):
